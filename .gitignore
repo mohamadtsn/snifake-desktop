@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+target/
+src-tauri/target/
+.DS_Store
+*.log
+config.json
+.ruff_cache/
+.idea/

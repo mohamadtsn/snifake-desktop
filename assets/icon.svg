@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0f3460"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e94560"/>
+      <stop offset="100%" stop-color="#ff6b81"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="64" cy="64" r="60" fill="url(#bg)" stroke="#2c3e50" stroke-width="2"/>
+
+  <!-- Globe: network / web -->
+  <g stroke="#ecf0f1" stroke-width="2.5" fill="none" opacity="0.9">
+    <circle cx="60" cy="60" r="30"/>
+    <ellipse cx="60" cy="60" rx="12" ry="30"/>
+    <line x1="30" y1="52" x2="90" y2="52"/>
+    <line x1="30" y1="68" x2="90" y2="68"/>
+  </g>
+
+  <!-- Spoof swap arrows -->
+  <g fill="url(#accent)">
+    <path d="M76 42 h20 v6 l10 -9 l-10 -9 v6 h-20 z"/>
+    <path d="M44 78 h-20 v-6 l-10 9 l10 9 v-6 h20 z"/>
+  </g>
+
+  <!-- Lock badge: TLS -->
+  <g transform="translate(78,72)">
+    <rect x="0" y="8" width="26" height="20" rx="4" fill="url(#accent)"/>
+    <path d="M4 8 V2 a9 9 0 0 1 18 0 V8" fill="none" stroke="url(#accent)" stroke-width="4"/>
+    <circle cx="13" cy="18" r="3" fill="#1a1a2e"/>
+  </g>
+</svg>

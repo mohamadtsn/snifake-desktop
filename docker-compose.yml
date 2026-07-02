@@ -1,0 +1,63 @@
+# ── SNI Spoof — Docker Compose for build & test ────────────────────
+#
+# Usage:
+#   docker compose run --rm dev        # Interactive shell
+#   docker compose run --rm build      # Build standalone binary
+#   docker compose run --rm test       # Lint + format check
+#   docker compose run --rm package    # Full package build
+#
+# Output: ./dist/sni-fake
+# ──────────────────────────────────────────────────────────────────
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  volumes:
+    - .:/app
+    - ./dist:/app/dist
+
+services:
+  dev:
+    <<: *common
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+    network_mode: host
+
+  build:
+    <<: *common
+    command: >
+      python -m PyInstaller
+      --name sni-fake
+      --onefile
+      --windowed
+      --add-data "config.json:."
+      --add-data "assets/icon.svg:assets"
+      --distpath /app/dist
+      --clean
+      main.py
+
+  test:
+    <<: *common
+    command: >
+      sh -c "
+        ruff check src/ &&
+        ruff format --check src/ &&
+        echo 'All checks passed'
+      "
+
+  package:
+    <<: *common
+    command: >
+      sh -c "
+        python -m PyInstaller
+        --name sni-fake
+        --onefile
+        --windowed
+        --add-data 'config.json:.'
+        --add-data 'assets/icon.svg:assets'
+        --distpath /app/dist
+        --clean
+        main.py &&
+        echo 'Package built in ./dist/'
+      "

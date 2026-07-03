@@ -1,35 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#0f3460"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1a1a2e"/>
+      <stop offset="0.5" stop-color="#16213e"/>
+      <stop offset="1" stop-color="#0f0c29"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#e94560"/>
-      <stop offset="100%" stop-color="#ff6b81"/>
+    <linearGradient id="globe" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7fd7e8"/>
+      <stop offset="1" stop-color="#3f7fd1"/>
     </linearGradient>
+    <linearGradient id="badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff6b81"/>
+      <stop offset="1" stop-color="#c0392b"/>
+    </linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
 
-  <circle cx="64" cy="64" r="60" fill="url(#bg)" stroke="#2c3e50" stroke-width="2"/>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)" stroke="#2c3e50" stroke-width="2"/>
 
-  <!-- Globe: network / web -->
-  <g stroke="#ecf0f1" stroke-width="2.5" fill="none" opacity="0.9">
-    <circle cx="60" cy="60" r="30"/>
-    <ellipse cx="60" cy="60" rx="12" ry="30"/>
-    <line x1="30" y1="52" x2="90" y2="52"/>
-    <line x1="30" y1="68" x2="90" y2="68"/>
-  </g>
+  <!-- globe: the network the proxy talks to -->
+  <circle cx="56" cy="56" r="36" fill="none" stroke="url(#globe)" stroke-width="4" opacity="0.95"/>
+  <ellipse cx="56" cy="56" rx="36" ry="15" fill="none" stroke="url(#globe)" stroke-width="2.5" opacity="0.6"/>
+  <ellipse cx="56" cy="56" rx="15" ry="36" fill="none" stroke="url(#globe)" stroke-width="2.5" opacity="0.6"/>
+  <line x1="20" y1="56" x2="92" y2="56" stroke="url(#globe)" stroke-width="2.5" opacity="0.6"/>
 
-  <!-- Spoof swap arrows -->
-  <g fill="url(#accent)">
-    <path d="M76 42 h20 v6 l10 -9 l-10 -9 v6 h-20 z"/>
-    <path d="M44 78 h-20 v-6 l-10 9 l10 9 v-6 h20 z"/>
-  </g>
+  <!-- spoof badge: the SNI field getting swapped for a fake one before it hits the wire -->
+  <circle cx="90" cy="90" r="28" fill="url(#badge)" filter="url(#glow)"/>
+  <circle cx="90" cy="90" r="28" fill="none" stroke="#0f0c29" stroke-width="3"/>
+  <path d="M78 84 H99 M92 78 L99 84 L92 90"
+        fill="none" stroke="#fdf2f2" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M102 96 H81 M88 102 L81 96 L88 90"
+        fill="none" stroke="#fdf2f2" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <!-- Lock badge: TLS -->
-  <g transform="translate(78,72)">
-    <rect x="0" y="8" width="26" height="20" rx="4" fill="url(#accent)"/>
-    <path d="M4 8 V2 a9 9 0 0 1 18 0 V8" fill="none" stroke="url(#accent)" stroke-width="4"/>
-    <circle cx="13" cy="18" r="3" fill="#1a1a2e"/>
-  </g>
+  <!-- live/active accent -->
+  <circle cx="90" cy="90" r="28" fill="none" stroke="#2ecc71" stroke-width="1.5" opacity="0.55"/>
 </svg>

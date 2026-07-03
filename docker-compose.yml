@@ -1,21 +1,30 @@
-# ── SNI Spoof — Docker Compose for build & test ────────────────────
+# ── SNI Spoof — Docker Compose for Rust/Tauri build & dev ──────────
+#
+# Frontend (npm/React) tooling runs on the host — this only covers the
+# Rust/Tauri side. Before using either service, run on the host:
+#   - `npm run dev`   (in another terminal, left running) before `dev`
+#   - `npm run build`                                     before `build`
 #
 # Usage:
-#   docker compose run --rm dev        # Interactive shell
-#   docker compose run --rm build      # Build standalone binary
-#   docker compose run --rm test       # Lint + format check
-#   docker compose run --rm package    # Full package build
+#   docker compose run --rm dev      # cargo tauri dev, X11 passthrough
+#   docker compose run --rm build    # cargo tauri build -> src-tauri/target/release/bundle
 #
-# Output: ./dist/sni-fake
+# Output is bind-mounted straight into src-tauri/target/ on the host (no
+# docker cp needed). If your host UID/GID isn't 1000:1000, export HOST_UID
+# / HOST_GID before running so the output comes back owned by you:
+#   export HOST_UID=$(id -u) HOST_GID=$(id -g)
 # ──────────────────────────────────────────────────────────────────
 
 x-common: &common
   build:
     context: .
-    dockerfile: Dockerfile.dev
+    dockerfile: Dockerfile
   volumes:
     - .:/app
-    - ./dist:/app/dist
+    - cargo-registry:/usr/local/cargo/registry
+    # bind mount (not a named volume) so build/bundle output lands directly
+    # in src-tauri/target on the host — no docker cp needed to grab it
+    - ./src-tauri/target:/app/src-tauri/target
 
 services:
   dev:
@@ -23,41 +32,18 @@ services:
     environment:
       - DISPLAY=${DISPLAY:-:0}
     network_mode: host
+    # container runs as root (needed for apt/cargo setup in the image), so
+    # hand ownership of anything written into the bind-mounted target/ back
+    # to the host user afterwards — otherwise bundle output is root-owned.
+    command: >
+      sh -c "cargo tauri dev --config '{\"build\":{\"beforeDevCommand\":\"\"}}';
+             chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target"
 
   build:
     <<: *common
     command: >
-      python -m PyInstaller
-      --name sni-fake
-      --onefile
-      --windowed
-      --add-data "config.json:."
-      --add-data "assets/icon.svg:assets"
-      --distpath /app/dist
-      --clean
-      main.py
+      sh -c "cargo tauri build --config '{\"build\":{\"beforeBuildCommand\":\"\"}}' &&
+             chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target"
 
-  test:
-    <<: *common
-    command: >
-      sh -c "
-        ruff check src/ &&
-        ruff format --check src/ &&
-        echo 'All checks passed'
-      "
-
-  package:
-    <<: *common
-    command: >
-      sh -c "
-        python -m PyInstaller
-        --name sni-fake
-        --onefile
-        --windowed
-        --add-data 'config.json:.'
-        --add-data 'assets/icon.svg:assets'
-        --distpath /app/dist
-        --clean
-        main.py &&
-        echo 'Package built in ./dist/'
-      "
+volumes:
+  cargo-registry:

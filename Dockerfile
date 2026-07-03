@@ -1,72 +1,26 @@
-# ── Build stage: install deps, bundle with PyInstaller ─────────────
-FROM python:3.12-slim AS builder
+# Rust/Tauri build & dev environment for SNI Spoof.
+# Frontend (npm/React/Vite) tooling is expected on the host — this image
+# only needs to run `cargo tauri dev` / `cargo tauri build`.
+FROM rust:1-bookworm
 
-# System deps for PySide6 / Qt
+# System deps for Tauri's Linux bundler (webkit2gtk, GTK, appindicator, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
-    libglib2.0-0 \
-    libfontconfig1 \
-    libxkbcommon0 \
-    libxkbcommon-x11-0 \
-    libxcb-cursor0 \
-    libxcb-icccm4 \
-    libxcb-image0 \
-    libxcb-keysyms1 \
-    libxcb-randr0 \
-    libxcb-render-util0 \
-    libxcb-shape0 \
-    libxcb-xinerama0 \
-    libxcb-xfixes0 \
-    libx11-xcb1 \
-    libdbus-1-3 \
+    libwebkit2gtk-4.1-dev \
+    libgtk-3-dev \
+    libayatana-appindicator3-dev \
+    librsvg2-dev \
+    libssl-dev \
+    patchelf \
+    file \
+    build-essential \
+    curl \
+    wget \
+    pkg-config \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install tauri-cli --version "^2.0.0" --locked
 
 WORKDIR /app
 
-# Install Python deps
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt pyinstaller
-
-# Copy source
-COPY . .
-
-# Build standalone binary with PyInstaller
-RUN python -m PyInstaller \
-    --name sni-fake \
-    --onefile \
-    --windowed \
-    --add-data "config.json:." \
-    --clean \
-    main.py
-
-# ── Runtime stage: minimal image for testing ───────────────────────
-FROM python:3.12-slim AS runtime
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 \
-    libglib2.0-0 \
-    libfontconfig1 \
-    libxkbcommon0 \
-    libxkbcommon-x11-0 \
-    libxcb-cursor0 \
-    libxcb-icccm4 \
-    libxcb-image0 \
-    libxcb-keysyms1 \
-    libxcb-randr0 \
-    libxcb-render-util0 \
-    libxcb-shape0 \
-    libxcb-xinerama0 \
-    libxcb-xfixes0 \
-    libx11-xcb1 \
-    libdbus-1-3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy built binary
-COPY --from=builder /app/dist/sni-fake /usr/local/bin/sni-fake
-
-# Copy config
-COPY config.json /app/config.json
-
-WORKDIR /app
-
-ENTRYPOINT ["/usr/local/bin/sni-fake"]
+CMD ["/bin/bash"]

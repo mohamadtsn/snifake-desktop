@@ -8,3 +8,4 @@ src-tauri/target/
 config.json
 .ruff_cache/
 .idea/
+.vscode/

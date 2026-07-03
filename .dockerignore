@@ -1,9 +1,5 @@
-__pycache__
-*.pyc
-*.pyo
 .git
 .gitignore
+node_modules/
 dist/
-build/
-*.spec
-.env
+src-tauri/target/

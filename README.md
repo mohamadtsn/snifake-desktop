@@ -1,76 +1,48 @@
 # SNI Spoof
 
-A cross-platform desktop GUI (system tray app) for managing a TLS SNI-spoofing proxy. It configures, launches (with elevated privileges), monitors, and stops a pre-built `sni-spoof` binary — it does not implement the proxy itself.
+Cross-platform desktop app (Tauri + React) that manages an external `sni-spoof` binary process — a TLS SNI-spoofing proxy. This app does not implement the proxy itself; it configures, launches (with elevated privileges), monitors, and stops the pre-built `sni-spoof-{platform}-{arch}` binary as a subprocess.
 
 ## Features
 
-- System tray control with live status (stopped / starting / running / error)
-- Simple form to configure listen/connect endpoints and the fake SNI value
-- One-click elevated start (via `pkexec`/`sudo` on Linux, admin prompt on macOS, UAC on Windows)
-- "Run on login" autostart toggle
-- Persistent JSON config stored in the platform's standard app-data directory
-
-## Requirements
-
-- Python 3.9+
-- [PySide6](https://pypi.org/project/PySide6/) `>=6.5.0`
-- A `sni-spoof-{platform}-{arch}` binary placed alongside the app (not included in this repo)
-
-## Installation
-
-```bash
-pip install -r requirements.txt
-python main.py
-```
-
-## Docker-based dev/build workflow
-
-```bash
-docker compose run --rm dev        # Interactive dev shell (X11 passthrough via DISPLAY)
-docker compose run --rm build      # Build standalone binary with PyInstaller -> ./dist/sni-fake
-docker compose run --rm test       # ruff check + ruff format --check on src/
-docker compose run --rm package    # Full package build (same as build, with completion message)
-```
+- System tray with live status (stopped/starting/running/error)
+- Config form: Listen Host/Port, Connect IP/Port, Fake SNI
+- Start/Stop/Save/Autostart toggle/Exit
+- Activity log
+- Elevated privilege launch of the bundled proxy binary
+- Persistent JSON config in the platform app-data dir
 
 ## Configuration
 
-Settings are edited in the GUI and saved to a JSON config file (`Config.save()`), then passed to the proxy subprocess as environment variables on start.
+Config keys (`LISTEN_HOST`, `LISTEN_PORT`, `CONNECT_IP`, `CONNECT_PORT`, `FAKE_SNI`) are edited in the GUI form, saved via the `save_config` command to a JSON file in the platform app-data dir, and passed to the proxy subprocess as environment variables on start.
 
-| Key            | Description                          |
-|----------------|---------------------------------------|
-| `LISTEN_HOST`  | Local address the proxy listens on    |
-| `LISTEN_PORT`  | Local port the proxy listens on       |
-| `CONNECT_IP`   | Upstream IP the proxy connects to     |
-| `CONNECT_PORT` | Upstream port the proxy connects to   |
-| `FAKE_SNI`     | SNI value sent instead of the real one|
+## Requirements
 
-Config file location:
+- Node.js 18+
+- Rust (stable, via [rustup](https://rustup.rs)) — only needed for building/running outside Docker
+- Platform build dependencies per the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/)
+- A `sni-spoof-{platform}-{arch}` binary placed at the repo root (not included in this repo)
 
-| Platform | Path                                              |
-|----------|----------------------------------------------------|
-| Linux    | `$XDG_CONFIG_HOME/sni-fake` (default `~/.config/sni-fake`) |
-| Windows  | `%APPDATA%\sni-fake`                                |
-| macOS    | `~/Library/Application Support/sni-fake`            |
-
-## Building a standalone binary
+## Development
 
 ```bash
-docker compose run --rm build
+npm install
+npm run tauri dev
 ```
 
-Produces `./dist/sni-fake` (mirrors the `sni-fake.spec` PyInstaller config: `--onefile --windowed --add-data config.json:. --add-data assets/icon.svg:assets`).
+## Building
 
-## Project layout
+```bash
+npm run tauri build
+```
 
-- `main.py` — entry point, wires `Config`, `SniProxy`, `MainWindow`, `SystemTrayIcon` together
-- `src/config.py` — JSON-backed settings + binary path resolution per platform/arch
-- `src/proxy.py` — manages the `sni-spoof` binary's subprocess lifecycle
-- `src/auth.py` — platform-specific elevated-privilege launch prefix
-- `src/autostart.py` — cross-platform "run on login" toggle
-- `src/gui.py` — main window + system tray icon
-- `src/icons.py` — SVG icon loading/rendering
-- `src/titlebar.py` — custom draggable title bar for the frameless window
+Produces platform-native installers/binaries in `src-tauri/target/release/bundle/`.
 
-## License
+## Docker (Linux Rust/Tauri build & dev only)
 
-Add your license here.
+Frontend tooling runs on the host; Docker only covers the Rust/Tauri side:
+
+```bash
+npm run build && docker compose run --rm build   # Linux bundle -> src-tauri/target/release/bundle
+npm run dev                                       # in one terminal
+docker compose run --rm dev                       # in another, X11 passthrough
+```

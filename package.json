@@ -1,13 +1,14 @@
 {
   "name": "sni-fake",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release": "npm version patch --no-git-tag-version && npm run build"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

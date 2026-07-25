@@ -22,6 +22,11 @@ x-common: &common
   volumes:
     - .:/app
     - cargo-registry:/usr/local/cargo/registry
+    - cargo-git:/usr/local/cargo/git
+    # Tauri's Linux bundler downloads linuxdeploy/appimagetool/AppRun into
+    # $XDG_CACHE_HOME/tauri. Without this volume that's a fresh ~30MB
+    # download on every single build.
+    - tauri-cache:/root/.cache
     # bind mount (not a named volume) so build/bundle output lands directly
     # in src-tauri/target on the host — no docker cp needed to grab it
     - ./src-tauri/target:/app/src-tauri/target
@@ -47,3 +52,5 @@ services:
 
 volumes:
   cargo-registry:
+  cargo-git:
+  tauri-cache:

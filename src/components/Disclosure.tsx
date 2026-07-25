@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Collapsible } from "@base-ui/react/collapsible";
 import { ChevronRight } from "lucide-react";
 
@@ -11,14 +11,12 @@ import { ChevronRight } from "lucide-react";
  */
 export function Disclosure({
   label,
-  summary,
   badge,
   open,
   onOpenChange,
   children,
 }: {
   label: string;
-  summary?: ReactNode;
   badge?: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,9 +39,6 @@ export function Disclosure({
           <span className="rounded-full bg-brand/18 px-1.5 py-0.5 font-mono text-[10px] leading-none text-brand">
             {badge > 99 ? "99+" : badge}
           </span>
-        )}
-        {summary && !open && (
-          <span className="truncate font-mono text-[11px] text-faint">{summary}</span>
         )}
       </Collapsible.Trigger>
       <Collapsible.Panel className="disclosure-panel">

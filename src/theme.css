@@ -44,9 +44,13 @@
   --radius-control: 11px;
 }
 
+/* The window is `transparent: true` with rounded corners drawn in CSS. Every
+   layer between the webview canvas and .shell has to stay transparent, or an
+   opaque sharp-cornered rectangle shows through at the corners. */
 html, body, #root {
   height: 100%;
   margin: 0;
+  background: transparent;
 }
 
 body {
@@ -71,9 +75,9 @@ textarea {
     var(--color-shell);
   border: 1px solid var(--color-shell-edge);
   border-radius: var(--radius-shell);
-  box-shadow:
-    0 24px 60px rgba(2, 5, 14, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  /* No outer drop shadow: .shell fills the whole window, so a 60px blur would
+     be rasterised every repaint and then clipped away unseen. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
 /* Level 2 — a raised card. Flat fill, no blur: these sit above the shell's
@@ -88,21 +92,24 @@ textarea {
    Colour lives in --orb, set per state by StatusHero. Only transform and
    opacity animate, so WebKitGTK composites the pulse without repainting. */
 .orb {
+  --orb-size: 38px;
   position: relative;
-  width: 58px;
-  height: 58px;
+  display: block;
+  width: var(--orb-size);
+  height: var(--orb-size);
   border-radius: 9999px;
   background: radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--orb) 92%, white), var(--orb) 62%, color-mix(in oklab, var(--orb) 55%, black));
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--orb) 40%, transparent);
-  transition: background 420ms var(--ease-out-quint);
-  animation: orb-pop 380ms var(--ease-spring);
+  /* No background transition: StatusHero remounts on state change so it would
+     never fire, and interpolating a radial-gradient repaints every frame. */
+  animation: orb-pop 420ms var(--ease-spring) both;
   will-change: transform;
 }
 
 .orb::after {
   content: "";
   position: absolute;
-  inset: -14px;
+  inset: calc(var(--orb-size) * -0.26);
   border-radius: 9999px;
   background: radial-gradient(circle, color-mix(in oklab, var(--orb) 42%, transparent), transparent 68%);
   opacity: 0.85;
@@ -110,8 +117,8 @@ textarea {
 
 .orb[data-state="running"] {
   animation:
-    orb-pop 380ms var(--ease-spring),
-    orb-breathe 2600ms var(--ease-out-quint) 380ms infinite;
+    orb-pop 420ms var(--ease-spring) both,
+    orb-breathe 3200ms ease-in-out 420ms infinite;
 }
 
 @keyframes orb-pop {
@@ -129,24 +136,39 @@ textarea {
    height can be keyframed without a JS measure pass. */
 .disclosure-panel {
   overflow: hidden;
+  /* Height is the one property here that can't be composited, so keep its
+     repaint from escaping the panel's own box. */
+  contain: paint;
 }
 
 .disclosure-panel[data-open] {
-  animation: panel-open 260ms var(--ease-sheet);
+  animation: panel-open 280ms var(--ease-sheet);
 }
 
 .disclosure-panel[data-closed] {
   animation: panel-close 200ms var(--ease-sheet);
 }
 
+/* The height keyframes drive layout and can step under load. Sliding the
+   content on the compositor at the same time is what actually reads as
+   smooth — the eye tracks the contents, not the container edge. */
+.disclosure-panel[data-open] > * {
+  animation: panel-content-in 280ms var(--ease-sheet);
+}
+
 @keyframes panel-open {
-  from { height: 0; opacity: 0; }
-  to   { height: var(--collapsible-panel-height); opacity: 1; }
+  from { height: 0; }
+  to   { height: var(--collapsible-panel-height); }
 }
 
 @keyframes panel-close {
-  from { height: var(--collapsible-panel-height); opacity: 1; }
-  to   { height: 0; opacity: 0; }
+  from { height: var(--collapsible-panel-height); }
+  to   { height: 0; }
+}
+
+@keyframes panel-content-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* --- Log scroller -----------------------------------------------------
@@ -165,6 +187,7 @@ textarea {
   .orb,
   .orb[data-state="running"],
   .disclosure-panel[data-open],
+  .disclosure-panel[data-open] > *,
   .disclosure-panel[data-closed] {
     animation: none;
   }

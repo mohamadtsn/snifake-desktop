@@ -1,5 +1,4 @@
-import { forwardRef, useImperativeHandle, useState } from "react";
-import { Input } from "@/components/ui/input";
+import { forwardRef, useId, useImperativeHandle, useState } from "react";
 import { Disclosure } from "@/components/Disclosure";
 import { Config } from "@/types";
 
@@ -18,15 +17,54 @@ function isValidIp(value: string): boolean {
   });
 }
 
-const fieldClass =
-  "h-8 rounded-[9px] border-hairline bg-sunken px-2.5 text-right font-mono text-[12px] text-text " +
-  "transition-colors duration-150 focus-visible:border-brand/70 focus-visible:ring-0";
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * Host and port are one address, so they share a line with the port narrow —
+ * the shape of the control mirrors the shape of the value. Every field keeps
+ * a visible label; a placeholder is an example, not a label.
+ */
+function Field({
+  label,
+  value,
+  onChange,
+  numeric,
+  placeholder,
+  className,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  numeric?: boolean;
+  placeholder?: string;
+  className?: string;
+}) {
+  const id = useId();
   return (
-    <div className="flex items-center justify-between gap-3 py-1">
-      <label className="text-[12.5px] text-dim">{label}</label>
-      <div className="w-[164px]">{children}</div>
+    <div className={`flex min-w-0 flex-col gap-1.5 ${className ?? ""}`}>
+      <label htmlFor={id} className="text-[10.5px] tracking-[0.04em] text-faint uppercase">
+        {label}
+      </label>
+      <input
+        id={id}
+        // Values are hostnames, IPs and ports — always LTR and left-read,
+        // whatever the surrounding UI language happens to be.
+        dir="ltr"
+        inputMode={numeric ? "numeric" : "text"}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={[
+          "h-9 w-full rounded-[10px] border border-hairline bg-sunken px-2.5",
+          "text-left font-mono text-[12.5px] text-text placeholder:text-faint/55",
+          "transition-[border-color,box-shadow] duration-150",
+          "[transition-timing-function:var(--ease-out-quint)]",
+          "hover:border-hairline-strong",
+          "focus:border-brand/70 focus:outline-none",
+          "focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-brand)_18%,transparent)]",
+        ].join(" ")}
+      />
     </div>
   );
 }
@@ -79,57 +117,50 @@ export const ConnectionSection = forwardRef<
     sni.trim() !== saved.FAKE_SNI;
 
   return (
-    <Disclosure
-      label="Connection"
-      summary={`${saved.LISTEN_HOST}:${saved.LISTEN_PORT} → ${saved.CONNECT_PORT}`}
-      open={open}
-      onOpenChange={onOpenChange}
-    >
-      <div className="flex flex-col">
-        <Row label="Listen host">
-          <Input value={host} onChange={(e) => setHost(e.target.value)} className={fieldClass} />
-        </Row>
-        <Row label="Listen port">
-          <Input
-            type="number"
-            min={1}
-            max={65535}
+    <Disclosure label="Connection" open={open} onOpenChange={onOpenChange}>
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-2">
+          <Field
+            label="Listen host"
+            value={host}
+            onChange={setHost}
+            placeholder="127.0.0.1"
+            className="flex-1"
+          />
+          <Field
+            label="Port"
             value={listenPort}
-            onChange={(e) => setListenPort(e.target.value)}
-            className={fieldClass}
+            onChange={setListenPort}
+            numeric
+            placeholder="40443"
+            className="w-[78px] shrink-0"
           />
-        </Row>
+        </div>
 
-        <div className="my-2 h-px bg-hairline" />
-
-        <Row label="Connect IP">
-          <Input
+        <div className="flex gap-2">
+          <Field
+            label="Upstream IP"
             value={connectIp}
-            onChange={(e) => setConnectIp(e.target.value)}
-            className={fieldClass}
+            onChange={setConnectIp}
+            placeholder="0.0.0.0"
+            className="flex-1"
           />
-        </Row>
-        <Row label="Connect port">
-          <Input
-            type="number"
-            min={1}
-            max={65535}
+          <Field
+            label="Port"
             value={connectPort}
-            onChange={(e) => setConnectPort(e.target.value)}
-            className={fieldClass}
+            onChange={setConnectPort}
+            numeric
+            placeholder="443"
+            className="w-[78px] shrink-0"
           />
-        </Row>
+        </div>
 
-        <div className="my-2 h-px bg-hairline" />
-
-        <Row label="Fake SNI">
-          <Input value={sni} onChange={(e) => setSni(e.target.value)} className={fieldClass} />
-        </Row>
+        <Field label="Fake SNI" value={sni} onChange={setSni} placeholder="example.com" />
 
         {dirty && (
           <button
             onClick={onSave}
-            className="mt-3 h-8 w-full rounded-[9px] bg-brand/16 text-[12.5px] font-medium text-brand transition-colors duration-150 hover:bg-brand/24 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+            className="h-9 w-full rounded-[10px] bg-brand/16 text-[12.5px] font-medium text-brand transition-[background-color,transform] duration-150 [transition-timing-function:var(--ease-out-quint)] hover:bg-brand/24 active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           >
             Save changes
           </button>

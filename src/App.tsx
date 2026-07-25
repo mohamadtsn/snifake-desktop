@@ -13,11 +13,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { TitleBar } from "@/components/TitleBar";
-import { StatusHero } from "@/components/StatusHero";
-import { PrimaryAction } from "@/components/PrimaryAction";
+import { StatusControl } from "@/components/StatusControl";
 import { ConnectionSection, ConfigFormHandle } from "@/components/ConnectionSection";
 import { ActivitySection } from "@/components/ActivitySection";
-import { SettingsRow } from "@/components/SettingsRow";
 import { Config, ProxyState } from "@/types";
 
 const DEFAULT_CONFIG: Config = {
@@ -32,7 +30,6 @@ export default function App() {
   const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
   const [configLoaded, setConfigLoaded] = useState(false);
   const [state, setState] = useState<ProxyState>("stopped");
-  const [autostart, setAutostart] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
@@ -41,12 +38,7 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const [loadedConfig, autostartEnabled] = await Promise.all([
-        invoke<Config>("load_config"),
-        invoke<boolean>("get_autostart_enabled"),
-      ]);
-      setConfig(loadedConfig);
-      setAutostart(autostartEnabled);
+      setConfig(await invoke<Config>("load_config"));
       setConfigLoaded(true);
     })();
   }, []);
@@ -97,11 +89,6 @@ export default function App() {
     await invoke("save_config", { cfg: value });
   }
 
-  async function handleAutostartToggle(checked: boolean) {
-    setAutostart(checked);
-    await invoke("set_autostart", { enable: checked });
-  }
-
   async function confirmExit() {
     await invoke("stop_proxy");
     await getCurrentWindow().destroy();
@@ -113,21 +100,21 @@ export default function App() {
     <div className="shell flex h-screen flex-col overflow-hidden">
       <TitleBar />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 pt-1 pb-4">
-        <StatusHero state={state} sni={config.FAKE_SNI} />
-        <PrimaryAction state={state} onStart={handleStart} onStop={handleStop} />
-        <ConnectionSection
-          ref={formRef}
-          initial={config}
-          saved={config}
-          onSave={handleSave}
-          open={connectionOpen}
-          onOpenChange={setConnectionOpen}
-        />
-        <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
-        <div className="flex-1" />
-        <div className="h-px bg-hairline" />
-        <SettingsRow autostart={autostart} onAutostartToggle={handleAutostartToggle} />
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 pt-3 pb-4">
+        <StatusControl state={state} config={config} onStart={handleStart} onStop={handleStop} />
+        <div className="shrink-0">
+          <ConnectionSection
+            ref={formRef}
+            initial={config}
+            saved={config}
+            onSave={handleSave}
+            open={connectionOpen}
+            onOpenChange={setConnectionOpen}
+          />
+        </div>
+        <div className="shrink-0">
+          <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
+        </div>
       </div>
 
       <AlertDialog open={exitDialogOpen} onOpenChange={setExitDialogOpen}>

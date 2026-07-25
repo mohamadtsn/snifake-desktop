@@ -1,4 +1,10 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ChevronDown, Minus, X } from "lucide-react";
+
+const chromeButton =
+  "flex h-6 w-6 items-center justify-center rounded-md text-faint " +
+  "transition-colors duration-150 hover:bg-raised-hover hover:text-text " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60";
 
 export function TitleBar() {
   const appWindow = getCurrentWindow();
@@ -6,34 +12,28 @@ export function TitleBar() {
   return (
     <div
       data-tauri-drag-region
-      className="relative z-10 flex h-11 items-center gap-2 rounded-t-[28px] border-b border-white/10 bg-white/5 px-4 py-1.5 backdrop-blur-xl"
+      className="relative z-10 flex h-10 shrink-0 items-center gap-2 border-b border-hairline px-3"
     >
-      <img src="/icon.png" alt="" className="h-5 w-5" data-tauri-drag-region />
+      <img src="/icon.png" alt="" className="size-4" data-tauri-drag-region />
       <span
         data-tauri-drag-region
-        className="text-[13px] font-semibold text-text"
+        className="text-[12px] font-medium tracking-[0.005em] text-dim"
       >
         SNI Spoof
       </span>
       <div className="flex-1" data-tauri-drag-region />
-      <button
-        onClick={() => appWindow.hide()}
-        title="Send to tray"
-        className="flex h-6 w-7 items-center justify-center rounded-md text-text-dim transition-colors hover:bg-surface-light hover:text-white"
-      >
-        ⌄
+      <button onClick={() => appWindow.hide()} title="Send to tray" className={chromeButton}>
+        <ChevronDown className="size-3.5" />
       </button>
-      <button
-        onClick={() => appWindow.minimize()}
-        className="flex h-6 w-7 items-center justify-center rounded-md text-text-dim transition-colors hover:bg-surface-light hover:text-white"
-      >
-        –
+      <button onClick={() => appWindow.minimize()} title="Minimize" className={chromeButton}>
+        <Minus className="size-3.5" />
       </button>
       <button
         onClick={() => appWindow.close()}
-        className="flex h-6 w-7 items-center justify-center rounded-md text-text-dim transition-colors hover:bg-danger hover:text-white"
+        title="Quit"
+        className={`${chromeButton} hover:bg-st-error/85 hover:text-white`}
       >
-        ×
+        <X className="size-3.5" />
       </button>
     </div>
   );

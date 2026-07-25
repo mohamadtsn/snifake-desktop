@@ -16,15 +16,16 @@ export const STATE_TEXT: Record<ProxyState, string> = {
 };
 
 export const STATE_SUBTITLE: Record<ProxyState, string> = {
-  stopped: "Proxy is not running",
-  starting: "Waiting for elevated launch…",
-  running: "Proxy is active",
-  error: "Proxy failed to start",
+  stopped: "Not running",
+  starting: "Waiting for elevated launch",
+  running: "Traffic is being spoofed",
+  error: "Failed to start",
 };
 
-export const STATE_DOT_CLASS: Record<ProxyState, string> = {
-  stopped: "bg-text-dim",
-  starting: "bg-warning",
-  running: "bg-success",
-  error: "bg-danger",
+/** Feeds the `--orb` custom property on `.orb`. */
+export const STATE_ORB: Record<ProxyState, string> = {
+  stopped: "var(--color-st-stopped)",
+  starting: "var(--color-st-starting)",
+  running: "var(--color-st-running)",
+  error: "var(--color-st-error)",
 };

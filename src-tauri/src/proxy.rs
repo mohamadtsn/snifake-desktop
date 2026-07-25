@@ -1,10 +1,12 @@
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 use crate::auth::get_elevated_command;
+use crate::logbuf::LogBuffer;
 #[cfg(target_os = "linux")]
 use crate::auth::{get_elevated_program, has_passwordless_sudo};
 use crate::config::{config_path, get_binary_path, save_config, Config};
@@ -14,13 +16,15 @@ use crate::config::{get_install_sudoers_script_path, get_run_script_path};
 pub struct ProxyManager {
     child: Option<Child>,
     state: String,
+    logs: Arc<LogBuffer>,
 }
 
 impl ProxyManager {
-    pub fn new() -> Self {
+    pub fn new(logs: Arc<LogBuffer>) -> Self {
         ProxyManager {
             child: None,
             state: "stopped".to_string(),
+            logs,
         }
     }
 
@@ -33,8 +37,10 @@ impl ProxyManager {
         let _ = app.emit("state-changed", state);
     }
 
-    fn log(&self, app: &AppHandle, msg: &str) {
-        let _ = app.emit("log-message", msg);
+    /// Lines go into the shared buffer, never straight over IPC — see
+    /// `logbuf::LogBuffer` for why.
+    pub fn log(&self, msg: &str) {
+        self.logs.push(msg.to_string());
     }
 
     pub fn is_running(&self) -> bool {
@@ -50,18 +56,18 @@ impl ProxyManager {
             Ok(p) => p,
             Err(e) => {
                 self.set_state(app, "error");
-                self.log(app, &format!("Binary path error: {e}"));
+                self.log(&format!("Binary path error: {e}"));
                 return;
             }
         };
         if !binary.exists() {
             self.set_state(app, "error");
-            self.log(app, &format!("Binary not found: {}", binary.display()));
+            self.log(&format!("Binary not found: {}", binary.display()));
             return;
         }
         let Some(binary_dir) = binary.parent() else {
             self.set_state(app, "error");
-            self.log(app, "Binary path has no parent directory");
+            self.log("Binary path has no parent directory");
             return;
         };
 
@@ -71,7 +77,7 @@ impl ProxyManager {
         // the binary as part of the same elevated launch that runs it.
         if let Err(e) = save_config(config) {
             self.set_state(app, "error");
-            self.log(app, &format!("Failed to write config.json: {e}"));
+            self.log(&format!("Failed to write config.json: {e}"));
             return;
         }
 
@@ -111,18 +117,18 @@ impl ProxyManager {
             Ok(mut child) => {
                 let pid = child.id();
                 if let Some(stdout) = child.stdout.take() {
-                    spawn_log_reader(app.clone(), stdout);
+                    spawn_log_reader(self.logs.clone(), stdout);
                 }
                 if let Some(stderr) = child.stderr.take() {
-                    spawn_log_reader(app.clone(), stderr);
+                    spawn_log_reader(self.logs.clone(), stderr);
                 }
                 self.child = Some(child);
                 self.set_state(app, "running");
-                self.log(app, &format!("Proxy started (PID {pid})"));
+                self.log(&format!("Proxy started (PID {pid})"));
             }
             Err(e) => {
                 self.set_state(app, "error");
-                self.log(app, &format!("Failed to start: {e}"));
+                self.log(&format!("Failed to start: {e}"));
             }
         }
     }
@@ -217,7 +223,7 @@ impl ProxyManager {
         }
 
         self.set_state(app, "stopped");
-        self.log(app, "Proxy stopped");
+        self.log("Proxy stopped");
     }
 }
 
@@ -228,13 +234,13 @@ fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', "'\\''"))
 }
 
-/// Streams a child's stdout/stderr into the activity log line-by-line so
-/// the proxy binary's own output is visible in the UI, not just our
-/// start/stop/error messages.
-fn spawn_log_reader<R: std::io::Read + Send + 'static>(app: AppHandle, stream: R) {
+/// Streams a child's stdout/stderr into the shared log buffer line-by-line.
+/// Deliberately does not emit per line: under download load the proxy can
+/// produce thousands of lines a second.
+fn spawn_log_reader<R: std::io::Read + Send + 'static>(logs: Arc<LogBuffer>, stream: R) {
     std::thread::spawn(move || {
         for line in BufReader::new(stream).lines().map_while(Result::ok) {
-            let _ = app.emit("log-message", line);
+            logs.push(line);
         }
     });
 }
@@ -282,11 +288,21 @@ fn wait_with_timeout(child: &mut Child, timeout: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logbuf::LogBuffer;
+    use std::sync::Arc;
 
     #[test]
     fn new_manager_starts_stopped() {
-        let manager = ProxyManager::new();
+        let manager = ProxyManager::new(Arc::new(LogBuffer::new()));
         assert_eq!(manager.state(), "stopped");
         assert!(!manager.is_running());
+    }
+
+    #[test]
+    fn manager_logs_land_in_shared_buffer_not_ipc() {
+        let logs = Arc::new(LogBuffer::new());
+        let manager = ProxyManager::new(logs.clone());
+        manager.log("hello");
+        assert_eq!(logs.snapshot(), vec!["hello".to_string()]);
     }
 }

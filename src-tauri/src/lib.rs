@@ -5,14 +5,16 @@ mod logbuf;
 mod proxy;
 mod tray;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Listener, Manager};
 
 use config::Config;
+use logbuf::LogBuffer;
 use proxy::ProxyManager;
 
 struct AppState {
     proxy: Mutex<ProxyManager>,
+    logs: Arc<LogBuffer>,
 }
 
 #[tauri::command]
@@ -67,11 +69,27 @@ fn set_autostart(app: tauri::AppHandle, enable: bool) -> Result<(), String> {
     autostart::toggle_autostart(enable, &exe.to_string_lossy())
 }
 
+/// The frontend only wants log traffic while the Activity section is open;
+/// with it closed, lines still accumulate in the buffer but no IPC happens.
+#[tauri::command]
+fn set_log_streaming(state: tauri::State<AppState>, enabled: bool) {
+    state.logs.set_streaming(enabled);
+}
+
+/// Backfill so opening Activity shows recent history, not an empty panel.
+#[tauri::command]
+fn get_log_buffer(state: tauri::State<AppState>) -> Vec<String> {
+    state.logs.snapshot()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let logs = Arc::new(LogBuffer::new());
+
     tauri::Builder::default()
         .manage(AppState {
-            proxy: Mutex::new(ProxyManager::new()),
+            proxy: Mutex::new(ProxyManager::new(logs.clone())),
+            logs: logs.clone(),
         })
         .invoke_handler(tauri::generate_handler![
             load_config,
@@ -80,9 +98,12 @@ pub fn run() {
             stop_proxy,
             get_autostart_enabled,
             set_autostart,
+            set_log_streaming,
+            get_log_buffer,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             tray::setup_tray(app.handle())?;
+            logs.clone().spawn_flusher(app.handle().clone());
             let handle = app.handle().clone();
             app.listen("tray-start-requested", move |_| {
                 let _ = handle.emit("frontend-start-requested", ());

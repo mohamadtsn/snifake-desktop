@@ -86,7 +86,23 @@ fn get_log_buffer(state: tauri::State<AppState>) -> Vec<String> {
 pub fn run() {
     let logs = Arc::new(LogBuffer::new());
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // Must be registered before every other plugin. Without it, launching
+    // the app again from the desktop launcher starts a second process that
+    // would spawn a second *elevated* proxy on the same port.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }));
+    }
+
+    builder
         .manage(AppState {
             proxy: Mutex::new(ProxyManager::new(logs.clone())),
             logs: logs.clone(),

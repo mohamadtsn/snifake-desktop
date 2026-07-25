@@ -13,13 +13,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { TitleBar } from "@/components/TitleBar";
-import { StatusCard } from "@/components/StatusCard";
-import { ConfigForm, ConfigFormHandle } from "@/components/ConfigForm";
-import { ActionBar } from "@/components/ActionBar";
-import { LogPanel } from "@/components/LogPanel";
+import { StatusHero } from "@/components/StatusHero";
+import { PrimaryAction } from "@/components/PrimaryAction";
+import { ConnectionSection, ConfigFormHandle } from "@/components/ConnectionSection";
+import { ActivitySection } from "@/components/ActivitySection";
+import { SettingsRow } from "@/components/SettingsRow";
 import { Config, ProxyState } from "@/types";
-
-const MAX_LOG_LINES = 500;
 
 const DEFAULT_CONFIG: Config = {
   LISTEN_HOST: "127.0.0.1",
@@ -34,7 +33,8 @@ export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [state, setState] = useState<ProxyState>("stopped");
   const [autostart, setAutostart] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
   const formRef = useRef<ConfigFormHandle>(null);
@@ -53,16 +53,12 @@ export default function App() {
 
   useEffect(() => {
     const unlistenState = listen<ProxyState>("state-changed", (e) => setState(e.payload));
-    const unlistenLog = listen<string>("log-message", (e) =>
-      setLogs((prev) => [...prev, e.payload].slice(-MAX_LOG_LINES))
-    );
     const unlistenTrayStart = listen("frontend-start-requested", () => handleStart());
     const unlistenTrayStop = listen("frontend-stop-requested", () => handleStop());
     const unlistenQuit = listen("frontend-quit-requested", () => setExitDialogOpen(true));
 
     return () => {
       unlistenState.then((f) => f());
-      unlistenLog.then((f) => f());
       unlistenTrayStart.then((f) => f());
       unlistenTrayStop.then((f) => f());
       unlistenQuit.then((f) => f());
@@ -75,6 +71,8 @@ export default function App() {
     if (!form) return null;
     const { valid, error } = form.validate();
     if (!valid) {
+      // Surface the offending field, not just the message.
+      setConnectionOpen(true);
       setErrorDialog(error);
       return null;
     }
@@ -97,7 +95,6 @@ export default function App() {
     if (!value) return;
     setConfig(value);
     await invoke("save_config", { cfg: value });
-    setLogs((prev) => [...prev, "Config saved"].slice(-MAX_LOG_LINES));
   }
 
   async function handleAutostartToggle(checked: boolean) {
@@ -113,35 +110,35 @@ export default function App() {
   if (!configLoaded) return null;
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden rounded-[28px] border border-border bg-bg">
-      <div className="pointer-events-none absolute inset-x-0 -top-32 h-72 bg-[radial-gradient(closest-side,theme(colors.primary/22%),transparent)]" />
+    <div className="shell flex h-screen flex-col overflow-hidden">
       <TitleBar />
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-3.5">
-        <StatusCard state={state} />
-        <ConfigForm ref={formRef} initial={config} />
-        <ActionBar
-          state={state}
-          autostart={autostart}
-          onStart={handleStart}
-          onStop={handleStop}
+
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 pt-1 pb-4">
+        <StatusHero state={state} sni={config.FAKE_SNI} />
+        <PrimaryAction state={state} onStart={handleStart} onStop={handleStop} />
+        <ConnectionSection
+          ref={formRef}
+          initial={config}
+          saved={config}
           onSave={handleSave}
-          onExit={() => setExitDialogOpen(true)}
-          onAutostartToggle={handleAutostartToggle}
+          open={connectionOpen}
+          onOpenChange={setConnectionOpen}
         />
-        <LogPanel lines={logs} />
+        <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
+        <div className="flex-1" />
+        <div className="h-px bg-hairline" />
+        <SettingsRow autostart={autostart} onAutostartToggle={handleAutostartToggle} />
       </div>
 
       <AlertDialog open={exitDialogOpen} onOpenChange={setExitDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Exit SNI Spoof</AlertDialogTitle>
-            <AlertDialogDescription>
-              Quit SNI Spoof and stop the proxy?
-            </AlertDialogDescription>
+            <AlertDialogTitle>Quit SNI Spoof?</AlertDialogTitle>
+            <AlertDialogDescription>The proxy will be stopped.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>No</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmExit}>Yes</AlertDialogAction>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmExit}>Quit</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -149,7 +146,7 @@ export default function App() {
       <AlertDialog open={errorDialog !== null} onOpenChange={() => setErrorDialog(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Invalid Configuration</AlertDialogTitle>
+            <AlertDialogTitle>Invalid configuration</AlertDialogTitle>
             <AlertDialogDescription>{errorDialog}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -6,22 +6,42 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-bg: #060a17;
-  --color-bg-mid: #0b1730;
-  --color-bg-end: #0e1f42;
-  --color-surface: #13233f;
-  --color-surface-light: #1c3560;
-  --color-accent: #2563eb;
-  --color-primary: #3b82f6;
-  --color-primary-hover: #60a5fa;
-  --color-success: #22c55e;
-  --color-success-hover: #16a34a;
-  --color-danger: #f43f5e;
-  --color-danger-hover: #e11d48;
-  --color-warning: #f59e0b;
-  --color-text: #eaf1ff;
-  --color-text-dim: #8ea3c9;
-  --radius-glass: 22px;
+  /* Surfaces — exactly two depth levels. The shell is the only element
+     carrying backdrop-filter; everything above it is opaque or a flat
+     translucent fill, because WebKitGTK re-blurs a backdrop layer on every
+     repaint of anything above it. */
+  --color-shell: #070b16;
+  --color-shell-edge: rgba(150, 185, 255, 0.14);
+  --color-raised: rgba(255, 255, 255, 0.045);
+  --color-raised-hover: rgba(255, 255, 255, 0.075);
+  --color-sunken: rgba(4, 7, 15, 0.55);
+  --color-hairline: rgba(255, 255, 255, 0.08);
+  --color-hairline-strong: rgba(255, 255, 255, 0.14);
+
+  /* Text — three steps, not five. Each clears 4.5:1 on --color-shell. */
+  --color-text: #f2f5fb;
+  --color-dim: #9aa8c2;
+  --color-faint: #78859e;
+
+  /* Accent + state. Named `brand`, not `accent`: the `@theme inline` block
+     below re-maps --color-accent onto shadcn's muted hover token, and the
+     later declaration would win. */
+  --color-brand: #4f8dff;
+  --color-brand-press: #3b74e0;
+  --color-st-stopped: #7c8aa5;
+  --color-st-starting: #fbbf24;
+  --color-st-running: #34d399;
+  --color-st-error: #fb7185;
+
+  /* Motion. Quint-out for anything travelling; spring for anything
+     announcing a state change; the sheet curve for height. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --radius-shell: 20px;
+  --radius-card: 14px;
+  --radius-control: 11px;
 }
 
 html, body, #root {
@@ -44,16 +64,115 @@ textarea {
   -webkit-user-select: text;
 }
 
-.glass-panel {
-  background: linear-gradient(155deg, rgba(96, 165, 250, 0.16) 0%, rgba(37, 99, 235, 0.08) 55%, rgba(15, 23, 42, 0.22) 100%);
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
-  border: 1px solid rgba(147, 197, 253, 0.22);
-  border-top-color: rgba(191, 219, 254, 0.35);
-  border-radius: var(--radius-glass);
+/* Level 1 — the window itself. The only backdrop-filter in the app. */
+.shell {
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(79, 141, 255, 0.16), transparent 62%),
+    var(--color-shell);
+  border: 1px solid var(--color-shell-edge);
+  border-radius: var(--radius-shell);
   box-shadow:
-    0 12px 40px rgba(2, 6, 23, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 24px 60px rgba(2, 5, 14, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+/* Level 2 — a raised card. Flat fill, no blur: these sit above the shell's
+   gradient and any blur here would repaint on every state change. */
+.raised {
+  background: var(--color-raised);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-card);
+}
+
+/* --- Status orb -------------------------------------------------------
+   Colour lives in --orb, set per state by StatusHero. Only transform and
+   opacity animate, so WebKitGTK composites the pulse without repainting. */
+.orb {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--orb) 92%, white), var(--orb) 62%, color-mix(in oklab, var(--orb) 55%, black));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--orb) 40%, transparent);
+  transition: background 420ms var(--ease-out-quint);
+  animation: orb-pop 380ms var(--ease-spring);
+  will-change: transform;
+}
+
+.orb::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, color-mix(in oklab, var(--orb) 42%, transparent), transparent 68%);
+  opacity: 0.85;
+}
+
+.orb[data-state="running"] {
+  animation:
+    orb-pop 380ms var(--ease-spring),
+    orb-breathe 2600ms var(--ease-out-quint) 380ms infinite;
+}
+
+@keyframes orb-pop {
+  from { transform: scale(0.86); }
+  to   { transform: scale(1); }
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.045); }
+}
+
+/* --- Base UI Collapsible panel ---------------------------------------
+   Base UI exposes the measured height as --collapsible-panel-height, so
+   height can be keyframed without a JS measure pass. */
+.disclosure-panel {
+  overflow: hidden;
+}
+
+.disclosure-panel[data-open] {
+  animation: panel-open 260ms var(--ease-sheet);
+}
+
+.disclosure-panel[data-closed] {
+  animation: panel-close 200ms var(--ease-sheet);
+}
+
+@keyframes panel-open {
+  from { height: 0; opacity: 0; }
+  to   { height: var(--collapsible-panel-height); opacity: 1; }
+}
+
+@keyframes panel-close {
+  from { height: var(--collapsible-panel-height); opacity: 1; }
+  to   { height: 0; opacity: 0; }
+}
+
+/* --- Log scroller -----------------------------------------------------
+   Opaque, no blur, no shadow: this is the one surface that repaints
+   continuously while the proxy is streaming. */
+.log-scroll {
+  background: var(--color-sunken);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-control);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  contain: content;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb,
+  .orb[data-state="running"],
+  .disclosure-panel[data-open],
+  .disclosure-panel[data-closed] {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+  }
 }
 
 @theme inline {

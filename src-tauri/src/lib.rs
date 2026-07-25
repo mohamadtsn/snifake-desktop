@@ -1,6 +1,7 @@
 mod auth;
 mod autostart;
 mod config;
+mod logbuf;
 mod proxy;
 mod tray;
 

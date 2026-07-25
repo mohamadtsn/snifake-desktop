@@ -1,5 +1,4 @@
 mod auth;
-mod autostart;
 mod config;
 mod logbuf;
 mod proxy;
@@ -55,20 +54,6 @@ fn stop_proxy(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<()
     Ok(())
 }
 
-#[tauri::command]
-fn get_autostart_enabled() -> bool {
-    autostart::is_autostart_enabled()
-}
-
-#[tauri::command]
-fn set_autostart(app: tauri::AppHandle, enable: bool) -> Result<(), String> {
-    let exe = app
-        .path()
-        .resolve("", tauri::path::BaseDirectory::Executable)
-        .map_err(|e| e.to_string())?;
-    autostart::toggle_autostart(enable, &exe.to_string_lossy())
-}
-
 /// The frontend only wants log traffic while the Activity section is open;
 /// with it closed, lines still accumulate in the buffer but no IPC happens.
 #[tauri::command]
@@ -112,8 +97,6 @@ pub fn run() {
             save_config,
             start_proxy,
             stop_proxy,
-            get_autostart_enabled,
-            set_autostart,
             set_log_streaming,
             get_log_buffer,
         ])

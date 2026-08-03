@@ -5,6 +5,7 @@
 //! actually runs as root.
 
 pub mod hello;
+pub mod netpkt;
 pub mod proto;
 
 #[cfg(test)]

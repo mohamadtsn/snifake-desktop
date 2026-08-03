@@ -31,14 +31,20 @@ impl Captured {
 pub const RECV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 pub trait Capture: Send {
-    /// Waits up to [`RECV_TIMEOUT`] for the next frame.
+    /// Waits up to [`RECV_TIMEOUT`] for the next IPv4 packet.
     ///
-    /// Returns `Ok(true)` with `out` filled, or `Ok(false)` if the interval
-    /// elapsed with no packet — a timeout is a normal outcome, never an error.
-    /// Every backend must honour it (Linux/macOS via `SO_RCVTIMEO`, Windows
-    /// via `WinDivertShutdown`): it is the only cancellation point the sniff
-    /// thread has, so a backend that blocks indefinitely leaks that thread and
-    /// its socket on every stop.
+    /// Returns `Ok(true)` with `out` filled, or `Ok(false)` for "nothing for
+    /// you this call" — which means *either* the interval elapsed *or* a frame
+    /// arrived and the backend filtered it out (not IPv4, too short to hold a
+    /// link header). Neither is an error, and a caller must not treat `false`
+    /// as a signal that the link is idle.
+    ///
+    /// Every backend must return within roughly [`RECV_TIMEOUT`] (Linux/macOS
+    /// via `SO_RCVTIMEO`, Windows via `WinDivertShutdown`) and must not loop
+    /// internally on rejected frames — this is the only cancellation point the
+    /// sniff thread has. A backend that blocks indefinitely, or that spins on a
+    /// busy interface until an IPv4 packet turns up, leaks that thread and its
+    /// socket on every stop.
     fn recv(&mut self, out: &mut Captured) -> io::Result<bool>;
     /// Transmits a packet built by `netpkt::build_fake_packet`.
     fn send(&mut self, pkt: &Captured) -> io::Result<()>;

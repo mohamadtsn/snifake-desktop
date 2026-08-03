@@ -107,11 +107,14 @@ impl Capture for AfPacket {
             }
             let n = (n as usize).min(self.buf.len());
             out.clear();
+            // A rejected frame hands control back rather than looping, so a busy
+            // interface full of IPv6/ARP/VLAN traffic cannot keep us in here past
+            // one timeout. The caller re-enters after checking its stop flag.
             if n < ETH_HDR_LEN {
-                continue;
+                return Ok(false);
             }
             if u16::from_be_bytes([self.buf[12], self.buf[13]]) != ETH_P_IP {
-                continue;
+                return Ok(false);
             }
             let mut l2 = [0u8; ETH_HDR_LEN];
             l2.copy_from_slice(&self.buf[..ETH_HDR_LEN]);
@@ -161,25 +164,33 @@ mod tests {
     /// The whole point of SO_RCVTIMEO: on a quiet interface `recv` must come
     /// back so the sniff loop can check for a stop request. If the timeout is
     /// missing this test hangs; if EAGAIN is mishandled it fails with an Err.
+    ///
+    /// Bound to loopback, which carries no traffic in the build container, so
+    /// `Ok(false)` here can only be the timeout firing — the assertions below
+    /// are unconditional rather than "if we happened to time out".
     #[test]
     fn recv_returns_a_timeout_instead_of_blocking_forever() {
-        // Needs CAP_NET_RAW; skip where the test runner does not have it.
+        // AF_PACKET needs CAP_NET_RAW. The build container has it, but a bare
+        // `cargo test` on a dev host may not, and a test cannot tell "no
+        // permission" from "feature broken" — so skip loudly instead of
+        // failing. A silent green here would hide nothing: the assertions
+        // below are the only thing this test does.
         let mut cap = match AfPacket::open(1 /* lo */) {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("skipping: cannot open AF_PACKET socket ({e})");
+                eprintln!("SKIPPED recv timeout test: no AF_PACKET socket ({e})");
                 return;
             }
         };
         let mut pkt = Captured::default();
         let start = std::time::Instant::now();
         let got = cap.recv(&mut pkt).expect("a timeout must not be an error");
-        if !got {
-            assert!(pkt.ip.is_empty(), "a timeout must not yield a packet");
-            assert!(
-                start.elapsed() >= RECV_TIMEOUT / 2,
-                "returned far too early to be the timeout"
-            );
-        }
+        assert!(!got, "loopback is quiet; recv should have timed out");
+        assert!(pkt.ip.is_empty(), "a timeout must not yield a packet");
+        assert!(
+            start.elapsed() >= RECV_TIMEOUT / 2,
+            "returned in {:?} — too early to be the {RECV_TIMEOUT:?} timeout",
+            start.elapsed()
+        );
     }
 }

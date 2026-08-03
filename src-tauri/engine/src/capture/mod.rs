@@ -39,17 +39,23 @@ pub trait Capture: Send {
     /// link header). Neither is an error, and a caller must not treat `false`
     /// as a signal that the link is idle.
     ///
-    /// Every backend must return within roughly [`RECV_TIMEOUT`] (Linux/macOS
-    /// via `SO_RCVTIMEO`, Windows via `WinDivertShutdown`) and must not loop
-    /// internally on rejected frames — this is the only cancellation point the
-    /// sniff thread has. A backend that blocks indefinitely, or that spins on a
-    /// busy interface until an IPv4 packet turns up, leaks that thread and its
-    /// socket on every stop.
+    /// This is the only cancellation point the sniff thread has, so a call must
+    /// cost at most one read from the kernel plus one [`RECV_TIMEOUT`] wait
+    /// (Linux `SO_RCVTIMEO`, macOS `BIOCSRTIMEOUT`, Windows
+    /// `WinDivertShutdown`). Draining a batch the kernel already handed over is
+    /// fine — that is bounded — but a backend must never block indefinitely or
+    /// keep reading until an IPv4 packet turns up: on a busy interface that
+    /// leaks the thread and its socket on every stop.
     fn recv(&mut self, out: &mut Captured) -> io::Result<bool>;
     /// Transmits a packet built by `netpkt::build_fake_packet`.
     fn send(&mut self, pkt: &Captured) -> io::Result<()>;
 }
 
+/// The macOS backend's wire-format half, split out because it needs no
+/// syscalls — so it compiles and is tested on Linux too, where the rest of
+/// `macos.rs` cannot be built at all.
+#[cfg(any(target_os = "macos", test))]
+mod bpf;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]

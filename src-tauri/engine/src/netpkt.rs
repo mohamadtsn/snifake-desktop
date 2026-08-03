@@ -41,6 +41,14 @@ pub fn parse_ipv4_tcp(ip: &[u8]) -> Option<TcpView<'_>> {
     if data_off < 20 || tcp.len() < data_off {
         return None;
     }
+    // Payload length comes from the IP total-length field, never from the
+    // captured slice: a 40-byte ACK arrives inside a 60-byte minimum-size
+    // Ethernet frame, so the trailing padding would otherwise be counted as
+    // payload and the third-handshake test (`payload_len == 0`) never fire.
+    let total = u16::from_be_bytes([ip[2], ip[3]]) as usize;
+    if total < ihl + data_off || total > ip.len() {
+        return None;
+    }
     Some(TcpView {
         src_ip: [ip[12], ip[13], ip[14], ip[15]],
         dst_ip: [ip[16], ip[17], ip[18], ip[19]],
@@ -49,7 +57,7 @@ pub fn parse_ipv4_tcp(ip: &[u8]) -> Option<TcpView<'_>> {
         seq: u32::from_be_bytes([tcp[4], tcp[5], tcp[6], tcp[7]]),
         ack: u32::from_be_bytes([tcp[8], tcp[9], tcp[10], tcp[11]]),
         flags: tcp[13],
-        payload_len: tcp.len() - data_off,
+        payload_len: total - ihl - data_off,
         _ip: ip,
     })
 }
@@ -81,7 +89,12 @@ pub fn ip_checksum(iph: &[u8]) -> u16 {
     fold(sum16(iph))
 }
 
+/// `iph` must be a full IPv4 header (at least 20 bytes) — the pseudo-header
+/// reads the addresses out of it. Callers get that for free from
+/// `parse_ipv4_tcp` or `build_fake_packet`, both of which reject anything
+/// shorter.
 pub fn tcp_checksum(iph: &[u8], tcp_and_payload: &[u8]) -> u16 {
+    debug_assert!(iph.len() >= 20, "tcp_checksum needs a full IPv4 header");
     let mut pseudo = [0u8; 12];
     pseudo[0..4].copy_from_slice(&iph[12..16]);
     pseudo[4..8].copy_from_slice(&iph[16..20]);
@@ -97,9 +110,23 @@ pub fn tcp_checksum(iph: &[u8], tcp_and_payload: &[u8]) -> u16 {
 /// The sequence number is set to `isn + 1 - fake.len()`, i.e. deliberately
 /// *before* the server's receive window: DPI parses the segment and
 /// whitelists the flow, the server discards it as out of window.
-pub fn build_fake_packet(template_ip: &[u8], isn: u32, fake: &[u8]) -> Vec<u8> {
+///
+/// Returns `None` for a template that is not a well-formed IPv4+TCP header
+/// pair — this runs as root on captured wire bytes, so a short or malformed
+/// template must not panic the engine (or, worse, silently write `PSH` into
+/// the IP header because `ihl` came out as 0).
+pub fn build_fake_packet(template_ip: &[u8], isn: u32, fake: &[u8]) -> Option<Vec<u8>> {
+    if template_ip.len() < 20 {
+        return None;
+    }
     let ihl = ip_hdr_len(template_ip);
+    if ihl < 20 || template_ip.len() < ihl + 20 {
+        return None;
+    }
     let tcp_hl = (template_ip[ihl + 12] >> 4) as usize * 4;
+    if tcp_hl < 20 || template_ip.len() < ihl + tcp_hl {
+        return None;
+    }
 
     let mut out = Vec::with_capacity(ihl + tcp_hl + fake.len());
     out.extend_from_slice(&template_ip[..ihl + tcp_hl]);
@@ -123,7 +150,7 @@ pub fn build_fake_packet(template_ip: &[u8], isn: u32, fake: &[u8]) -> Vec<u8> {
     let ck = tcp_checksum(&iph, &out[ihl..]);
     out[ihl + 16..ihl + 18].copy_from_slice(&ck.to_be_bytes());
 
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -176,6 +203,37 @@ mod tests {
     }
 
     #[test]
+    fn ethernet_padding_is_not_counted_as_payload() {
+        // A 40-byte ACK rides inside the 60-byte minimum Ethernet frame, so the
+        // backend hands us 46 bytes of "IP layer onward" — 6 of them padding.
+        let mut p = sample_ack();
+        p.resize(46, 0);
+        let v = parse_ipv4_tcp(&p).unwrap();
+        assert_eq!(v.payload_len, 0, "padding past IP total length is not payload");
+
+        // A truncated packet — total length claiming more than we captured —
+        // is rejected rather than reported with a bogus payload length.
+        let mut short = sample_ack();
+        short[2..4].copy_from_slice(&100u16.to_be_bytes());
+        assert!(parse_ipv4_tcp(&short).is_none());
+    }
+
+    #[test]
+    fn build_fake_packet_rejects_a_malformed_template() {
+        let fake = vec![0xAAu8; 517];
+        assert!(build_fake_packet(&[], 1000, &fake).is_none());
+        assert!(build_fake_packet(&sample_ack()[..30], 1000, &fake).is_none());
+
+        let mut bad_ihl = sample_ack();
+        bad_ihl[0] = 0x40; // IHL 0
+        assert!(build_fake_packet(&bad_ihl, 1000, &fake).is_none());
+
+        let mut bad_data_off = sample_ack();
+        bad_data_off[32] = 0; // data offset 0
+        assert!(build_fake_packet(&bad_data_off, 1000, &fake).is_none());
+    }
+
+    #[test]
     fn ip_checksum_of_a_header_with_a_correct_checksum_folds_to_zero() {
         let mut p = sample_ack();
         let ck = ip_checksum(&p[..20]);
@@ -196,7 +254,7 @@ mod tests {
         let tpl = sample_ack();
         let fake = vec![0xAAu8; 517];
         let isn = 1000u32;
-        let out = build_fake_packet(&tpl, isn, &fake);
+        let out = build_fake_packet(&tpl, isn, &fake).unwrap();
 
         assert_eq!(out.len(), 40 + 517);
         // IP total length updated

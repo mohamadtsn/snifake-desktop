@@ -1,7 +1,7 @@
 //! AF_PACKET SOCK_RAW bound to the egress interface. Needs CAP_NET_RAW,
 //! which in practice means running as root.
 
-use super::{Capture, Captured};
+use super::{Capture, Captured, RECV_TIMEOUT};
 use std::io;
 use std::os::fd::{AsRawFd, OwnedFd};
 
@@ -51,6 +51,26 @@ impl AfPacket {
             return Err(io::Error::last_os_error());
         }
 
+        // Without this the sniff thread would sit in recvfrom forever on a
+        // quiet interface and could never observe a stop request.
+        let tv = libc::timeval {
+            tv_sec: RECV_TIMEOUT.as_secs() as libc::time_t,
+            tv_usec: RECV_TIMEOUT.subsec_micros() as libc::suseconds_t,
+        };
+        // SAFETY: tv is an initialised timeval of the given length.
+        let rc = unsafe {
+            libc::setsockopt(
+                fd.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_RCVTIMEO,
+                &tv as *const _ as *const libc::c_void,
+                std::mem::size_of::<libc::timeval>() as libc::socklen_t,
+            )
+        };
+        if rc < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
         Ok(AfPacket {
             fd,
             ifindex,
@@ -60,7 +80,7 @@ impl AfPacket {
 }
 
 impl Capture for AfPacket {
-    fn recv(&mut self, out: &mut Captured) -> io::Result<()> {
+    fn recv(&mut self, out: &mut Captured) -> io::Result<bool> {
         loop {
             // SAFETY: recvfrom into a buffer we own, length-checked below.
             let n = unsafe {
@@ -75,10 +95,15 @@ impl Capture for AfPacket {
             };
             if n < 0 {
                 let err = io::Error::last_os_error();
-                if err.kind() == io::ErrorKind::Interrupted {
-                    continue;
-                }
-                return Err(err);
+                return match err.kind() {
+                    io::ErrorKind::Interrupted => continue,
+                    // SO_RCVTIMEO expiry: no packet this interval, not a fault.
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => {
+                        out.clear();
+                        Ok(false)
+                    }
+                    _ => Err(err),
+                };
             }
             let n = (n as usize).min(self.buf.len());
             out.clear();
@@ -92,7 +117,7 @@ impl Capture for AfPacket {
             l2.copy_from_slice(&self.buf[..ETH_HDR_LEN]);
             out.l2 = Some(l2);
             out.ip.extend_from_slice(&self.buf[ETH_HDR_LEN..n]);
-            return Ok(());
+            return Ok(true);
         }
     }
 
@@ -126,5 +151,35 @@ impl Capture for AfPacket {
             return Err(io::Error::last_os_error());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The whole point of SO_RCVTIMEO: on a quiet interface `recv` must come
+    /// back so the sniff loop can check for a stop request. If the timeout is
+    /// missing this test hangs; if EAGAIN is mishandled it fails with an Err.
+    #[test]
+    fn recv_returns_a_timeout_instead_of_blocking_forever() {
+        // Needs CAP_NET_RAW; skip where the test runner does not have it.
+        let mut cap = match AfPacket::open(1 /* lo */) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("skipping: cannot open AF_PACKET socket ({e})");
+                return;
+            }
+        };
+        let mut pkt = Captured::default();
+        let start = std::time::Instant::now();
+        let got = cap.recv(&mut pkt).expect("a timeout must not be an error");
+        if !got {
+            assert!(pkt.ip.is_empty(), "a timeout must not yield a packet");
+            assert!(
+                start.elapsed() >= RECV_TIMEOUT / 2,
+                "returned far too early to be the timeout"
+            );
+        }
     }
 }

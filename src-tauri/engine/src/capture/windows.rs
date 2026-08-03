@@ -14,7 +14,7 @@ impl WinDivert {
 }
 
 impl Capture for WinDivert {
-    fn recv(&mut self, _out: &mut Captured) -> io::Result<()> {
+    fn recv(&mut self, _out: &mut Captured) -> io::Result<bool> {
         unreachable!("WinDivert::open always fails in Phase 1")
     }
     fn send(&mut self, _pkt: &Captured) -> io::Result<()> {

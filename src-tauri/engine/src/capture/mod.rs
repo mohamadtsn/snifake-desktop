@@ -24,9 +24,22 @@ impl Captured {
     }
 }
 
+/// How long a backend may block in `recv` before it must report a timeout.
+///
+/// The sniff loop has no other way to notice `Command::Stop`, so this is also
+/// the worst-case latency between a stop request and the thread exiting.
+pub const RECV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
 pub trait Capture: Send {
-    /// Blocks until the next frame arrives, then fills `out`.
-    fn recv(&mut self, out: &mut Captured) -> io::Result<()>;
+    /// Waits up to [`RECV_TIMEOUT`] for the next frame.
+    ///
+    /// Returns `Ok(true)` with `out` filled, or `Ok(false)` if the interval
+    /// elapsed with no packet — a timeout is a normal outcome, never an error.
+    /// Every backend must honour it (Linux/macOS via `SO_RCVTIMEO`, Windows
+    /// via `WinDivertShutdown`): it is the only cancellation point the sniff
+    /// thread has, so a backend that blocks indefinitely leaks that thread and
+    /// its socket on every stop.
+    fn recv(&mut self, out: &mut Captured) -> io::Result<bool>;
     /// Transmits a packet built by `netpkt::build_fake_packet`.
     fn send(&mut self, pkt: &Captured) -> io::Result<()>;
 }

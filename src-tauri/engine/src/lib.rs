@@ -4,6 +4,7 @@
 //! compiled into the `sni-fake-engine` binary, which is the process that
 //! actually runs as root.
 
+pub mod hello;
 pub mod proto;
 
 #[cfg(test)]

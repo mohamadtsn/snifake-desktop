@@ -27,9 +27,18 @@ pub enum Action {
     ConfirmFake { port: u16, ack: u32 },
 }
 
-pub fn classify(v: &TcpView, local_ip: [u8; 4], connect_ip: [u8; 4]) -> Action {
-    let outbound = v.src_ip == local_ip && v.dst_ip == connect_ip;
-    let inbound = v.src_ip == connect_ip && v.dst_ip == local_ip;
+/// The upstream is matched as an **address and a port**, not an address alone:
+/// any other process on this host talking to the same server would otherwise
+/// be registered in the port table and — worse — have a spoofed segment
+/// injected into its connection by a process running as root.
+pub fn classify(
+    v: &TcpView,
+    local_ip: [u8; 4],
+    connect_ip: [u8; 4],
+    connect_port: u16,
+) -> Action {
+    let outbound = v.src_ip == local_ip && v.dst_ip == connect_ip && v.dst_port == connect_port;
+    let inbound = v.src_ip == connect_ip && v.dst_ip == local_ip && v.src_port == connect_port;
     let bare_ack = v.flags & ACK != 0 && v.flags & (SYN | FIN | RST) == 0 && v.payload_len == 0;
 
     if outbound {
@@ -152,6 +161,7 @@ pub fn run(
     table: Arc<PortTable>,
     local_ip: [u8; 4],
     connect_ip: [u8; 4],
+    connect_port: u16,
     sni: String,
     stop: Arc<AtomicBool>,
     log: LogFn,
@@ -171,7 +181,7 @@ pub fn run(
         let Some(view) = parse_ipv4_tcp(&pkt.ip) else {
             continue;
         };
-        let action = classify(&view, local_ip, connect_ip);
+        let action = classify(&view, local_ip, connect_ip, connect_port);
         if matches!(action, Action::Ignore) {
             continue;
         }
@@ -261,7 +271,7 @@ mod tests {
         let p = packet(LOCAL, REMOTE, 51000, 443, 900, 0, SYN, 0);
         let v = parse_ipv4_tcp(&p).unwrap();
         assert!(matches!(
-            classify(&v, LOCAL, REMOTE),
+            classify(&v, LOCAL, REMOTE, 443),
             Action::NewConnection {
                 port: 51000,
                 isn: 900
@@ -274,7 +284,7 @@ mod tests {
         let p = packet(LOCAL, REMOTE, 51000, 443, 901, 5, ACK, 0);
         let v = parse_ipv4_tcp(&p).unwrap();
         assert!(matches!(
-            classify(&v, LOCAL, REMOTE),
+            classify(&v, LOCAL, REMOTE, 443),
             Action::InjectFake { port: 51000 }
         ));
     }
@@ -283,7 +293,7 @@ mod tests {
     fn outbound_ack_with_payload_is_not_the_handshake_ack() {
         let p = packet(LOCAL, REMOTE, 51000, 443, 901, 5, ACK | PSH, 12);
         let v = parse_ipv4_tcp(&p).unwrap();
-        assert!(matches!(classify(&v, LOCAL, REMOTE), Action::Ignore));
+        assert!(matches!(classify(&v, LOCAL, REMOTE, 443), Action::Ignore));
     }
 
     #[test]
@@ -291,7 +301,7 @@ mod tests {
         let p = packet(REMOTE, LOCAL, 443, 51000, 5, 901, ACK, 0);
         let v = parse_ipv4_tcp(&p).unwrap();
         assert!(matches!(
-            classify(&v, LOCAL, REMOTE),
+            classify(&v, LOCAL, REMOTE, 443),
             Action::ConfirmFake {
                 port: 51000,
                 ack: 901
@@ -303,7 +313,7 @@ mod tests {
     fn traffic_to_an_unrelated_host_is_ignored() {
         let p = packet(LOCAL, [1, 1, 1, 1], 51000, 443, 900, 0, SYN, 0);
         let v = parse_ipv4_tcp(&p).unwrap();
-        assert!(matches!(classify(&v, LOCAL, REMOTE), Action::Ignore));
+        assert!(matches!(classify(&v, LOCAL, REMOTE, 443), Action::Ignore));
     }
 
     #[test]
@@ -350,14 +360,14 @@ mod tests {
     /// `Ok(false)` (timeout or filtered frame) must not be mistaken for an end
     /// of stream, and the stop flag must still be honoured through it.
     struct Idle {
-        calls: u32,
+        calls: Arc<std::sync::atomic::AtomicU32>,
         stop: Arc<std::sync::atomic::AtomicBool>,
     }
 
     impl crate::capture::Capture for Idle {
         fn recv(&mut self, _out: &mut Captured) -> std::io::Result<bool> {
-            self.calls += 1;
-            if self.calls == 3 {
+            let n = self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n == 3 {
                 self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             }
             Ok(false)
@@ -370,8 +380,9 @@ mod tests {
     #[test]
     fn sniff_loop_returns_when_stopped() {
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let cap = Box::new(Idle {
-            calls: 0,
+            calls: calls.clone(),
             stop: stop.clone(),
         });
         run(
@@ -379,9 +390,36 @@ mod tests {
             Arc::new(PortTable::default()),
             LOCAL,
             REMOTE,
+            443,
             "example.com".into(),
             stop,
             Arc::new(|_, _| {}),
         );
+        // Exactly three: fewer means an Ok(false) ended the loop, more means
+        // the stop flag was not honoured. Termination alone proves neither.
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::Relaxed),
+            3,
+            "Ok(false) must not end the loop, and stop must end it at once"
+        );
+    }
+
+    #[test]
+    fn the_upstream_port_must_match_in_both_directions() {
+        // Another process on this host talking to the same server on a
+        // different port is none of our business — registering it would leak a
+        // table entry, and injecting into it would corrupt someone else's TCP
+        // stream from a root process.
+        let out = packet(LOCAL, REMOTE, 51000, 8443, 900, 0, SYN, 0);
+        let v = parse_ipv4_tcp(&out).unwrap();
+        assert!(matches!(classify(&v, LOCAL, REMOTE, 443), Action::Ignore));
+
+        let out_ack = packet(LOCAL, REMOTE, 51000, 8443, 901, 5, ACK, 0);
+        let v = parse_ipv4_tcp(&out_ack).unwrap();
+        assert!(matches!(classify(&v, LOCAL, REMOTE, 443), Action::Ignore));
+
+        let inb = packet(REMOTE, LOCAL, 8443, 51000, 5, 901, ACK, 0);
+        let v = parse_ipv4_tcp(&inb).unwrap();
+        assert!(matches!(classify(&v, LOCAL, REMOTE, 443), Action::Ignore));
     }
 }

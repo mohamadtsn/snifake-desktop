@@ -5,7 +5,7 @@
   "identifier": "com.snifake.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && cargo build --release -p sni-fake-engine",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -41,8 +41,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../sni-spoof-linux-amd64": "sni-spoof-linux-amd64",
-      "scripts/run-proxy.sh": "run-proxy.sh",
+      "target/release/sni-fake-engine": "sni-fake-engine",
       "scripts/install-sudoers.sh": "install-sudoers.sh"
     },
     "linux": {

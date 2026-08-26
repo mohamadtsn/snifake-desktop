@@ -11,6 +11,7 @@ pub mod hello;
 pub mod netpkt;
 pub mod proto;
 pub mod sniffer;
+pub mod validate;
 
 #[cfg(test)]
 mod tests {

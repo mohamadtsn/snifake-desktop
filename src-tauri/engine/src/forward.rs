@@ -94,7 +94,6 @@ impl Forwarder {
         let accept_listener = listener.try_clone().map_err(|e| e.to_string())?;
         let flag = running.clone();
         std::thread::spawn(move || {
-            let mut counter: u64 = 0;
             for stream in accept_listener.incoming() {
                 if !flag.load(Ordering::Relaxed) {
                     return;
@@ -106,13 +105,11 @@ impl Forwarder {
                         continue;
                     }
                 };
-                counter += 1;
-                let id = counter;
                 let table = table.clone();
                 let log = log.clone();
                 std::thread::spawn(move || {
-                    if let Err(e) = handle(id, client, upstream, table, &log) {
-                        log(LogLevel::Warn, format!("conn #{id}  {e}"));
+                    if let Err(e) = handle(client, upstream, table, &log) {
+                        log(LogLevel::Warn, e);
                     }
                 });
             }
@@ -148,8 +145,10 @@ fn poke_addr(mut addr: SocketAddr) -> SocketAddr {
     addr
 }
 
+/// Every message here is keyed on the local ephemeral port, because that is
+/// the only identifier the sniffer also has — the two log streams interleave
+/// per connection.
 fn handle(
-    id: u64,
     client: TcpStream,
     upstream: SocketAddr,
     table: Arc<PortTable>,
@@ -158,10 +157,7 @@ fn handle(
     let server = TcpStream::connect_timeout(&upstream, Duration::from_secs(5))
         .map_err(|e| format!("dial {upstream}: {e}"))?;
     let port = server.local_addr().map_err(|e| e.to_string())?.port();
-    log(
-        LogLevel::Info,
-        format!("conn #{id}  → {upstream} (local port {port})"),
-    );
+    log(LogLevel::Info, format!("conn #{port}  → {upstream}"));
 
     // The sniffer is the only other owner of this entry and it never evicts;
     // dropping the guard is what keeps the table from growing without bound,
@@ -184,13 +180,17 @@ fn handle(
             break g;
         }
         if std::time::Instant::now() >= deadline {
-            return Err("sniffer never saw this connection, aborting".into());
+            return Err(format!(
+                "conn #{port}  sniffer never saw this connection, aborting"
+            ));
         }
         std::thread::sleep(Duration::from_millis(1));
     };
 
     if !gate.wait(CONFIRM_TIMEOUT) {
-        return Err("timeout waiting for the server to ack ISN+1, aborting".into());
+        return Err(format!(
+            "conn #{port}  timeout waiting for the server to ack ISN+1, aborting"
+        ));
     }
 
     let up = server.try_clone().map_err(|e| e.to_string())?;
@@ -198,7 +198,7 @@ fn handle(
     let t = std::thread::spawn(move || pipe(down, up));
     pipe(server, client);
     let _ = t.join();
-    log(LogLevel::Info, format!("conn #{id}  closed"));
+    log(LogLevel::Info, format!("conn #{port}  closed"));
     Ok(())
 }
 

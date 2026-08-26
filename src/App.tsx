@@ -16,19 +16,10 @@ import { TitleBar } from "@/components/TitleBar";
 import { StatusControl } from "@/components/StatusControl";
 import { ConnectionSection, ConfigFormHandle } from "@/components/ConnectionSection";
 import { ActivitySection } from "@/components/ActivitySection";
-import { Config, ProxyState } from "@/types";
-
-const DEFAULT_CONFIG: Config = {
-  LISTEN_HOST: "127.0.0.1",
-  LISTEN_PORT: 40443,
-  CONNECT_IP: "103.160.204.34",
-  CONNECT_PORT: 443,
-  FAKE_SNI: "chatgpt.com",
-};
+import { Profile, ProxyState, Store, activeProfile } from "@/types";
 
 export default function App() {
-  const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
-  const [configLoaded, setConfigLoaded] = useState(false);
+  const [store, setStore] = useState<Store | null>(null);
   const [state, setState] = useState<ProxyState>("stopped");
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -37,16 +28,13 @@ export default function App() {
   const formRef = useRef<ConfigFormHandle>(null);
 
   useEffect(() => {
-    (async () => {
-      setConfig(await invoke<Config>("load_config"));
-      setConfigLoaded(true);
-    })();
+    void invoke<Store>("list_profiles").then(setStore);
   }, []);
 
   useEffect(() => {
     const unlistenState = listen<ProxyState>("state-changed", (e) => setState(e.payload));
-    const unlistenTrayStart = listen("frontend-start-requested", () => handleStart());
-    const unlistenTrayStop = listen("frontend-stop-requested", () => handleStop());
+    const unlistenTrayStart = listen("frontend-start-requested", () => void handleStart());
+    const unlistenTrayStop = listen("frontend-stop-requested", () => void handleStop());
     const unlistenQuit = listen("frontend-quit-requested", () => setExitDialogOpen(true));
 
     return () => {
@@ -58,7 +46,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function currentConfigOrWarn(): Config | null {
+  function editedProfileOrWarn(): Profile | null {
     const form = formRef.current;
     if (!form) return null;
     const { valid, error } = form.validate();
@@ -71,11 +59,16 @@ export default function App() {
     return form.getValue();
   }
 
+  /** Saves whatever is in the form, then starts that profile. */
   async function handleStart() {
-    const value = currentConfigOrWarn();
-    if (!value) return;
-    setConfig(value);
-    await invoke("start_proxy", { cfg: value });
+    const edited = editedProfileOrWarn();
+    if (!edited) return;
+    setStore(await invoke<Store>("save_profile", { profile: edited }));
+    try {
+      await invoke("start_proxy", { id: edited.id });
+    } catch (e) {
+      setErrorDialog(String(e));
+    }
   }
 
   async function handleStop() {
@@ -83,30 +76,33 @@ export default function App() {
   }
 
   async function handleSave() {
-    const value = currentConfigOrWarn();
-    if (!value) return;
-    setConfig(value);
-    await invoke("save_config", { cfg: value });
+    const edited = editedProfileOrWarn();
+    if (!edited) return;
+    setStore(await invoke<Store>("save_profile", { profile: edited }));
   }
 
   async function confirmExit() {
     await invoke("stop_proxy");
+    await invoke("shutdown_engine");
     await getCurrentWindow().destroy();
   }
 
-  if (!configLoaded) return null;
+  if (!store) return null;
+  const profile = activeProfile(store);
+  if (!profile) return null;
 
   return (
     <div className="shell flex h-screen flex-col overflow-hidden">
       <TitleBar />
 
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 pt-3 pb-4">
-        <StatusControl state={state} config={config} onStart={handleStart} onStop={handleStop} />
+        <StatusControl state={state} profile={profile} onStart={handleStart} onStop={handleStop} />
         <div className="shrink-0">
           <ConnectionSection
+            key={profile.id}
             ref={formRef}
-            initial={config}
-            saved={config}
+            initial={profile}
+            saved={profile}
             onSave={handleSave}
             open={connectionOpen}
             onOpenChange={setConnectionOpen}

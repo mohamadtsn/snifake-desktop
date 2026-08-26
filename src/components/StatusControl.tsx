@@ -1,4 +1,4 @@
-import { Config, ProxyState, STATE_TEXT, STATE_SUBTITLE, STATE_ORB } from "@/types";
+import { Profile, ProxyState, STATE_TEXT, STATE_SUBTITLE, STATE_ORB } from "@/types";
 
 /**
  * Status and the primary action are one control, not two stacked ones. The
@@ -18,12 +18,12 @@ function Route({ label, value }: { label: string; value: string }) {
 
 export function StatusControl({
   state,
-  config,
+  profile,
   onStart,
   onStop,
 }: {
   state: ProxyState;
-  config: Config;
+  profile: Profile;
   onStart: () => void;
   onStop: () => void;
 }) {
@@ -80,9 +80,9 @@ export function StatusControl({
       <div className="mx-4 h-px bg-hairline" />
 
       <div className="flex flex-col gap-1.5 px-4 py-3">
-        <Route label="Listen" value={`${config.LISTEN_HOST}:${config.LISTEN_PORT}`} />
-        <Route label="Upstream" value={`${config.CONNECT_IP}:${config.CONNECT_PORT}`} />
-        <Route label="SNI" value={config.FAKE_SNI} />
+        <Route label="Listen" value={`${profile.LISTEN_HOST}:${profile.LISTEN_PORT}`} />
+        <Route label="Upstream" value={`${profile.CONNECT_IP}:${profile.CONNECT_PORT}`} />
+        <Route label="SNI" value={profile.FAKE_SNI} />
       </div>
     </div>
   );

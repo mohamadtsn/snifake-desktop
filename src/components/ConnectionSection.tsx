@@ -1,9 +1,9 @@
 import { forwardRef, useId, useImperativeHandle, useState } from "react";
 import { Disclosure } from "@/components/Disclosure";
-import { Config } from "@/types";
+import { Profile } from "@/types";
 
 export interface ConfigFormHandle {
-  getValue(): Config;
+  getValue(): Profile;
   validate(): { valid: boolean; error: string };
 }
 
@@ -72,8 +72,8 @@ function Field({
 export const ConnectionSection = forwardRef<
   ConfigFormHandle,
   {
-    initial: Config;
-    saved: Config;
+    initial: Profile;
+    saved: Profile;
     onSave: () => void;
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -87,6 +87,8 @@ export const ConnectionSection = forwardRef<
 
   useImperativeHandle(ref, () => ({
     getValue: () => ({
+      id: initial.id,
+      name: initial.name,
       LISTEN_HOST: host.trim(),
       LISTEN_PORT: Number(listenPort),
       CONNECT_IP: connectIp.trim(),

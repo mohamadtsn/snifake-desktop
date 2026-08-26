@@ -8,6 +8,7 @@ pub mod capture;
 pub mod hello;
 pub mod netpkt;
 pub mod proto;
+pub mod sniffer;
 
 #[cfg(test)]
 mod tests {

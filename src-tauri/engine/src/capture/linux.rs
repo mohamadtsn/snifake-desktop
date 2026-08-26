@@ -51,6 +51,32 @@ impl AfPacket {
             return Err(io::Error::last_os_error());
         }
 
+        // The whole pipeline assumes an Ethernet link: `recv` strips a 14-byte
+        // header and `send` puts it back. A tun/VPN or loopback interface hands
+        // us raw IP instead, so every frame would fail the header check, nothing
+        // would ever be classified, and — because the forwarder aborts
+        // unconfirmed connections — the user would lose connectivity entirely
+        // rather than merely go unspoofed. Refuse up front and say why.
+        let hatype = {
+            let mut got: libc::sockaddr_ll = unsafe { std::mem::zeroed() };
+            let mut len = std::mem::size_of::<libc::sockaddr_ll>() as libc::socklen_t;
+            // SAFETY: got/len describe a correctly sized sockaddr_ll out-param.
+            let rc = unsafe {
+                libc::getsockname(fd.as_raw_fd(), &mut got as *mut _ as *mut libc::sockaddr, &mut len)
+            };
+            if rc < 0 {
+                return Err(io::Error::last_os_error());
+            }
+            got.sll_hatype
+        };
+        if hatype != libc::ARPHRD_ETHER {
+            return Err(io::Error::other(format!(
+                "interface index {ifindex} has ARP hardware type {hatype}, not Ethernet \
+                 (ARPHRD_ETHER = {}) — only Ethernet interfaces are supported",
+                libc::ARPHRD_ETHER
+            )));
+        }
+
         // Without this the sniff thread would sit in recvfrom forever on a
         // quiet interface and could never observe a stop request.
         let tv = libc::timeval {
@@ -161,11 +187,47 @@ impl Capture for AfPacket {
 mod tests {
     use super::*;
 
+    /// `open` now refuses anything that is not ARPHRD_ETHER, so the tests need
+    /// a real Ethernet link rather than the loopback they used to borrow.
+    fn first_ethernet_ifindex() -> Option<u32> {
+        for entry in std::fs::read_dir("/sys/class/net").ok()? {
+            let entry = entry.ok()?;
+            let kind = std::fs::read_to_string(entry.path().join("type")).ok()?;
+            if kind.trim() != "1" {
+                continue;
+            }
+            let index = std::fs::read_to_string(entry.path().join("ifindex")).ok()?;
+            if let Ok(i) = index.trim().parse::<u32>() {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn a_non_ethernet_interface_is_refused() {
+        // Loopback is ARPHRD_LOOPBACK (772). If we cannot open a packet socket
+        // at all the error is about permission, not the datalink type — that is
+        // still a refusal, just not the one under test, so only assert when the
+        // message names the type.
+        match AfPacket::open(1 /* lo */) {
+            Ok(_) => panic!("loopback is not Ethernet and must be refused"),
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("not Ethernet") || e.kind() == io::ErrorKind::PermissionDenied,
+                    "unexpected error: {msg}"
+                );
+            }
+        }
+    }
+
     /// The whole point of SO_RCVTIMEO: on a quiet interface `recv` must come
     /// back so the sniff loop can check for a stop request. If the timeout is
     /// missing this test hangs; if EAGAIN is mishandled it fails with an Err.
     ///
-    /// Bound to loopback, which other tests in this suite do put traffic on,
+    /// Bound to the first Ethernet interface, which other tests in this suite
+    /// may put traffic on,
     /// so a frame may arrive before the interval elapses. That is not the case
     /// under test: retry until the link goes idle and the timeout actually
     /// fires, and fail if it never does.
@@ -176,7 +238,11 @@ mod tests {
         // permission" from "feature broken" — so skip loudly instead of
         // failing. A silent green here would hide nothing: the assertions
         // below are the only thing this test does.
-        let mut cap = match AfPacket::open(1 /* lo */) {
+        let Some(ifindex) = first_ethernet_ifindex() else {
+            eprintln!("SKIPPED recv timeout test: no Ethernet interface on this host");
+            return;
+        };
+        let mut cap = match AfPacket::open(ifindex) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("SKIPPED recv timeout test: no AF_PACKET socket ({e})");

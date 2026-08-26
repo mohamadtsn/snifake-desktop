@@ -101,7 +101,14 @@ impl EngineHost {
     fn set_state(&mut self, app: &AppHandle, state: &str) {
         self.state = state.to_string();
         let _ = app.emit("state-changed", state);
-        crate::tray::update_tray(app, state, &active_profile_name(app));
+        // Tray mutation must happen on the GTK main thread on Linux — doing it
+        // from a command's worker thread intermittently blanks the menu labels.
+        let handle = app.clone();
+        let state = state.to_string();
+        let _ = app.run_on_main_thread(move || {
+            let name = active_profile_name(&handle);
+            crate::tray::update_tray(&handle, &state, &name);
+        });
     }
 
     fn send(&mut self, cmd: &Command) -> Result<(), String> {

@@ -5,6 +5,8 @@
 //! actually runs as root.
 
 pub mod capture;
+#[cfg(unix)]
+pub mod forward;
 pub mod hello;
 pub mod netpkt;
 pub mod proto;

@@ -165,9 +165,10 @@ mod tests {
     /// back so the sniff loop can check for a stop request. If the timeout is
     /// missing this test hangs; if EAGAIN is mishandled it fails with an Err.
     ///
-    /// Bound to loopback, which carries no traffic in the build container, so
-    /// `Ok(false)` here can only be the timeout firing — the assertions below
-    /// are unconditional rather than "if we happened to time out".
+    /// Bound to loopback, which other tests in this suite do put traffic on,
+    /// so a frame may arrive before the interval elapses. That is not the case
+    /// under test: retry until the link goes idle and the timeout actually
+    /// fires, and fail if it never does.
     #[test]
     fn recv_returns_a_timeout_instead_of_blocking_forever() {
         // AF_PACKET needs CAP_NET_RAW. The build container has it, but a bare
@@ -183,14 +184,24 @@ mod tests {
             }
         };
         let mut pkt = Captured::default();
-        let start = std::time::Instant::now();
-        let got = cap.recv(&mut pkt).expect("a timeout must not be an error");
-        assert!(!got, "loopback is quiet; recv should have timed out");
-        assert!(pkt.ip.is_empty(), "a timeout must not yield a packet");
-        assert!(
-            start.elapsed() >= RECV_TIMEOUT / 2,
-            "returned in {:?} — too early to be the {RECV_TIMEOUT:?} timeout",
-            start.elapsed()
-        );
+        let deadline = std::time::Instant::now() + RECV_TIMEOUT * 8;
+        loop {
+            pkt.clear();
+            let start = std::time::Instant::now();
+            let got = cap.recv(&mut pkt).expect("a timeout must not be an error");
+            if !got {
+                assert!(pkt.ip.is_empty(), "a timeout must not yield a packet");
+                assert!(
+                    start.elapsed() >= RECV_TIMEOUT / 2,
+                    "returned in {:?} — too early to be the {RECV_TIMEOUT:?} timeout",
+                    start.elapsed()
+                );
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "loopback never went idle; recv never reported a timeout"
+            );
+        }
     }
 }

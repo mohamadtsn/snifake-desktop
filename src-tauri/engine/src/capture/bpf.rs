@@ -81,16 +81,20 @@ pub fn strip_ethernet(frame: &[u8]) -> Option<([u8; ETH_HDR_LEN], &[u8])> {
 // `libc` publishes only a handful of Darwin `BIOC*` constants (`BIOCSETF`,
 // `BIOCSRTIMEOUT`, `BIOCGRTIMEOUT`, `BIOCSETFNR`, `BIOCSSEESENT`, ...) — the
 // ones this backend needs to *configure* a device are missing, so we encode
-// them the way `<sys/ioccom.h>` does. The tests check that encoding against
-// the constants libc does publish.
+// them the way `<sys/ioccom.h>` does.
+//
+// The real check on this encoder is the `const _` block in `macos.rs`, which
+// runs it against every constant libc *does* publish for Darwin. That is where
+// `libc` is in scope, and a mismatch is a build error there. The tests below
+// only pin the values so a careless edit here is visible on Linux too.
 
-const IOC_OUT: u64 = 0x4000_0000;
-const IOC_IN: u64 = 0x8000_0000;
+pub(super) const IOC_OUT: u64 = 0x4000_0000;
+pub(super) const IOC_IN: u64 = 0x8000_0000;
 const IOCPARM_MASK: u64 = 0x1fff;
 /// The `'B'` ioctl group all `BIOC*` commands share.
 const GROUP: u64 = b'B' as u64;
 
-const fn bpf_ioc(dir: u64, num: u64, size: usize) -> u64 {
+pub(super) const fn bpf_ioc(dir: u64, num: u64, size: usize) -> u64 {
     dir | (((size as u64) & IOCPARM_MASK) << 16) | (GROUP << 8) | num
 }
 
@@ -106,6 +110,15 @@ pub const BIOCSETIF: u64 = bpf_ioc(IOC_IN, 108, 32);
 pub const BIOCIMMEDIATE: u64 = bpf_ioc(IOC_IN, 112, 4);
 /// `_IOW('B', 117, u_int)` — leave the source MAC of what we write alone.
 pub const BIOCSHDRCMPLT: u64 = bpf_ioc(IOC_IN, 117, 4);
+/// `_IOR('B', 106, u_int)` — the interface's datalink type. `strip_ethernet`
+/// is only correct for [`DLT_EN10MB`].
+pub const BIOCGDLT: u64 = bpf_ioc(IOC_OUT, 106, 4);
+
+/// 10Mb/s Ethernet, and by extension every modern Ethernet and Wi-Fi device.
+/// The only datalink whose frames [`strip_ethernet`] can read: a `utun*`, PPP
+/// or `DLT_NULL`/`DLT_LOOP` device hands back the IP header directly, with no
+/// 14-byte link header to strip.
+pub const DLT_EN10MB: u32 = 1;
 
 #[cfg(test)]
 mod tests {
@@ -137,26 +150,27 @@ mod tests {
         assert_eq!(bpf_word_align(18), 20);
     }
 
-    /// The encoding is shared by every `BIOC*` command, so agreeing with the
-    /// three constants libc publishes for Darwin is evidence for the five we
-    /// derive ourselves. Expected values are libc 0.2's apple tables.
+    /// Pins the derived values against hand-worked `<sys/ioccom.h>` arithmetic.
+    /// This is a transcription check, not a cross-check: it and the encoder
+    /// could share a mistake and both still agree. The `const _` block in
+    /// `macos.rs` is what actually tests the encoder against `libc`; this only
+    /// catches a careless edit without waiting for a Darwin build.
     #[test]
-    fn ioctl_encoding_matches_libcs_published_darwin_constants() {
-        // BIOCSSEESENT = _IOW('B', 119, u_int)
-        assert_eq!(bpf_ioc(IOC_IN, 119, 4), 0x8004_4277);
-        // BIOCSETF = _IOW('B', 103, struct bpf_program) — 16 bytes on LP64
-        assert_eq!(bpf_ioc(IOC_IN, 103, 16), 0x8010_4267);
-        // BIOCGRTIMEOUT = _IOR('B', 110, struct timeval) — 16 bytes on LP64
-        assert_eq!(bpf_ioc(IOC_OUT, 110, 16), 0x4010_426e);
-    }
-
-    #[test]
-    fn bioc_constants_have_the_expected_values() {
+    fn bioc_constants_match_hand_worked_ioccom_arithmetic() {
         assert_eq!(BIOCGBLEN, 0x4004_4266);
         assert_eq!(BIOCSBLEN, 0xc004_4266);
+        assert_eq!(BIOCGDLT, 0x4004_426a);
         assert_eq!(BIOCSETIF, 0x8020_426c);
         assert_eq!(BIOCIMMEDIATE, 0x8004_4270);
         assert_eq!(BIOCSHDRCMPLT, 0x8004_4275);
+    }
+
+    /// `DLT_EN10MB` is 1 in `<net/bpf.h>` on every BSD. Pinned because
+    /// `Bpf::open` compares `BIOCGDLT`'s answer against it and refuses to
+    /// start on anything else.
+    #[test]
+    fn dlt_en10mb_is_the_bsd_ethernet_datalink_number() {
+        assert_eq!(DLT_EN10MB, 1);
     }
 
     #[test]

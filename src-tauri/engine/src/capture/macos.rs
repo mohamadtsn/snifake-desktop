@@ -4,7 +4,7 @@
 //! Only the syscall wrapping lives here; the wire format it walks is in
 //! `super::bpf`, which compiles and is tested on any host.
 
-use super::bpf::{next_record, strip_ethernet, ETH_HDR_LEN};
+use super::bpf::{self, next_record, strip_ethernet, ETH_HDR_LEN};
 use super::{Capture, Captured, RECV_TIMEOUT};
 use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -22,14 +22,32 @@ struct IfReq {
     _pad: [u8; 16],
 }
 
-// The two layouts this backend hardcodes, checked against the real headers on
-// the only platform that compiles this file. A mismatch is a build error
-// rather than a mystery at runtime.
+// Everything `bpf.rs` hardcodes, checked against the real headers on the only
+// platform that compiles this file. A mismatch is a build error rather than a
+// mystery at runtime.
 const _: () = {
     assert!(std::mem::size_of::<IfReq>() == 32);
     assert!(std::mem::offset_of!(libc::bpf_hdr, bh_caplen) == 8);
     assert!(std::mem::offset_of!(libc::bpf_hdr, bh_datalen) == 12);
     assert!(std::mem::offset_of!(libc::bpf_hdr, bh_hdrlen) == 16);
+
+    // The `BIOC*` commands this backend needs are not in libc, so `bpf_ioc`
+    // derives them — but the encoding is shared by the whole group, so running
+    // it against every constant libc *does* publish for Darwin is a real test
+    // of the ones we derive. Also pins LP64: the 16-byte arguments are 8 bytes
+    // on a 32-bit Darwin userland, where `BIOCSETIF`'s `struct ifreq` would be
+    // the wrong size too.
+    use bpf::{bpf_ioc, IOC_IN, IOC_OUT};
+    assert!(bpf_ioc(IOC_IN, 103, 16) == libc::BIOCSETF as u64);
+    assert!(bpf_ioc(IOC_IN, 109, 16) == libc::BIOCSRTIMEOUT as u64);
+    assert!(bpf_ioc(IOC_OUT, 110, 16) == libc::BIOCGRTIMEOUT as u64);
+    assert!(bpf_ioc(IOC_OUT, 114, 4) == libc::BIOCGRSIG as u64);
+    assert!(bpf_ioc(IOC_IN, 115, 4) == libc::BIOCSRSIG as u64);
+    assert!(bpf_ioc(IOC_OUT, 118, 4) == libc::BIOCGSEESENT as u64);
+    assert!(bpf_ioc(IOC_IN, 119, 4) == libc::BIOCSSEESENT as u64);
+    assert!(bpf_ioc(IOC_IN, 120, 4) == libc::BIOCSDLT as u64);
+    assert!(bpf_ioc(IOC_IN | IOC_OUT, 121, 12) == libc::BIOCGDLTLIST as u64);
+    assert!(bpf_ioc(IOC_IN, 126, 16) == libc::BIOCSETFNR as u64);
 };
 
 pub struct Bpf {
@@ -109,6 +127,25 @@ impl Bpf {
                 super::bpf::BIOCSETIF,
                 &mut ifr as *mut IfReq as *mut _,
             )?;
+
+            // Only meaningful once a device is attached. `strip_ethernet` reads
+            // a 14-byte link header; a utun/PPP/loopback device hands back a
+            // bare IP header instead, so every frame would be dropped as a runt
+            // and the backend would capture nothing at all. Refuse instead.
+            let mut dlt: u32 = 0;
+            ioctl(
+                &fd,
+                "BIOCGDLT",
+                super::bpf::BIOCGDLT,
+                &mut dlt as *mut u32 as *mut _,
+            )?;
+            if dlt != super::bpf::DLT_EN10MB {
+                return Err(io::Error::other(format!(
+                    "interface {iface_name} has datalink type {dlt}, not Ethernet \
+                     (DLT_EN10MB = {}) — only Ethernet interfaces are supported",
+                    super::bpf::DLT_EN10MB
+                )));
+            }
 
             let mut one: u32 = 1;
             let one_ptr = &mut one as *mut u32 as *mut libc::c_void;

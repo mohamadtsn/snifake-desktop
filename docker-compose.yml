@@ -22,6 +22,12 @@
 # ──────────────────────────────────────────────────────────────────
 
 x-common: &common
+  # One explicit image shared by every service. Without this, compose derives
+  # a per-service name (`<project>-<service>`, e.g. `sni-fake-test`) and will
+  # silently REUSE any unrelated image that already answers to that name
+  # rather than building this Dockerfile — which surfaces as
+  # `sh: 1: cargo: not found` inside a container that was never ours.
+  image: sni-fake-toolchain:latest
   build:
     context: .
     dockerfile: Dockerfile

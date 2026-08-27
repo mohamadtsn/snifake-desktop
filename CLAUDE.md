@@ -22,6 +22,10 @@ the host, so run `npm run build` (or `npm run dev`) there first.
 
 ```bash
 docker compose run --rm doctor          # verify the toolchain (cargo, tauri, xwin, nsis, targets)
+# All services share one pinned image, `sni-fake-toolchain`. Do not let them
+# fall back to compose's default per-service names: an unrelated leftover
+# image called e.g. `sni-fake-test` gets reused instead of built, and the
+# container then reports `sh: 1: cargo: not found`.
 docker compose run --rm test            # cargo test --workspace
 docker compose run --rm check           # type-check linux + windows + macos
 npm run build && docker compose run --rm build-linux    # -> target/release/bundle/{deb,rpm,appimage}

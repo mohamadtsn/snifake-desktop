@@ -27,13 +27,10 @@ fn template() -> Vec<u8> {
     out
 }
 
-/// 32 bytes of OS randomness, straight from `/dev/urandom` — no `rand`
-/// dependency for three 32-byte reads.
+/// 32 bytes of OS randomness — no `rand` dependency for three 32-byte reads.
 fn random32() -> [u8; 32] {
-    use std::io::Read;
     let mut buf = [0u8; 32];
-    let mut f = std::fs::File::open("/dev/urandom").expect("/dev/urandom is readable");
-    f.read_exact(&mut buf).expect("/dev/urandom read");
+    crate::sysrand::fill(&mut buf);
     buf
 }
 

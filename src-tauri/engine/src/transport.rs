@@ -119,11 +119,10 @@ mod imp {
         INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, FlushFileBuffers, ReadFile, WriteFile, FILE_SHARE_MODE, OPEN_EXISTING,
+        CreateFileW, FlushFileBuffers, ReadFile, WriteFile, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
     };
     use windows_sys::Win32::System::Pipes::{
-        ConnectNamedPipe, CreateNamedPipeW, PIPE_ACCESS_DUPLEX, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE,
-        PIPE_WAIT,
+        ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
     };
 
     const BUFFER: u32 = 64 * 1024;
@@ -222,8 +221,8 @@ mod imp {
             let handle = unsafe {
                 CreateFileW(
                     wide_name.as_ptr(),
-                    (GENERIC_READ | GENERIC_WRITE) as u32,
-                    FILE_SHARE_MODE::default(),
+                    GENERIC_READ | GENERIC_WRITE,
+                    0,
                     std::ptr::null(),
                     OPEN_EXISTING,
                     0,

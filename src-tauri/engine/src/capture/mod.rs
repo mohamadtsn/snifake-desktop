@@ -2,17 +2,33 @@
 //!
 //! Linux (AF_PACKET) and macOS (BPF) both deliver Ethernet frames, so their
 //! backends strip the 14-byte header on receive and put it back on send.
-//! Windows (WinDivert, Phase 3) works at the network layer and never sees
+//! Windows (WinDivert) works at the network layer and never sees
 //! one. Everything above this module only ever touches `Captured.ip`.
 
 use std::io;
 
-#[derive(Default)]
 pub struct Captured {
     /// The link-layer header to re-attach on transmit, if the backend uses one.
     pub l2: Option<[u8; 14]>,
     /// The IPv4 packet, header onward.
     pub ip: Vec<u8>,
+    /// The opaque WINDIVERT_ADDRESS this packet arrived with, handed back
+    /// verbatim on send so the injected packet takes the same route.
+    #[cfg(windows)]
+    pub addr: [u8; 64],
+}
+
+// Hand-written rather than derived: `[u8; 64]` has no `Default` impl, arrays
+// only get one up to length 32.
+impl Default for Captured {
+    fn default() -> Self {
+        Captured {
+            l2: None,
+            ip: Vec::new(),
+            #[cfg(windows)]
+            addr: [0u8; 64],
+        }
+    }
 }
 
 impl Captured {
@@ -21,6 +37,10 @@ impl Captured {
     pub fn clear(&mut self) {
         self.l2 = None;
         self.ip.clear();
+        #[cfg(windows)]
+        {
+            self.addr = [0u8; 64];
+        }
     }
 }
 
@@ -61,7 +81,7 @@ mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
-mod windows;
+mod windivert;
 
 /// Opens the platform capture handle bound to the egress interface.
 pub fn open(
@@ -76,7 +96,7 @@ pub fn open(
     #[cfg(target_os = "macos")]
     return Ok(Box::new(macos::Bpf::open(iface_name)?));
     #[cfg(target_os = "windows")]
-    return Ok(Box::new(windows::WinDivert::open(connect_ip, connect_port)?));
+    return Ok(Box::new(windivert::WinDivert::open(connect_ip, connect_port)?));
 }
 
 #[cfg(test)]

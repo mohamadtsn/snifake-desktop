@@ -38,6 +38,9 @@ fn new_token() -> String {
 /// non-elevated parent to launch an elevated child, and it hands back a
 /// handle rather than a `Child`.
 pub enum EngineProcess {
+    /// On Windows this variant is only ever built by the tests — the enum
+    /// keeps one shape on every platform so `EngineHost` stays platform-blind.
+    #[cfg_attr(windows, allow(dead_code))]
     Child(std::process::Child),
     #[cfg(windows)]
     Handle(isize),

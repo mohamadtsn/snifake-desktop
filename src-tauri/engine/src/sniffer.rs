@@ -210,7 +210,12 @@ pub fn run(
                     );
                     continue;
                 };
-                let injected = Captured { l2: pkt.l2, ip };
+                let injected = Captured {
+                    l2: pkt.l2,
+                    ip,
+                    #[cfg(windows)]
+                    addr: pkt.addr,
+                };
                 match cap.send(&injected) {
                     Ok(()) => log(
                         LogLevel::Info,

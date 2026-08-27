@@ -5,16 +5,12 @@
 /// `org.freedesktop.policykit.exec.path` to exactly this binary and cache
 /// the authorisation, and lets a sudoers NOPASSWD rule be scoped to exactly
 /// this binary rather than to an arbitrary shell.
+#[cfg(unix)]
 use tauri::AppHandle;
 
 #[cfg(unix)]
 fn is_root() -> bool {
     unsafe { libc::geteuid() == 0 }
-}
-
-#[cfg(windows)]
-fn is_root() -> bool {
-    false
 }
 
 /// True when `sudo -n <program>` currently runs without prompting.

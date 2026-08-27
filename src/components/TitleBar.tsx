@@ -17,7 +17,8 @@ export function TitleBar() {
       <img src="/icon.png" alt="" className="size-4" data-tauri-drag-region />
       <span
         data-tauri-drag-region
-        className="text-[12px] font-medium tracking-[0.005em] text-dim"
+        className="text-dim text-[12px] font-medium"
+        style={{ letterSpacing: "var(--track-caption)" }}
       >
         SNI Spoof
       </span>

@@ -80,7 +80,7 @@ export function ActivitySection({
         className="log-scroll h-[168px] p-2.5 font-mono text-[10.5px] leading-[1.55] text-dim"
       >
         {lines.length === 0 ? (
-          <div className="text-faint italic">No activity yet.</div>
+          <div className="text-faint">No activity yet.</div>
         ) : (
           lines.map((line, i) => (
             <div key={i} className="break-all whitespace-pre-wrap">

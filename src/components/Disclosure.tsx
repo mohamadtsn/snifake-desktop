@@ -31,12 +31,13 @@ export function Disclosure({
         />
         {/* Small text gets a touch of positive tracking; display type gets
             negative. One fixed letter-spacing would be wrong somewhere. */}
-        <span className="text-[10px] font-medium tracking-[0.085em] text-dim uppercase">
+        <span className="text-dim text-[10px] font-medium uppercase"
+          style={{ letterSpacing: "0.085em" }}>
           {label}
         </span>
         <span className="flex-1" />
         {badge !== undefined && badge > 0 && !open && (
-          <span className="rounded-full bg-brand/18 px-1.5 py-0.5 font-mono text-[10px] leading-none text-brand">
+          <span className="tnum rounded-full bg-brand/18 px-1.5 py-0.5 font-mono text-[10px] leading-none text-brand">
             {badge > 99 ? "99+" : badge}
           </span>
         )}

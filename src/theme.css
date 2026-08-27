@@ -202,7 +202,11 @@ input {
     color-mix(in oklab, var(--disc) 34%, transparent),
     transparent 66%
   );
-  opacity: 0.9;
+  /* --halo is driven by the state spring in PowerDisc, so the glow blooms
+     as the proxy comes up and settles back when it stops. A pseudo-element
+     cannot be a motion component, so the spring writes the variable on the
+     wrapper and this inherits it. */
+  opacity: var(--halo, 0.9);
   pointer-events: none;
 }
 

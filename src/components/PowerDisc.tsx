@@ -1,4 +1,13 @@
+import { motion } from "motion/react";
 import { ProxyState, STATE_ACTION, STATE_COLOR, STATE_TEXT } from "@/types";
+
+/**
+ * The one thing on the disc that a CSS transition cannot do. Pressing Stop
+ * while the disc is still settling into `starting` has to reverse from the
+ * velocity it currently has, not restart from a static value. A spring
+ * carries velocity across an interruption; a transition does not.
+ */
+const DISC_SPRING = { type: "spring", stiffness: 400, damping: 30 } as const;
 
 /**
  * The status indicator and the primary action are one object, not two
@@ -32,14 +41,25 @@ export function PowerDisc({
         aria-label={active ? "Stop the proxy" : "Start the proxy"}
         className="disc-button rounded-full"
       >
-        <span
-          className="disc"
-          data-state={state}
-          style={{ ["--disc" as string]: STATE_COLOR[state] }}
+        {/* Three nested transforms that compose rather than compete: the
+            button carries the press scale, this wrapper carries the state
+            spring, and .disc itself carries the breathe and shake keyframes.
+            See DESIGN.md 6.5. */}
+        <motion.span
+          className="block"
+          animate={{ scale: active ? 1 : 0.94, ["--halo" as string]: active ? 0.9 : 0.34 }}
+          transition={DISC_SPRING}
+          initial={false}
         >
-          {state === "starting" && <span className="disc-arc" aria-hidden />}
-          <PowerGlyph active={active} />
-        </span>
+          <span
+            className="disc"
+            data-state={state}
+            style={{ ["--disc" as string]: STATE_COLOR[state] }}
+          >
+            {state === "starting" && <span className="disc-arc" aria-hidden />}
+            <PowerGlyph active={active} />
+          </span>
+        </motion.span>
       </button>
 
       <div key={state} className="disc-label flex flex-col items-center gap-1.5">

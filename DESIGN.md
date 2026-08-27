@@ -313,7 +313,45 @@ button too, for the same reason.
 
 ### 6.6 Library boundary
 
-Filled in by Task 9. Until then: everything is CSS.
+One runtime animation dependency: `motion`, imported as `motion/react`. It is
+allowed in exactly the places CSS cannot reach, and banned everywhere else.
+
+**Where `motion` is used, and why CSS could not do it**
+
+| Moment | Why CSS fails |
+|---|---|
+| A profile row entering and leaving the list | CSS cannot animate an element React has already unmounted. `AnimatePresence` can. |
+| Reordering or removing rows | `layout` does the FLIP measurement. Hand-rolling it is a day of work and a source of jank. |
+| The disc's start and stop transition | A spring that inherits the current velocity of an interrupted animation. A CSS transition restarts from a static value. |
+
+**Where `motion` is banned**
+
+- Hover, press and focus feedback. Those stay CSS `:hover`, `:active` and
+  `:focus-visible`: they must respond on the very first frame, before React
+  has rendered anything.
+- The sheet drag. It is hand-rolled on Pointer Events over `src/lib/gesture.ts`
+  and it is the one part of the frontend with tests. Do not swap in `drag="y"`.
+- Anything already animating correctly in `theme.css`. If a CSS transition
+  works, leave it.
+
+**Shared spring constants**
+
+| Constant | Value | Used by |
+|---|---|---|
+| `LIST_SPRING` | `stiffness 500, damping 40, mass 1` | Every row enter, exit and layout move |
+| `DISC_SPRING` | `stiffness 400, damping 30` | The disc's state scale and halo bloom |
+
+Two springs, so everything that moves shares one physical vocabulary. A third
+needs a reason recorded here.
+
+**Composition on the disc.** Three nested transforms that compose rather than
+compete: `.disc-button` carries the press scale (CSS), the `motion.span`
+inside it carries the state spring, and `.disc` itself carries the breathe and
+shake keyframes. See Section 6.5 for why they cannot share an element.
+
+**The halo is driven through a custom property.** A pseudo-element cannot be a
+`motion` component, so `DISC_SPRING` animates `--halo` on the wrapper and
+`.disc::before` reads `opacity: var(--halo, 0.9)`.
 
 ---
 
@@ -604,3 +642,33 @@ reading the presentation `translateY` at `pointerdown`, writing it inline
 immediately, and treating it as the drag origin. An interrupted drag is now
 continuous. Reopening a sheet that has already committed to closing is out of
 scope: that is Base UI's lifecycle, not ours.
+
+### 2026-08-27: no shared-element flight between the bar and the sheet row
+
+Phase 2 Task 9 Step 4 called for a `layoutId` shared between the active
+profile's name in `ProfileBar` and the same name in its sheet row, so opening
+the sheet flies the label from one to the other. Not implemented, and it
+should not be attempted as specified.
+
+`layoutId` projection measures both boxes with `getBoundingClientRect` in a
+layout effect, synchronously after the DOM update and before paint. At that
+instant `.sheet-panel` still has its pre-change `transform: translateY(100%)`,
+because a CSS transition has not advanced yet. The target box therefore
+measures a full window height below the viewport, and the label flies
+downward off-screen instead of into the row.
+
+This is structural, not a tuning problem: it is what happens whenever a
+projection target lives inside a subtree whose position is owned by a CSS
+transform transition that `motion` cannot see. No variant of the shared
+element escapes it, including moving the `layoutId` onto the state dot.
+
+The two ways out are both worse. Handing the sheet's travel to `motion` so
+projection is consistent contradicts the constraint that the drag stays
+hand-rolled and tested, and it puts a 1:1 pointer gesture behind an animation
+runtime. Measuring manually and correcting for the panel offset re-implements
+projection by hand for one label.
+
+The moment it was meant to sell is already carried: the sheet travels up, the
+content behind pushes back to `scale(.98)`, and the active row is marked. If
+this is revisited, the precondition is that the sheet's own travel and the
+shared element are driven by the same system.

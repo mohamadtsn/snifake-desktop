@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { Check, MoreHorizontal, Plus } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { ProfileEditor } from "@/components/ProfileEditor";
@@ -18,6 +19,15 @@ function blankProfile(): Profile {
 }
 
 type View = { kind: "list" } | { kind: "editor"; profile: Profile; isNew: boolean };
+
+/**
+ * One spring for every layout move in the app, so rows entering, rows
+ * leaving and the list closing a gap all move with the same physical
+ * vocabulary. Springs rather than a curve because these animations get
+ * interrupted: deleting two profiles quickly must not queue two separate
+ * 300ms tweens.
+ */
+const LIST_SPRING = { type: "spring", stiffness: 500, damping: 40, mass: 1 } as const;
 
 export function ProfileSheet({
   open,
@@ -74,11 +84,24 @@ export function ProfileSheet({
         </header>
 
         <ul className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 pb-4">
-          {store.profiles.map((p) => {
+          {/* AnimatePresence is the one thing CSS cannot do here: React has
+              already unmounted a deleted row by the time a transition could
+              run. The deleted row leaves first, then `layout` closes the gap.
+              That ordering is what reads as physical. */}
+          <AnimatePresence initial={false}>
+            {store.profiles.map((p) => {
             const isActive = p.id === store.active_id;
             const isRunning = p.id === runningId;
             return (
-              <li key={p.id} className="flex items-stretch gap-1.5">
+              <motion.li
+                key={p.id}
+                layout
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: 24 }}
+                transition={LIST_SPRING}
+                className="flex items-stretch gap-1.5"
+              >
                 <button
                   type="button"
                   onClick={() => onSelect(p.id)}
@@ -124,9 +147,10 @@ export function ProfileSheet({
                 >
                   <MoreHorizontal className="size-4" />
                 </button>
-              </li>
+              </motion.li>
             );
-          })}
+            })}
+          </AnimatePresence>
         </ul>
       </div>
 

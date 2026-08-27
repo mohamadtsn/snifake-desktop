@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { MotionConfig } from "motion/react";
 import App from "./App";
 import "./theme.css";
 
@@ -14,6 +15,13 @@ window.addEventListener("contextmenu", (e) => {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    {/* `user` makes every motion component drop transform and layout
+        animation under prefers-reduced-motion while keeping opacity, which
+        is the "gentler, not absent" contract in DESIGN.md 6.4. It does not
+        cover the CSS animations in theme.css: those carry their own media
+        block, and both are required. */}
+    <MotionConfig reducedMotion="user">
+      <App />
+    </MotionConfig>
   </React.StrictMode>,
 );

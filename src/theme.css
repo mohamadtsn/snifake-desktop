@@ -163,6 +163,142 @@ input {
   border-radius: var(--radius-card);
 }
 
+/* --- Power disc -------------------------------------------------------
+   The status indicator and the primary action are the same object. Colour
+   lives in --disc, set per state by PowerDisc. Only transform and opacity
+   animate, so WebKitGTK composites every state without repainting. */
+.disc {
+  --disc-size: 152px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--disc-size);
+  height: var(--disc-size);
+  border-radius: 9999px;
+  background:
+    radial-gradient(
+      circle at 34% 28%,
+      color-mix(in oklab, var(--disc) 96%, white),
+      var(--disc) 58%,
+      color-mix(in oklab, var(--disc) 62%, black)
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 0 1px color-mix(in oklab, var(--disc) 34%, transparent);
+  transition: transform var(--dur-press) var(--ease-out);
+  will-change: transform;
+}
+
+/* The halo. A gradient, not a filter: a real blur here would re-rasterise
+   on every frame of the breathe animation. This is the one glow in the app,
+   and it is a state channel rather than a shadow. */
+.disc::before {
+  content: "";
+  position: absolute;
+  inset: calc(var(--disc-size) * -0.22);
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--disc) 34%, transparent),
+    transparent 66%
+  );
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* Feedback on press, not on release. */
+.disc-button:active .disc {
+  transform: scale(0.965);
+}
+
+.disc-button:focus-visible {
+  outline: none;
+}
+.disc-button:focus-visible .disc {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 0 3px color-mix(in oklab, var(--color-brand) 55%, transparent);
+}
+
+/* Running: a slow, shallow breath. Amplitude is deliberately below the
+   point where it reads as movement; it reads as *alive*. */
+.disc[data-state="running"] {
+  animation: disc-breathe 3200ms ease-in-out infinite;
+}
+
+@keyframes disc-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+/* Starting: a real rotating arc, not the word "Starting". A conic gradient
+   masked to a ring, spun with a single transform. */
+.disc-arc {
+  position: absolute;
+  inset: -7px;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 250deg,
+    color-mix(in oklab, var(--disc) 85%, white) 340deg,
+    transparent 360deg
+  );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: disc-spin 1100ms linear infinite;
+  pointer-events: none;
+}
+
+@keyframes disc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error: one shake on entry. Not a loop: a loop is nagging, once is a
+   report. */
+.disc[data-state="error"] {
+  animation: disc-shake 420ms var(--ease-out) 1;
+}
+
+@keyframes disc-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  45% {
+    transform: translateX(4px);
+  }
+  70% {
+    transform: translateX(-2px);
+  }
+}
+
+/* The label block is keyed on state, so it remounts and cross-fades. */
+.disc-label {
+  animation: disc-label-in var(--dur-fast) var(--ease-out) both;
+}
+
+@keyframes disc-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* --- Base UI Collapsible panel ---------------------------------------
    Base UI exposes the measured height as --collapsible-panel-height, so
    height can be keyframed without a JS measure pass. */
@@ -216,10 +352,30 @@ input {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Gentler, not absent: movement and overshoot go, colour and opacity stay. */
+  .disc,
+  .disc[data-state="running"],
+  .disc[data-state="error"],
+  .disc-arc,
   .disclosure-panel[data-open],
   .disclosure-panel[data-open] > *,
   .disclosure-panel[data-closed] {
     animation: none;
+  }
+  .disc-button:active .disc {
+    transform: none;
+    opacity: 0.85;
+  }
+  .disc-label {
+    animation: disc-label-fade var(--dur-fast) ease both;
+  }
+  @keyframes disc-label-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
   *,
   *::before,

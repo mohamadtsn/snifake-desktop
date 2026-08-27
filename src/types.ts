@@ -19,20 +19,21 @@ export interface Store {
 
 export const STATE_TEXT: Record<ProxyState, string> = {
   stopped: "Stopped",
-  starting: "Starting…",
+  starting: "Starting",
   running: "Running",
   error: "Error",
 };
 
-export const STATE_SUBTITLE: Record<ProxyState, string> = {
-  stopped: "Not running",
-  starting: "Waiting for elevated launch",
-  running: "Traffic is being spoofed",
-  error: "Failed to start",
+/** The subtitle names the action the disc performs, not the state again. */
+export const STATE_ACTION: Record<ProxyState, string> = {
+  stopped: "Tap to start",
+  starting: "Tap to cancel",
+  running: "Tap to stop",
+  error: "Tap to retry",
 };
 
-/** Feeds the `--orb` custom property on `.orb`. */
-export const STATE_ORB: Record<ProxyState, string> = {
+/** Feeds the `--disc` custom property on `.disc`. */
+export const STATE_COLOR: Record<ProxyState, string> = {
   stopped: "var(--color-st-stopped)",
   starting: "var(--color-st-starting)",
   running: "var(--color-st-running)",

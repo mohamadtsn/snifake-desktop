@@ -9,13 +9,13 @@
 //! Engine log lines go into the shared `LogBuffer`, never straight over IPC
 //! — see `logbuf::LogBuffer` for why.
 
+#[cfg(unix)]
 use crate::auth::elevated_argv;
 use crate::config::engine_path;
 use crate::logbuf::LogBuffer;
 use sni_fake_engine::proto::{Command, Event, LogLevel, Profile};
 use sni_fake_engine::transport::{Listener, Stream};
 use std::io::{BufRead, BufReader, Write};
-use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -28,6 +28,66 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
 /// real barrier; this is defence in depth against a race on the socket path.
 fn new_token() -> String {
     sni_fake_engine::sysrand::hex(16)
+}
+
+/// The engine process, however it got started.
+///
+/// On Unix it is an ordinary `Child` because pkexec/sudo/osascript are
+/// spawned as ordinary programs. On Windows it is a bare process handle,
+/// because `ShellExecuteExW` with the `runas` verb is the only way for a
+/// non-elevated parent to launch an elevated child, and it hands back a
+/// handle rather than a `Child`.
+pub enum EngineProcess {
+    Child(std::process::Child),
+    #[cfg(windows)]
+    Handle(isize),
+}
+
+impl EngineProcess {
+    /// `Some(code)` once the process has exited, `None` while it runs.
+    pub fn try_wait(&mut self) -> Option<i32> {
+        match self {
+            EngineProcess::Child(c) => match c.try_wait() {
+                Ok(Some(status)) => Some(status.code().unwrap_or(-1)),
+                _ => None,
+            },
+            #[cfg(windows)]
+            EngineProcess::Handle(h) => {
+                use windows_sys::Win32::Foundation::HANDLE;
+                use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+                /// `STILL_ACTIVE` (259) is what GetExitCodeProcess reports
+                /// for a live process.
+                const STILL_ACTIVE: u32 = 259;
+                let mut code: u32 = 0;
+                // SAFETY: a process handle we own; code is a valid out-param.
+                let ok = unsafe { GetExitCodeProcess(*h as HANDLE, &mut code) };
+                if ok == 0 || code == STILL_ACTIVE {
+                    None
+                } else {
+                    Some(code as i32)
+                }
+            }
+        }
+    }
+
+    pub fn kill(&mut self) {
+        match self {
+            EngineProcess::Child(c) => {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            #[cfg(windows)]
+            EngineProcess::Handle(h) => {
+                use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+                use windows_sys::Win32::System::Threading::TerminateProcess;
+                // SAFETY: a process handle we own.
+                unsafe {
+                    TerminateProcess(*h as HANDLE, 1);
+                    CloseHandle(*h as HANDLE);
+                }
+            }
+        }
+    }
 }
 
 /// Folds one engine event into the log buffer. Returns a new proxy state
@@ -70,7 +130,7 @@ fn active_profile_name(app: &AppHandle) -> String {
 pub struct EngineHost {
     logs: Arc<LogBuffer>,
     state: String,
-    child: Option<Child>,
+    child: Option<EngineProcess>,
     writer: Option<Arc<Mutex<Stream>>>,
 }
 
@@ -145,13 +205,12 @@ impl EngineHost {
         self.writer = None;
         if let Some(mut child) = self.child.take() {
             for _ in 0..20 {
-                if matches!(child.try_wait(), Ok(Some(_))) {
+                if child.try_wait().is_some() {
                     return;
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
-            let _ = child.kill();
-            let _ = child.wait();
+            child.kill();
         }
     }
 
@@ -176,12 +235,8 @@ impl EngineHost {
                 match listener.accept_timeout(Duration::from_millis(50)) {
                     Ok(s) => return Ok(s),
                     Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
-                        if let Some(child) = self.child.as_mut() {
-                            if let Ok(Some(status)) = child.try_wait() {
-                                return Err(format!(
-                                    "the engine exited before connecting ({status})"
-                                ));
-                            }
+                        if let Some(code) = self.child.as_mut().and_then(|c| c.try_wait()) {
+                            return Err(format!("the engine exited before connecting ({code})"));
                         }
                         if std::time::Instant::now() > deadline {
                             return Err(
@@ -203,21 +258,29 @@ impl EngineHost {
 
         let token = new_token();
         let engine = engine_path(app)?;
-        let argv = elevated_argv(
-            app,
-            &engine.to_string_lossy(),
-            &[listener.endpoint().as_str().to_string(), token.clone()],
-        );
-        if argv.is_empty() {
-            return Err("no way to obtain administrator privileges on this system".into());
-        }
-        self.logs
-            .push(format!("launching engine: {}", argv.join(" ")));
+        let engine_args = [listener.endpoint().as_str().to_string(), token.clone()];
 
-        let child = std::process::Command::new(&argv[0])
-            .args(&argv[1..])
-            .spawn()
-            .map_err(|e| format!("spawn {}: {e}", argv[0]))?;
+        #[cfg(windows)]
+        let child = {
+            self.logs.push("launching engine (elevated)".to_string());
+            crate::elevate_windows::spawn_elevated(&engine.to_string_lossy(), &engine_args)?
+        };
+
+        #[cfg(unix)]
+        let child = {
+            let argv = elevated_argv(app, &engine.to_string_lossy(), &engine_args);
+            if argv.is_empty() {
+                return Err("no way to obtain administrator privileges on this system".into());
+            }
+            self.logs
+                .push(format!("launching engine: {}", argv.join(" ")));
+            EngineProcess::Child(
+                std::process::Command::new(&argv[0])
+                    .args(&argv[1..])
+                    .spawn()
+                    .map_err(|e| format!("spawn {}: {e}", argv[0]))?,
+            )
+        };
         self.child = Some(child);
 
         let stream = self.accept_engine(&listener);
@@ -268,6 +331,42 @@ impl EngineHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_finished_child_reports_its_exit_code() {
+        let child = std::process::Command::new(if cfg!(windows) { "cmd" } else { "true" })
+            .args(if cfg!(windows) {
+                vec!["/C", "exit", "0"]
+            } else {
+                vec![]
+            })
+            .spawn()
+            .unwrap();
+        let mut proc = EngineProcess::Child(child);
+        // Poll rather than sleep-and-hope.
+        for _ in 0..100 {
+            if proc.try_wait().is_some() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        panic!("the child never reported an exit code");
+    }
+
+    #[test]
+    fn a_running_child_reports_nothing_yet() {
+        let child = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sleep" })
+            .args(if cfg!(windows) {
+                vec!["/C", "timeout", "5"]
+            } else {
+                vec!["5"]
+            })
+            .spawn()
+            .unwrap();
+        let mut proc = EngineProcess::Child(child);
+        assert!(proc.try_wait().is_none());
+        proc.kill();
+    }
 
     #[test]
     fn a_fresh_host_is_stopped() {

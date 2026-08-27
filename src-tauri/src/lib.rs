@@ -1,5 +1,7 @@
 mod auth;
 mod config;
+#[cfg(windows)]
+mod elevate_windows;
 mod engine_host;
 mod logbuf;
 mod profiles;

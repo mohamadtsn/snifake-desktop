@@ -35,7 +35,9 @@ pub fn has_passwordless_sudo(program: &str) -> bool {
 /// installing that rule once via pkexec if it is missing, and falling back
 /// to a plain pkexec run (which prompts every time) if that fails.
 /// macOS: osascript.
-/// Windows: empty — Phase 3 replaces this with a `runas` ShellExecute.
+/// Windows has no branch here at all: a non-elevated parent can only raise a
+/// child through `ShellExecuteExW`, which is `elevate_windows::spawn_elevated`.
+#[cfg(unix)]
 pub fn elevated_argv(app: &AppHandle, program: &str, args: &[String]) -> Vec<String> {
     if is_root() {
         let mut v = vec![program.to_string()];
@@ -80,12 +82,6 @@ pub fn elevated_argv(app: &AppHandle, program: &str, args: &[String]) -> Vec<Str
             "-e".to_string(),
             format!("do shell script \"{escaped}\" with administrator privileges"),
         ]
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let _ = (app, program, args);
-        Vec::new()
     }
 }
 

@@ -1,17 +1,23 @@
-# ── SNI Spoof — Docker Compose for Rust/Tauri build & dev ──────────
+# ── SNI Spoof — Docker toolchain for Rust/Tauri ────────────────────
 #
-# Frontend (npm/React) tooling runs on the host — this only covers the
-# Rust/Tauri side. Before using either service, run on the host:
-#   - `npm run dev`   (in another terminal, left running) before `dev`
-#   - `npm run build`                                     before `build`
+# Frontend (npm/React/Vite) tooling runs on the HOST; these services only
+# cover the Rust/Tauri side. Run `npm run build` on the host before any
+# build-*, and `npm run dev` (left running) before `dev`.
 #
-# Usage:
-#   docker compose run --rm dev      # cargo tauri dev, X11 passthrough
-#   docker compose run --rm build    # cargo tauri build -> src-tauri/target/release/bundle
+#   docker compose run --rm doctor          # verify the toolchain
+#   docker compose run --rm test            # cargo test (linux)
+#   docker compose run --rm check           # type-check linux + windows + macos
+#   docker compose run --rm build-linux     # -> target/release/bundle/
+#   docker compose run --rm build-windows   # -> target/x86_64-pc-windows-msvc/release/bundle/nsis/
+#   docker compose run --rm dev             # cargo tauri dev, X11 passthrough
 #
-# Output is bind-mounted straight into src-tauri/target/ on the host (no
-# docker cp needed). If your host UID/GID isn't 1000:1000, export HOST_UID
-# / HOST_GID before running so the output comes back owned by you:
+# macOS is check-only on purpose: `cargo check` never links, so the macOS
+# code is type-checked here, but a real .app/.dmg needs `cargo tauri build`
+# on a Mac — Tauri does not cross-compile GUI bundles to Darwin.
+#
+# Build output is bind-mounted straight into src-tauri/target/ on the host.
+# If your UID/GID isn't 1000:1000, export HOST_UID / HOST_GID first so the
+# output comes back owned by you:
 #   export HOST_UID=$(id -u) HOST_GID=$(id -g)
 # ──────────────────────────────────────────────────────────────────
 
@@ -19,36 +25,101 @@ x-common: &common
   build:
     context: .
     dockerfile: Dockerfile
+  working_dir: /app/src-tauri
   volumes:
     - .:/app
+    # Only the registry/git subdirectories, never /usr/local/cargo itself —
+    # a volume over the whole CARGO_HOME shadows its bin/ and is what makes
+    # a container report `sh: 1: cargo: not found`.
     - cargo-registry:/usr/local/cargo/registry
     - cargo-git:/usr/local/cargo/git
     # Tauri's Linux bundler downloads linuxdeploy/appimagetool/AppRun into
     # $XDG_CACHE_HOME/tauri. Without this volume that's a fresh ~30MB
-    # download on every single build.
+    # download on every single build. cargo-xwin's ~1GB Windows SDK cache
+    # lives here too (XWIN_CACHE_DIR).
     - tauri-cache:/root/.cache
     # bind mount (not a named volume) so build/bundle output lands directly
     # in src-tauri/target on the host — no docker cp needed to grab it
     - ./src-tauri/target:/app/src-tauri/target
 
+# Every service ends by handing anything written into the bind-mounted
+# target/ back to the host user: the container runs as root, so without that
+# the bundle output comes back root-owned.
+
 services:
+  doctor:
+    <<: *common
+    command:
+      - sh
+      - -ec
+      - |
+        echo "PATH=$$PATH"
+        for t in cargo rustc "cargo tauri" "cargo xwin"; do
+          printf '%-14s ' "$$t"; $$t --version 2>&1 | head -1
+        done
+        echo "targets:"; rustup target list --installed | sed 's/^/  /'
+        echo "nsis:"; makensis -VERSION
+
+  test:
+    <<: *common
+    command:
+      - sh
+      - -ec
+      - |
+        cargo test --workspace
+        chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
+
+  check:
+    <<: *common
+    command:
+      - sh
+      - -ec
+      - |
+        echo "── linux ──";   cargo check --workspace --all-targets
+        echo "── windows ──"; cargo xwin check --workspace --all-targets --target x86_64-pc-windows-msvc
+        # Only the engine for macOS: the GUI crate's macOS deps pull in
+        # system frameworks that a non-Darwin host cannot resolve, and every
+        # macOS-specific line we own lives in the engine anyway.
+        echo "── macos ──"
+        cargo check -p sni-fake-engine --all-targets --target aarch64-apple-darwin
+        cargo check -p sni-fake-engine --all-targets --target x86_64-apple-darwin
+        chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
+
+  build-linux:
+    <<: *common
+    command:
+      - sh
+      - -ec
+      - |
+        cargo build --release -p sni-fake-engine
+        sh scripts/stage-resources.sh
+        cargo tauri build --config tauri.docker.conf.json
+        chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
+
+  build-windows:
+    <<: *common
+    command:
+      - sh
+      - -ec
+      - |
+        cargo xwin build --release -p sni-fake-engine --target x86_64-pc-windows-msvc
+        sh scripts/stage-resources.sh x86_64-pc-windows-msvc
+        # NSIS only: the MSI/WiX bundler needs a real Windows host.
+        cargo tauri build --config tauri.docker.conf.json \
+          --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+        chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
+
   dev:
     <<: *common
     environment:
       - DISPLAY=${DISPLAY:-:0}
     network_mode: host
-    # container runs as root (needed for apt/cargo setup in the image), so
-    # hand ownership of anything written into the bind-mounted target/ back
-    # to the host user afterwards — otherwise bundle output is root-owned.
-    command: >
-      sh -c "cargo tauri dev --config '{\"build\":{\"beforeDevCommand\":\"\"}}';
-             chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target"
-
-  build:
-    <<: *common
-    command: >
-      sh -c "cargo tauri build --config '{\"build\":{\"beforeBuildCommand\":\"\"}}' &&
-             chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target"
+    command:
+      - sh
+      - -ec
+      - |
+        cargo tauri dev --config tauri.docker.conf.json
+        chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
 
 volumes:
   cargo-registry:

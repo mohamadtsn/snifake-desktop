@@ -16,13 +16,31 @@ npm run tauri dev                  # dev loop (needs Rust on host)
 npm run tauri build                # production build (needs Rust on host)
 ```
 
-Docker (Linux Rust/Tauri build & dev only — frontend tooling stays on the host):
+Docker carries the whole Rust/Tauri toolchain — Linux bundles, Windows
+cross-builds, macOS type-checks and the test suite. Frontend tooling stays on
+the host, so run `npm run build` (or `npm run dev`) there first.
 
 ```bash
-npm run build && docker compose run --rm build   # cargo tauri build -> src-tauri/target/release/bundle
-npm run dev                                       # in one terminal (leave running)
-docker compose run --rm dev                       # in another, X11 passthrough for cargo tauri dev
+docker compose run --rm doctor          # verify the toolchain (cargo, tauri, xwin, nsis, targets)
+docker compose run --rm test            # cargo test --workspace
+docker compose run --rm check           # type-check linux + windows + macos
+npm run build && docker compose run --rm build-linux    # -> target/release/bundle/{deb,rpm,appimage}
+npm run build && docker compose run --rm build-windows  # -> target/x86_64-pc-windows-msvc/release/bundle/nsis/
+npm run dev                             # in one terminal (leave running)
+docker compose run --rm dev             # in another, X11 passthrough for cargo tauri dev
 ```
+
+Windows cross-builds go through `cargo-xwin` and bundle **NSIS only** — the
+MSI/WiX bundler needs a real Windows host. macOS is **check-only**: `cargo
+check` never links, so the macOS code is type-checked here, but a real
+`.app`/`.dmg` needs `cargo tauri build` on a Mac.
+
+`bundle.resources` is a fixed path map, but cargo puts a cross-compiled binary
+in `target/<triple>/release/` and a native one in `target/release/`. So
+`src-tauri/scripts/stage-resources.sh <triple?>` collects the engine (and, for
+a Windows target, the WinDivert binaries) into `src-tauri/resources/`, and the
+resource map only ever points there. Every build path runs it: the host build
+through `beforeBuildCommand`, the Docker builds explicitly.
 
 ## Architecture
 
@@ -53,9 +71,10 @@ docker compose run --rm dev                       # in another, X11 passthrough 
 
 ## Notes
 
-- No `sni-spoof-*` binary is checked into this repo. Place the platform binary at the repo root before `npm run tauri build`/`docker compose run --rm build` will produce a working installer; `src-tauri/tauri.conf.json`'s `bundle.resources` needs to be re-added listing the binaries once they exist.
-- When adding a new target platform/arch, update both `get_binary_path()` in `src-tauri/src/config.rs` and the elevation logic in `src-tauri/src/auth.rs`.
-- macOS and Windows builds need `cargo tauri build` run on that OS (or a matching CI runner) — Tauri does not cross-compile GUI bundles from Linux.
+- The proxy engine is built from source in this repo (`src-tauri/engine`); there is no external binary to fetch. Windows additionally ships the official signed `WinDivert.dll` and `WinDivert64.sys` from `src-tauri/vendor/windivert/` — see the README there. They install as siblings of `sni-fake-engine.exe`, which is what lets the engine `LoadLibraryW("WinDivert.dll")` by bare name.
+- Windows requires Administrator (UAC) for every app session, because WinDivert needs it to load the driver. The prompt appears once, on the first Start; the engine then stays alive for the session, so switching profiles never re-prompts.
+- When adding a new target platform/arch, update `engine_name()`/`engine_path()` in `src-tauri/src/config.rs`, the elevation logic in `src-tauri/src/auth.rs` (Unix) or `src-tauri/src/elevate_windows.rs`, the backend selection in `src-tauri/engine/src/capture/mod.rs`, and `stage-resources.sh` if the target needs extra files.
+- macOS bundles still need `cargo tauri build` on a Mac (or a matching CI runner) — Tauri does not cross-compile GUI bundles to Darwin. Windows *is* cross-compiled here, via `cargo-xwin` + NSIS.
 
 ## Dont commit this files:
 ./docs/*

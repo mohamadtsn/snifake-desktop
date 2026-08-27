@@ -9,3 +9,6 @@ config.json
 .ruff_cache/
 .idea/
 .vscode/
+# Graphify
+graphify-out/cache/
+src-tauri/resources/

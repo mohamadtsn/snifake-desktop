@@ -5,7 +5,7 @@
   "identifier": "com.snifake.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build && cargo build --release -p sni-fake-engine",
+    "beforeBuildCommand": "npm run build && cargo build --release -p sni-fake-engine && sh src-tauri/scripts/stage-resources.sh",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -41,7 +41,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "target/release/sni-fake-engine": "sni-fake-engine",
+      "resources/*": "./",
       "scripts/install-sudoers.sh": "install-sudoers.sh"
     },
     "linux": {

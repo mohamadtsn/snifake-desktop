@@ -26,6 +26,7 @@ docker compose run --rm dev                       # in another, X11 passthrough 
 
 ## Architecture
 
+- `DESIGN.md` — the design system of record: tokens, type scale, motion, component inventory and the decision log. **Read it before changing anything visual**, and update it in the same commit when a design decision changes.
 - `src-tauri/src/lib.rs` — Tauri app entry (`run()`), `AppState` (`proxy` + the shared `Arc<LogBuffer>`), and the invokable commands: `load_config`, `save_config`, `start_proxy`, `stop_proxy`, `set_log_streaming`, `get_log_buffer`. Registers `tauri-plugin-single-instance` **first, before every other plugin** (a second launch unminimizes/shows/focuses the existing `main` window instead of spawning a duplicate — and a duplicate would spawn a second *elevated* proxy on the same port). Wires the system tray, and redirects the window's native close button and tray "Exit"/"Start"/"Stop" clicks into `frontend-*-requested` events so the confirm/validate logic lives once, in the frontend.
 - `src-tauri/src/config.rs` — `Config` struct (serde, renamed to the exact `LISTEN_HOST`/`LISTEN_PORT`/`CONNECT_IP`/`CONNECT_PORT`/`FAKE_SNI` JSON keys), `load_config`/`save_config` (JSON file in the platform app-data dir), `get_binary_path` (resolves `sni-spoof-linux-amd64`, `sni-spoof-darwin-{arch}`, or `sni-spoof-windows-amd64.exe` from the app's bundled resources).
 - `src-tauri/src/auth.rs` — `get_elevated_prefix()`: `pkexec` (fallback `sudo -n`) on Linux, `osascript ... with administrator privileges` on macOS, no-op on Windows (UAC handled via the bundle manifest at packaging time).
@@ -60,3 +61,19 @@ docker compose run --rm dev                       # in another, X11 passthrough 
 
 ## Notis
 - Not need run test command
+## Context Navigation (Graphify)
+
+### 3-Layer Query Rule
+1. **First:** query `graphify-out/graph.json` (`graphify query "..."`, `explain`, `god-nodes`)
+   to understand code structure and connections
+2. **Second:** query the Obsidian vault (`/home/mohamadtsn/vault/sni-fake/`) for decisions, progress, context
+3. **Third:** only read raw code files when editing, or when layers 1-2 lack the answer
+
+### When to rebuild the graph
+- After structural changes (new modules, major refactors)
+- `~/scripts/add_project.sh /home/mohamadtsn/scripts/sni-fake --update` — or `graphify update .`
+- The graph is persistent — NO need to rebuild every session
+
+### Do NOT
+- Don't manually modify files inside `graphify-out/`
+- Don't re-read the entire codebase if the graph already has the information

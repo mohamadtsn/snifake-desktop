@@ -115,8 +115,13 @@ Settings → Environments → **New environment**, named `release` (the name the
 | | |
 | --- | --- |
 | Secret `TAURI_SIGNING_PRIVATE_KEY` | contents of `~/.tauri/snifake.key` |
-| Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's password (empty if none) |
 | Deployment branches and tags | *Selected* → ref type **Tag**, pattern `v*` |
+
+There is deliberately no `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secret. The key
+has no password, and GitHub refuses to store an empty secret value — so do not
+invent one (a single space is still a wrong password, and the build fails with
+*incorrect updater private key password*). With the secret absent the
+workflow's env var resolves to the empty string, which is what the key wants.
 
 The matching public key is already in `src-tauri/tauri.conf.json`.
 

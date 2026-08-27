@@ -91,6 +91,8 @@ jobs:
           # build, but latest.json carries no signature and the in-app
           # updater refuses them.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # No such secret: the key has no password, and an absent secret
+          # resolves to the empty string, which is the correct password.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__

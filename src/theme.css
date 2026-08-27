@@ -6,42 +6,70 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* Surfaces — exactly two depth levels. The shell is the only element
-     carrying backdrop-filter; everything above it is opaque or a flat
-     translucent fill, because WebKitGTK re-blurs a backdrop layer on every
-     repaint of anything above it. */
-  --color-shell: #070b16;
-  --color-shell-edge: rgba(150, 185, 255, 0.14);
-  --color-raised: rgba(255, 255, 255, 0.045);
-  --color-raised-hover: rgba(255, 255, 255, 0.075);
-  --color-sunken: rgba(4, 7, 15, 0.55);
-  --color-hairline: rgba(255, 255, 255, 0.08);
-  --color-hairline-strong: rgba(255, 255, 255, 0.14);
+  /* ---- Surfaces -------------------------------------------------------
+     Two depth levels, as before. Base moves from the blue-black #070b16 to
+     a near-neutral graphite with a cold cast: Apple's dark materials read
+     as grey with a hint of blue, never as navy. The shell is still the only
+     element carrying backdrop-filter, because WebKitGTK re-blurs a backdrop
+     layer on every repaint of anything above it. */
+  --color-shell: #0c0c0f;
+  --color-shell-edge: rgba(235, 240, 255, 0.12);
+  --color-raised: rgba(255, 255, 255, 0.055);
+  --color-raised-hover: rgba(255, 255, 255, 0.085);
+  --color-sunken: rgba(0, 0, 0, 0.42);
+  --color-hairline: rgba(255, 255, 255, 0.09);
+  --color-hairline-strong: rgba(255, 255, 255, 0.16);
 
-  /* Text — three steps, not five. Each clears 4.5:1 on --color-shell. */
-  --color-text: #f2f5fb;
-  --color-dim: #9aa8c2;
-  --color-faint: #78859e;
+  /* ---- Text: three steps. Every one clears 4.5:1 on --color-shell,
+     --color-faint included (4.71:1), so there is no size floor to remember.
+     A fourth, dimmer step would fail and is banned. */
+  --color-text: #f5f5f7;
+  --color-dim: #a1a1a6;
+  --color-faint: #7c7c82;
 
-  /* Accent + state. Named `brand`, not `accent`: the `@theme inline` block
-     below re-maps --color-accent onto shadcn's muted hover token, and the
-     later declaration would win. */
-  --color-brand: #4f8dff;
-  --color-brand-press: #3b74e0;
-  --color-st-stopped: #7c8aa5;
-  --color-st-starting: #fbbf24;
-  --color-st-running: #34d399;
-  --color-st-error: #fb7185;
+  /* ---- Accent + state, from Apple's dark-mode system palette.
+     Named `brand`, not `accent`: the `@theme inline` block below re-maps
+     --color-accent onto shadcn's muted hover token and would win.
+     --color-brand is for text, icons, rings and tints on dark (5.35:1).
+     Solid fills that carry white text use --color-brand-press, because
+     white on #0a84ff is 3.65:1 and fails AA below 18px. */
+  --color-brand: #0a84ff;        /* systemBlue   (dark) */
+  --color-brand-press: #0071e3;
+  --color-st-stopped: #8e8e93;   /* systemGray */
+  --color-st-starting: #ff9f0a;  /* systemOrange (dark) */
+  --color-st-running: #30d158;   /* systemGreen  (dark) */
+  --color-st-error: #ff453a;     /* systemRed    (dark) */
 
-  /* Motion. Quint-out for anything travelling; spring for anything
-     announcing a state change; the sheet curve for height. */
-  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* ---- Motion.
+     Strong custom curves: the built-in CSS easings are too weak to read as
+     intentional. `sheet` is the iOS drawer curve. `spring` is the only one
+     that overshoots and is reserved for motion the user's own gesture
+     started, because overshoot on something that merely faded in feels
+     wrong. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
+  --dur-press: 120ms;
+  --dur-fast: 180ms;
+  --dur-panel: 260ms;
+  --dur-sheet: 420ms;
+
+  /* ---- Shape. Generous and consistent, for continuous-corner feel.
+     These three plus 9999px are the only radii in the app. */
   --radius-shell: 20px;
-  --radius-card: 14px;
-  --radius-control: 11px;
+  --radius-card: 16px;
+  --radius-control: 12px;
+
+  /* ---- Tracking is size-specific. One letter-spacing value is wrong
+     somewhere: display type reads too loose as it grows, micro type too
+     tight to stay legible. Apple's own tracking table, in em. */
+  --track-display: -0.026em; /* 28px+ */
+  --track-title: -0.021em;   /* 20-24px */
+  --track-body: -0.011em;    /* 15-17px */
+  --track-caption: -0.003em; /* 12-13px */
+  --track-micro: 0.006em;    /* <=11px */
 }
 
 /* The window is `transparent: true` with rounded corners drawn in CSS. Every
@@ -55,9 +83,16 @@ html, body, #root {
 
 body {
   background: transparent;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  /* This is a desktop app shell, not a web page — no text-selection
-     handles or drag-to-select on chrome; form fields opt back in below. */
+  /* Platform font first: SF Pro and Segoe UI Variable ship real optical
+     sizing and tracking tables that no substitute reproduces. Geist is the
+     Linux answer and sits ahead of system-ui to keep it off Cantarell. */
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    "Segoe UI Variable Text", "Geist Variable", system-ui, sans-serif;
+  font-optical-sizing: auto;
+  letter-spacing: var(--track-body);
+  /* Desktop app chrome, not a web page: no text-selection handles or
+     drag-to-select. Form fields opt back in below. */
   user-select: none;
   -webkit-user-select: none;
 }
@@ -68,67 +103,64 @@ textarea {
   -webkit-user-select: text;
 }
 
-/* Level 1 — the window itself. The only backdrop-filter in the app. */
+/* --- Browser surfaces --------------------------------------------------
+   The parts we did not draw still carry the design. Left at the user-agent
+   default they are the cheapest tell that a UI was assembled rather than
+   built. */
+::selection {
+  background: color-mix(in oklab, var(--color-brand) 36%, transparent);
+  color: var(--color-text);
+}
+
+input {
+  caret-color: var(--color-brand);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-hairline-strong);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-dim) 55%, transparent);
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Anything that changes in place while the user is looking at it, so the
+   value does not shimmy as digit widths change. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Level 1: the window itself. The only backdrop-filter in the app. */
 .shell {
   background:
-    radial-gradient(120% 80% at 50% -10%, rgba(79, 141, 255, 0.16), transparent 62%),
+    radial-gradient(120% 80% at 50% -10%, rgba(10, 132, 255, 0.13), transparent 62%),
     var(--color-shell);
   border: 1px solid var(--color-shell-edge);
   border-radius: var(--radius-shell);
-  /* No outer drop shadow: .shell fills the whole window, so a 60px blur would
-     be rasterised every repaint and then clipped away unseen. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.055);
+  /* No outer drop shadow: .shell fills the whole window, so a 60px blur
+     would be rasterised every repaint and then clipped away unseen. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* Level 2 — a raised card. Flat fill, no blur: these sit above the shell's
+/* Level 2: a raised card. Flat fill, no blur: these sit above the shell's
    gradient and any blur here would repaint on every state change. */
 .raised {
   background: var(--color-raised);
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-card);
-}
-
-/* --- Status orb -------------------------------------------------------
-   Colour lives in --orb, set per state by StatusHero. Only transform and
-   opacity animate, so WebKitGTK composites the pulse without repainting. */
-.orb {
-  --orb-size: 38px;
-  position: relative;
-  display: block;
-  width: var(--orb-size);
-  height: var(--orb-size);
-  border-radius: 9999px;
-  background: radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--orb) 92%, white), var(--orb) 62%, color-mix(in oklab, var(--orb) 55%, black));
-  box-shadow: 0 0 0 1px color-mix(in oklab, var(--orb) 40%, transparent);
-  /* No background transition: StatusHero remounts on state change so it would
-     never fire, and interpolating a radial-gradient repaints every frame. */
-  animation: orb-pop 420ms var(--ease-spring) both;
-  will-change: transform;
-}
-
-.orb::after {
-  content: "";
-  position: absolute;
-  inset: calc(var(--orb-size) * -0.26);
-  border-radius: 9999px;
-  background: radial-gradient(circle, color-mix(in oklab, var(--orb) 42%, transparent), transparent 68%);
-  opacity: 0.85;
-}
-
-.orb[data-state="running"] {
-  animation:
-    orb-pop 420ms var(--ease-spring) both,
-    orb-breathe 3200ms ease-in-out 420ms infinite;
-}
-
-@keyframes orb-pop {
-  from { transform: scale(0.86); }
-  to   { transform: scale(1); }
-}
-
-@keyframes orb-breathe {
-  0%, 100% { transform: scale(1); }
-  50%      { transform: scale(1.045); }
 }
 
 /* --- Base UI Collapsible panel ---------------------------------------
@@ -142,7 +174,7 @@ textarea {
 }
 
 .disclosure-panel[data-open] {
-  animation: panel-open 280ms var(--ease-sheet);
+  animation: panel-open var(--dur-panel) var(--ease-sheet);
 }
 
 .disclosure-panel[data-closed] {
@@ -151,9 +183,9 @@ textarea {
 
 /* The height keyframes drive layout and can step under load. Sliding the
    content on the compositor at the same time is what actually reads as
-   smooth — the eye tracks the contents, not the container edge. */
+   smooth: the eye tracks the contents, not the container edge. */
 .disclosure-panel[data-open] > * {
-  animation: panel-content-in 280ms var(--ease-sheet);
+  animation: panel-content-in var(--dur-panel) var(--ease-sheet);
 }
 
 @keyframes panel-open {
@@ -184,8 +216,6 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .orb,
-  .orb[data-state="running"],
   .disclosure-panel[data-open],
   .disclosure-panel[data-open] > *,
   .disclosure-panel[data-closed] {
@@ -194,6 +224,7 @@ textarea {
   *,
   *::before,
   *::after {
+    /* 1ms, not 0: transitionend handlers must still fire. */
     transition-duration: 1ms !important;
   }
 }
@@ -246,38 +277,45 @@ textarea {
    above instead of shadcn's default translucent white. */
 :root,
 .dark {
-  --background: oklch(0.16 0.035 255);
-  --foreground: oklch(0.96 0.015 250);
-  --card: oklch(0.22 0.045 255);
-  --card-foreground: oklch(0.96 0.015 250);
-  --popover: oklch(0.2 0.045 255);
-  --popover-foreground: oklch(0.96 0.015 250);
-  --primary: oklch(0.685 0.169 237.323);
-  --primary-foreground: oklch(0.16 0.035 255);
-  --secondary: oklch(0.28 0.05 255);
-  --secondary-foreground: oklch(0.96 0.015 250);
-  --muted: oklch(0.28 0.05 255);
-  --muted-foreground: oklch(0.7 0.04 250);
-  --accent: oklch(0.32 0.06 255);
-  --accent-foreground: oklch(0.96 0.015 250);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: rgba(147, 197, 253, 0.22);
-  --input: rgba(96, 165, 250, 0.14);
-  --ring: oklch(0.685 0.169 237.323);
+  /* The app is always dark, so :root and .dark carry the same values. These
+     feed the only shadcn surface on screen, AlertDialog, through --popover
+     and --card. Left at the hand-edited navy oklch values they used to hold,
+     the dialogs would stay blue while the rest of the app moved to graphite.
+     Pointed at the semantic tokens above so there is one source of truth.
+     --primary is --color-brand-press, not --color-brand: AlertDialogAction
+     puts white text on it and #0a84ff under white is 3.65:1. */
+  --background: var(--color-shell);
+  --foreground: var(--color-text);
+  --card: #17171a;
+  --card-foreground: var(--color-text);
+  --popover: #17171a;
+  --popover-foreground: var(--color-text);
+  --primary: var(--color-brand-press);
+  --primary-foreground: #ffffff;
+  --secondary: rgba(255, 255, 255, 0.085);
+  --secondary-foreground: var(--color-text);
+  --muted: rgba(255, 255, 255, 0.085);
+  --muted-foreground: var(--color-dim);
+  --accent: rgba(255, 255, 255, 0.085);
+  --accent-foreground: var(--color-text);
+  --destructive: var(--color-st-error);
+  --border: var(--color-hairline);
+  --input: var(--color-hairline);
+  --ring: var(--color-brand);
   --radius: 0.9rem;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --chart-1: var(--color-brand);
+  --chart-2: var(--color-st-running);
+  --chart-3: var(--color-st-starting);
+  --chart-4: var(--color-st-error);
+  --chart-5: var(--color-st-stopped);
+  --sidebar: #17171a;
+  --sidebar-foreground: var(--color-text);
+  --sidebar-primary: var(--color-brand-press);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(255, 255, 255, 0.085);
+  --sidebar-accent-foreground: var(--color-text);
+  --sidebar-border: var(--color-hairline);
+  --sidebar-ring: var(--color-brand);
 }
 
 @layer base {

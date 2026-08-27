@@ -104,17 +104,32 @@ Bump **patch** for fixes, **minor** for features that keep profiles working,
 
 ### One-time repository setup
 
-The release workflow needs two secrets (Settings → Secrets and variables →
-Actions):
+The release workflow signs the update bundles, which needs the private half of
+the updater keypair. It lives in a GitHub **environment** rather than in
+repository secrets, so it is reachable from one job on one kind of ref
+instead of from every workflow on every branch.
 
-| Secret | Value |
+Settings → Environments → **New environment**, named `release` (the name the
+`build` job declares). Inside it:
+
+| | |
 | --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | contents of `~/.tauri/snifake.key` |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's password (empty if none) |
+| Secret `TAURI_SIGNING_PRIVATE_KEY` | contents of `~/.tauri/snifake.key` |
+| Secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's password (empty if none) |
+| Deployment branches and tags | *Selected* → ref type **Tag**, pattern `v*` |
 
-The matching public key is already in `src-tauri/tauri.conf.json`. **Keep the
-private key.** Losing it means no existing install can ever be updated
-in-app again — they would all have to reinstall by hand.
+The matching public key is already in `src-tauri/tauri.conf.json`.
+
+**Keep the private key.** The public half is baked into every copy users have
+already installed, and `pubkey` holds exactly one key — there is no way to
+rotate gracefully. Generate a new one and every existing install is stranded
+on its current version, silently, forever. Back `~/.tauri/snifake.key` up
+somewhere off this machine: GitHub secrets are write-only, so a copy that
+only exists there cannot be read back out.
+
+Note that the tag restriction also means `workflow_dispatch` on a branch gets
+no secrets — a manual run builds unsigned bundles. That is intentional: only
+a real tag produces a release anyone can update to.
 
 ## License
 

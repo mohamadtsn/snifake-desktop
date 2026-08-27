@@ -35,6 +35,11 @@ jobs:
 
   build:
     needs: verify-version
+    # The signing key lives in this environment, not in repository secrets,
+    # so it is reachable from exactly one job and only on a `v*` tag. Without
+    # this line the two TAURI_SIGNING_* secrets below resolve to empty
+    # strings and the build silently produces unsigned bundles.
+    environment: release
     permissions:
       contents: write
     strategy:

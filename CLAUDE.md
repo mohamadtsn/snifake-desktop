@@ -80,7 +80,7 @@ One version number, in `package.json`. `tauri.conf.json` reads it from there; `s
 - `.github/workflows/ci.yml` — every push/PR: version check, frontend build, vitest, clippy, `cargo test`.
 - `.github/workflows/release.yml` — on a `v*` tag: builds Windows (NSIS+MSI), macOS (aarch64 + x86_64) and Linux (deb/rpm/AppImage), uploads to a **draft** release with `latest.json` for the in-app updater. Publishing the draft is the human step that makes an update live.
 - `src-tauri/scripts/build-engine.sh` — the `beforeBuildCommand` hook. Builds the engine for `TAURI_ENV_TARGET_TRIPLE` (not the host — a macos-latest runner is arm64 but also builds the x86_64 bundle) then calls `stage-resources.sh` with the matching triple.
-- The updater's public key is in `tauri.conf.json`; the private key is `~/.tauri/snifake.key` and lives in GitHub secrets as `TAURI_SIGNING_PRIVATE_KEY`. Losing it means no existing install can ever update in-app again.
+- The updater's public key is in `tauri.conf.json`; the private key is `~/.tauri/snifake.key` and lives in the `release` GitHub **environment** (not repository secrets) as `TAURI_SIGNING_PRIVATE_KEY`, restricted to `v*` tags — which is why the `build` job declares `environment: release`. Drop that line and the bundles ship unsigned without failing. Losing the key means no existing install can ever update in-app again: `pubkey` holds a single key, so there is no graceful rotation.
 
 ## Config keys
 

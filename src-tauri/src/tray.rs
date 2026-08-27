@@ -94,6 +94,7 @@ pub fn setup_tray(app: &AppHandle, profile_name: &str) -> tauri::Result<()> {
             match event.id.as_ref() {
                 "show" => {
                     if let Some(w) = &window {
+                        let _ = w.unminimize();
                         let _ = w.show();
                         let _ = w.set_focus();
                     }
@@ -105,6 +106,14 @@ pub fn setup_tray(app: &AppHandle, profile_name: &str) -> tauri::Result<()> {
                     let _ = app.emit("tray-stop-requested", ());
                 }
                 "quit" => {
+                    // The confirm dialog lives in the window, so raise it
+                    // first — otherwise a tray-only user answers a question
+                    // they never see.
+                    if let Some(w) = &window {
+                        let _ = w.unminimize();
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
                     let _ = app.emit("tray-quit-requested", ());
                 }
                 _ => {}

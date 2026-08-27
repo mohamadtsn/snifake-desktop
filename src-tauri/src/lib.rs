@@ -175,9 +175,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // Closing hides to the tray. Quitting is reachable only from the
+            // tray's Exit, so there is exactly one path that can stop a
+            // running proxy by accident.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
-                let _ = window.emit("frontend-quit-requested", ());
+                let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())

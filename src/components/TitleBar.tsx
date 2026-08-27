@@ -7,7 +7,7 @@ import { ProxyState, STATE_COLOR, STATE_TEXT } from "@/types";
  * when the window is scrolled or the sheet is open over the console.
  *
  * Window controls are drawn as glyphs rather than icon-library components:
- * at 10px an outlined lucide stroke reads as fuzz, and these three shapes
+ * at 10px an outlined lucide stroke reads as fuzz, and these two shapes
  * are two lines of SVG each.
  */
 export function TitleBar({ state }: { state: ProxyState }) {
@@ -38,13 +38,13 @@ export function TitleBar({ state }: { state: ProxyState }) {
 
       <span className="flex-1" data-tauri-drag-region />
 
-      <ChromeButton label="Send to tray" onClick={() => void appWindow.hide()}>
-        <path d="M2 4l4 4 4-4" />
-      </ChromeButton>
       <ChromeButton label="Minimize" onClick={() => void appWindow.minimize()}>
         <path d="M2 6h8" />
       </ChromeButton>
-      <ChromeButton label="Quit" danger onClick={() => void appWindow.close()}>
+      {/* Closes to the tray rather than quitting: the proxy is meant to keep
+          running while the window is out of the way, and quitting it is a
+          decision that belongs in one place — the tray's Exit. */}
+      <ChromeButton label="Close to tray" onClick={() => void appWindow.hide()}>
         <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
       </ChromeButton>
     </header>
@@ -54,12 +54,10 @@ export function TitleBar({ state }: { state: ProxyState }) {
 function ChromeButton({
   label,
   onClick,
-  danger,
   children,
 }: {
   label: string;
   onClick: () => void;
-  danger?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -72,7 +70,7 @@ function ChromeButton({
         "text-faint flex size-6 items-center justify-center rounded-[var(--radius-chip)]",
         "transition-colors duration-[var(--dur-fast)] focus-visible:outline-none",
         "focus-visible:border-live focus-visible:text-text border border-transparent",
-        danger ? "hover:bg-st-error hover:text-white" : "hover:bg-hover hover:text-text",
+        "hover:bg-hover hover:text-text",
       ].join(" ")}
     >
       <svg

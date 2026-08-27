@@ -211,7 +211,7 @@ exists to provide.
 
 | Component | What it is |
 |---|---|
-| `TitleBar` | the bezel: name, condition readout, three window glyphs |
+| `TitleBar` | the bezel: name, condition readout, two window glyphs (× hides to tray) |
 | `StatusPanel` | the instrument face: 20-segment bar, condition, uptime |
 | `PowerSwitch` | the only control that starts or stops the engine |
 | `RouteRows` | the route as a three-column grid |

@@ -11,18 +11,18 @@ use sni_fake_engine::capture;
 use sni_fake_engine::forward::{discover_egress, Forwarder};
 use sni_fake_engine::proto::{Command, Event, LogLevel, Profile};
 use sni_fake_engine::sniffer::{self, LogFn, PortTable};
+use sni_fake_engine::transport::Stream;
 use sni_fake_engine::validate::validate;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Serialises writes so log lines from many connection threads cannot
 /// interleave mid-line on the socket.
 #[derive(Clone)]
-struct Out(Arc<Mutex<UnixStream>>);
+struct Out(Arc<Mutex<Stream>>);
 
 impl Out {
     fn send(&self, ev: &Event) {
@@ -57,15 +57,15 @@ impl Running {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let (Some(socket_path), Some(token)) = (args.next(), args.next()) else {
-        eprintln!("usage: sni-fake-engine <socket-path> <token>");
+    let (Some(endpoint), Some(token)) = (args.next(), args.next()) else {
+        eprintln!("usage: sni-fake-engine <endpoint> <token>");
         std::process::exit(2);
     };
 
-    let stream = match UnixStream::connect(&socket_path) {
+    let stream = match Stream::connect(&endpoint) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("connect {socket_path}: {e}");
+            eprintln!("connect {endpoint}: {e}");
             std::process::exit(1);
         }
     };

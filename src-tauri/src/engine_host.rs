@@ -1,7 +1,8 @@
 //! Owns the privileged engine process for the life of the app session.
 //!
-//! The GUI listens on a `0600` unix socket, launches the engine elevated
-//! once, and then talks NDJSON to it. Keeping one authenticated process
+//! The GUI listens on a local endpoint (a `0600` unix socket, or a named
+//! pipe on Windows), launches the engine elevated once, and then talks
+//! NDJSON to it. Keeping one authenticated process
 //! alive means the user sees at most one password/UAC prompt per session,
 //! and switching profiles costs no prompt at all.
 //!
@@ -9,13 +10,11 @@
 //! — see `logbuf::LogBuffer` for why.
 
 use crate::auth::elevated_argv;
-use crate::config::{app_dir, engine_path};
+use crate::config::engine_path;
 use crate::logbuf::LogBuffer;
 use sni_fake_engine::proto::{Command, Event, LogLevel, Profile};
+use sni_fake_engine::transport::{Listener, Stream};
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -25,19 +24,10 @@ use tauri::{AppHandle, Emitter};
 /// user may be typing a password into a polkit or UAC dialog.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn socket_path() -> PathBuf {
-    app_dir().join("engine.sock")
-}
-
-/// 128 bits of hex from the OS. The socket's 0600 mode is the real barrier;
-/// this is defence in depth against a race on the socket path.
+/// 128 bits of hex from the OS. The endpoint's own access control is the
+/// real barrier; this is defence in depth against a race on the socket path.
 fn new_token() -> String {
-    use std::io::Read;
-    let mut buf = [0u8; 16];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
-        .expect("/dev/urandom is readable");
-    buf.iter().map(|b| format!("{b:02x}")).collect()
+    sni_fake_engine::sysrand::hex(16)
 }
 
 /// Folds one engine event into the log buffer. Returns a new proxy state
@@ -81,7 +71,7 @@ pub struct EngineHost {
     logs: Arc<LogBuffer>,
     state: String,
     child: Option<Child>,
-    writer: Option<Arc<Mutex<UnixStream>>>,
+    writer: Option<Arc<Mutex<Stream>>>,
 }
 
 impl EngineHost {
@@ -163,25 +153,60 @@ impl EngineHost {
             let _ = child.kill();
             let _ = child.wait();
         }
-        let _ = std::fs::remove_file(socket_path());
     }
 
-    /// Creates the socket, launches the engine elevated, waits for it to
+    /// Waits for the engine to connect back, giving up early if it dies first.
+    ///
+    /// On Unix `accept_timeout` is a cheap non-blocking poll, so it is sliced
+    /// to notice a cancelled pkexec/osascript prompt at once rather than
+    /// waiting out the whole timeout. On Windows a declined UAC prompt is
+    /// already reported synchronously by `ShellExecuteEx`, and every
+    /// `accept_timeout` call costs a worker thread parked in
+    /// `ConnectNamedPipe`, so it is called exactly once.
+    fn accept_engine(&mut self, listener: &Listener) -> Result<Stream, String> {
+        #[cfg(windows)]
+        return listener
+            .accept_timeout(CONNECT_TIMEOUT)
+            .map_err(|e| format!("the engine never connected back ({e})"));
+
+        #[cfg(unix)]
+        {
+            let deadline = std::time::Instant::now() + CONNECT_TIMEOUT;
+            loop {
+                match listener.accept_timeout(Duration::from_millis(50)) {
+                    Ok(s) => return Ok(s),
+                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                        if let Some(child) = self.child.as_mut() {
+                            if let Ok(Some(status)) = child.try_wait() {
+                                return Err(format!(
+                                    "the engine exited before connecting ({status})"
+                                ));
+                            }
+                        }
+                        if std::time::Instant::now() > deadline {
+                            return Err(
+                                "the engine never connected back (authentication cancelled?)"
+                                    .into(),
+                            );
+                        }
+                    }
+                    Err(e) => return Err(format!("accept: {e}")),
+                }
+            }
+        }
+    }
+
+    /// Creates the endpoint, launches the engine elevated, waits for it to
     /// connect back and authenticate, then starts the reader thread.
     fn spawn_engine(&mut self, app: &AppHandle) -> Result<(), String> {
-        let path = socket_path();
-        std::fs::create_dir_all(app_dir()).map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path).map_err(|e| format!("bind {path:?}: {e}"))?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
+        let listener = Listener::bind().map_err(|e| format!("create local endpoint: {e}"))?;
 
         let token = new_token();
         let engine = engine_path(app)?;
         let argv = elevated_argv(
             app,
             &engine.to_string_lossy(),
-            &[path.to_string_lossy().to_string(), token.clone()],
+            &[listener.endpoint().as_str().to_string(), token.clone()],
         );
         if argv.is_empty() {
             return Err("no way to obtain administrator privileges on this system".into());
@@ -195,30 +220,9 @@ impl EngineHost {
             .map_err(|e| format!("spawn {}: {e}", argv[0]))?;
         self.child = Some(child);
 
-        // accept(2) with a deadline: the user may be at an auth dialog.
-        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-        let deadline = std::time::Instant::now() + CONNECT_TIMEOUT;
-        let stream = loop {
-            match listener.accept() {
-                Ok((s, _)) => break s,
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if std::time::Instant::now() > deadline {
-                        return Err(
-                            "the engine never connected back (authentication cancelled?)".into(),
-                        );
-                    }
-                    if let Some(child) = self.child.as_mut() {
-                        if let Ok(Some(status)) = child.try_wait() {
-                            return Err(format!("the engine exited before connecting ({status})"));
-                        }
-                    }
-                    std::thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => return Err(format!("accept: {e}")),
-            }
-        };
-        stream.set_nonblocking(false).map_err(|e| e.to_string())?;
-        let _ = std::fs::remove_file(&path);
+        let stream = self.accept_engine(&listener);
+        listener.cleanup();
+        let stream = stream?;
 
         let reader_stream = stream.try_clone().map_err(|e| e.to_string())?;
         let mut reader = BufReader::new(reader_stream);

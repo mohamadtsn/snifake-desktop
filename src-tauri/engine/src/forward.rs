@@ -38,31 +38,44 @@ pub fn discover_egress(connect_ip: Ipv4Addr) -> Result<Egress, String> {
         SocketAddr::V6(_) => return Err("egress address is IPv6, which is unsupported".into()),
     };
 
-    let addrs = nix::ifaddrs::getifaddrs().map_err(|e| format!("getifaddrs: {e}"))?;
-    for ifaddr in addrs {
-        let Some(storage) = ifaddr.address else {
-            continue;
-        };
-        let Some(sin) = storage.as_sockaddr_in() else {
-            continue;
-        };
-        if Ipv4Addr::from(sin.ip()) != local {
-            continue;
+    // WinDivert binds by filter expression, not by interface, so the
+    // interface's name and index have no consumer on Windows — and
+    // `getifaddrs` does not exist there.
+    #[cfg(windows)]
+    return Ok(Egress {
+        local_ip: local.octets(),
+        iface_name: String::new(),
+        iface_index: 0,
+    });
+
+    #[cfg(unix)]
+    {
+        let addrs = nix::ifaddrs::getifaddrs().map_err(|e| format!("getifaddrs: {e}"))?;
+        for ifaddr in addrs {
+            let Some(storage) = ifaddr.address else {
+                continue;
+            };
+            let Some(sin) = storage.as_sockaddr_in() else {
+                continue;
+            };
+            if Ipv4Addr::from(sin.ip()) != local {
+                continue;
+            }
+            let name = ifaddr.interface_name.clone();
+            let cname = std::ffi::CString::new(name.clone()).map_err(|e| e.to_string())?;
+            // SAFETY: cname is a valid NUL-terminated C string that outlives the call.
+            let index = unsafe { libc::if_nametoindex(cname.as_ptr()) };
+            if index == 0 {
+                return Err(format!("if_nametoindex({name}) failed"));
+            }
+            return Ok(Egress {
+                local_ip: local.octets(),
+                iface_name: name,
+                iface_index: index,
+            });
         }
-        let name = ifaddr.interface_name.clone();
-        let cname = std::ffi::CString::new(name.clone()).map_err(|e| e.to_string())?;
-        // SAFETY: cname is a valid NUL-terminated C string that outlives the call.
-        let index = unsafe { libc::if_nametoindex(cname.as_ptr()) };
-        if index == 0 {
-            return Err(format!("if_nametoindex({name}) failed"));
-        }
-        return Ok(Egress {
-            local_ip: local.octets(),
-            iface_name: name,
-            iface_index: index,
-        });
+        Err(format!("no interface holds the egress address {local}"))
     }
-    Err(format!("no interface holds the egress address {local}"))
 }
 
 pub struct Forwarder {
@@ -211,6 +224,20 @@ fn pipe(mut from: TcpStream, mut to: TcpStream) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn windows_egress_needs_no_interface_identity() {
+        // WinDivert filters on addresses, so name/index are unused there and
+        // must not be treated as a failure.
+        if !cfg!(windows) {
+            return;
+        }
+        let Ok(egress) = super::discover_egress(std::net::Ipv4Addr::new(104, 18, 4, 130)) else {
+            eprintln!("no default route on this host, skipping");
+            return;
+        };
+        assert_ne!(egress.local_ip, [0, 0, 0, 0]);
+    }
+
     use super::*;
     use std::io::{Read, Write};
     use std::net::Ipv4Addr;

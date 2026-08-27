@@ -1,11 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "sni-fake",
+  "productName": "Snifake",
+  "mainBinaryName": "snifake",
   "version": "../package.json",
-  "identifier": "com.snifake.desktop",
+  "identifier": "io.github.mohamadtsn.snifake",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build && cargo build --release -p sni-fake-engine && sh src-tauri/scripts/stage-resources.sh",
+    "beforeBuildCommand": "npm run build && sh src-tauri/scripts/build-engine.sh",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -13,16 +14,13 @@
     "windows": [
       {
         "label": "main",
-        "title": "SNI Spoof",
+        "title": "Snifake",
         "width": 420,
-        "height": 560,
+        "height": 504,
         "minWidth": 380,
-        "minHeight": 500,
+        "minHeight": 440,
         "resizable": true,
         "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "backgroundColor": "#00000000",
         "center": true
       }
     ],
@@ -32,6 +30,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -47,18 +46,75 @@
     "linux": {
       "deb": {
         "files": {
-          "/usr/share/polkit-1/actions/com.snifake.desktop.policy": "policy/com.snifake.desktop.policy"
-        }
+          "/usr/share/polkit-1/actions/io.github.mohamadtsn.snifake.policy": "policy/io.github.mohamadtsn.snifake.policy"
+        },
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "policykit-1"
+        ]
       },
       "rpm": {
         "files": {
-          "/usr/share/polkit-1/actions/com.snifake.desktop.policy": "policy/com.snifake.desktop.policy"
-        }
+          "/usr/share/polkit-1/actions/io.github.mohamadtsn.snifake.policy": "policy/io.github.mohamadtsn.snifake.policy"
+        },
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libayatana-appindicator-gtk3",
+          "polkit"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
       }
     },
     "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false
+      },
       "wix": {
         "language": "en-US"
+      }
+    },
+    "publisher": "Mohamad Tsn",
+    "homepage": "https://github.com/mohamadtsn/snifake-desktop",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 Mohamad Tsn",
+    "category": "Utility",
+    "shortDescription": "TLS SNI-spoofing proxy",
+    "longDescription": "Snifake runs a local TLS SNI-spoofing forwarder. It configures, launches with elevated privileges, monitors and stops the bundled snifake-engine, and keeps connection profiles you can switch between.",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/mohamadtsn/snifake-desktop/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDQjM2NzAxNTcyRjVEODUKUldTRlhTOVhBV2V6bkJsNTV5aGhnbTJ1N0xPOTZiTzdOeE1RRkJNUU9YUG5nV2JhOFZ5UUpqV2MK",
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

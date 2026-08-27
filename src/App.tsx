@@ -13,23 +13,30 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { TitleBar } from "@/components/TitleBar";
-import { PowerDisc } from "@/components/PowerDisc";
+import { StatusPanel } from "@/components/StatusPanel";
+import { PowerSwitch } from "@/components/PowerSwitch";
 import { RouteRows } from "@/components/RouteRows";
-import { ProfileBar } from "@/components/ProfileBar";
+import { ProfileSelect } from "@/components/ProfileSelect";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { ActivitySection } from "@/components/ActivitySection";
 import { Profile, ProxyState, Store, activeProfile } from "@/types";
+import { applyUpdate, findUpdate } from "@/lib/updater";
+import type { Update } from "@tauri-apps/plugin-updater";
 
 export default function App() {
   const [store, setStore] = useState<Store | null>(null);
   const [state, setState] = useState<ProxyState>("stopped");
   /** Which profile the engine is actually running. Not the same as active. */
   const [runningId, setRunningId] = useState<string | null>(null);
+  /** When the engine came up, for the uptime readout. */
+  const [since, setSince] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
@@ -42,10 +49,21 @@ export default function App() {
     void invoke<Store>("list_profiles").then(setStore);
   }, []);
 
+  // One check per launch. Silent when we are current or the check fails.
+  useEffect(() => {
+    void findUpdate().then(setUpdate);
+  }, []);
+
   useEffect(() => {
     const unlistenState = listen<ProxyState>("state-changed", (e) => {
       setState(e.payload);
-      if (e.payload === "stopped" || e.payload === "error") setRunningId(null);
+      // The clock starts when the engine reports it is up, not when we asked
+      // it to start: elevation prompts can sit for a minute.
+      if (e.payload === "running") setSince((prev) => prev ?? Date.now());
+      if (e.payload === "stopped" || e.payload === "error") {
+        setRunningId(null);
+        setSince(null);
+      }
     });
     const unlistenStart = listen("frontend-start-requested", () => void start());
     const unlistenStop = listen("frontend-stop-requested", () => void stop());
@@ -74,17 +92,22 @@ export default function App() {
   async function stop() {
     await invoke("stop_proxy");
     setRunningId(null);
+    setSince(null);
   }
 
   /**
-   * Selecting a profile makes it active. If the proxy is running it also
+   * Selecting a profile makes it active. If the engine is running it also
    * switches over: the engine is already authenticated, so this costs no
    * password prompt and takes well under a second.
    */
   async function select(id: string) {
     setStore(await invoke<Store>("set_active_profile", { id }));
-    setSheetOpen(false);
-    if (runningRef.current !== null) await start(id);
+    if (runningRef.current !== null && runningRef.current !== id) {
+      // A restart into a different profile is a new session, so the clock
+      // restarts with it.
+      setSince(null);
+      await start(id);
+    }
   }
 
   async function save(profile: Profile) {
@@ -132,17 +155,37 @@ export default function App() {
 
   return (
     <div className="shell relative flex h-screen flex-col overflow-hidden">
+      {/* The bezel sits outside the sheet host on purpose: the drawer stops
+          below it, so quit and minimise stay reachable while a sheet is
+          open. Inside the host it would be dimmed and inert, and the only
+          way out of the profile drawer would be the drawer itself. */}
+      <TitleBar state={state} />
+
       <div
         className="sheet-host flex min-h-0 flex-1 flex-col"
         data-pushed={sheetOpen ? "" : undefined}
         inert={sheetOpen}
       >
-        <TitleBar />
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pt-3 pb-4">
-          <ProfileBar profile={profile} state={state} onOpen={() => setSheetOpen(true)} />
-          <PowerDisc state={state} onStart={() => void start()} onStop={() => void stop()} />
+        {/* One column, four blocks, one rhythm. The blocks are separated by
+            engraved rules rather than cards: a console is a single panel
+            with sections silkscreened onto it. */}
+        <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-4 pb-3">
+          <StatusPanel state={state} since={since} />
           <RouteRows profile={profile} />
-          <div className="shrink-0">
+          <ProfileSelect
+            profiles={store.profiles}
+            activeId={store.active_id}
+            runningId={runningId}
+            onSelect={(id) => void select(id)}
+            onManage={() => setSheetOpen(true)}
+          />
+        </main>
+
+        {/* Outside the scroller: the switch and the log rule are fixed
+            furniture. The primary control must never scroll off. */}
+        <div className="border-line shrink-0 border-t px-4 pt-3 pb-3">
+          <PowerSwitch state={state} onStart={() => void start()} onStop={() => void stop()} />
+          <div className="mt-2">
             <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
           </div>
         </div>
@@ -159,9 +202,9 @@ export default function App() {
       />
 
       <AlertDialog open={exitDialogOpen} onOpenChange={setExitDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="prose-face">
           <AlertDialogHeader>
-            <AlertDialogTitle>Quit SNI Spoof?</AlertDialogTitle>
+            <AlertDialogTitle>Quit Snifake?</AlertDialogTitle>
             <AlertDialogDescription>The proxy will be stopped.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -172,7 +215,7 @@ export default function App() {
       </AlertDialog>
 
       <AlertDialog open={confirmDelete !== null} onOpenChange={() => setConfirmDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="prose-face">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete the running profile?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -186,11 +229,48 @@ export default function App() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={errorDialog !== null} onOpenChange={() => setErrorDialog(null)}>
-        <AlertDialogContent>
+      <AlertDialog open={update !== null} onOpenChange={() => !updating && setUpdate(null)}>
+        <AlertDialogContent className="prose-face">
           <AlertDialogHeader>
-            <AlertDialogTitle>Could not start the proxy</AlertDialogTitle>
-            <AlertDialogDescription>{errorDialog}</AlertDialogDescription>
+            <AlertDialogTitle>Version {update?.version} is available</AlertDialogTitle>
+            <AlertDialogDescription>
+              {updating
+                ? "Downloading. Snifake will restart when it finishes."
+                : "It will be downloaded and installed, then Snifake restarts."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updating}>Later</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={updating}
+              onClick={(e) => {
+                // The dialog must stay up while the download runs, so this
+                // action does not get to close it.
+                e.preventDefault();
+                if (!update) return;
+                setUpdating(true);
+                void applyUpdate(update).catch((err) => {
+                  setUpdating(false);
+                  setUpdate(null);
+                  setErrorDialog(`Update: ${err}`);
+                });
+              }}
+            >
+              {updating ? "Installing…" : "Install"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={errorDialog !== null} onOpenChange={() => setErrorDialog(null)}>
+        <AlertDialogContent className="prose-face">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {errorDialog?.startsWith("Update:") ? "Update failed" : "Could not start the proxy"}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="font-mono text-[11px] break-all">
+              {errorDialog}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction onClick={() => setErrorDialog(null)}>OK</AlertDialogAction>

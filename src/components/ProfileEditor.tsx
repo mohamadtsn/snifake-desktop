@@ -1,5 +1,4 @@
 import { useId, useState } from "react";
-import { Check, ChevronLeft, Trash2 } from "lucide-react";
 import { Profile } from "@/types";
 
 function isValidIp(value: string): boolean {
@@ -14,9 +13,9 @@ function isValidPort(value: string): boolean {
 
 /**
  * Host and port are one address, so they share a line with the port narrow:
- * the shape of the control mirrors the shape of the value. Every field keeps
- * a visible label; a placeholder is an example, not a label. Values are
- * hostnames, IPs and ports, so the inputs are always LTR and left-read
+ * the shape of the control mirrors the shape of the value. Every field
+ * keeps a visible label — a placeholder is an example, not a label. Values
+ * are hostnames, IPs and ports, so inputs are always LTR and left-read
  * whatever the surrounding UI language is.
  */
 function Field({
@@ -27,7 +26,6 @@ function Field({
   numeric,
   placeholder,
   className,
-  mono = true,
 }: {
   label: string;
   value: string;
@@ -36,15 +34,14 @@ function Field({
   numeric?: boolean;
   placeholder?: string;
   className?: string;
-  mono?: boolean;
 }) {
   const id = useId();
   return (
     <div className={`flex min-w-0 flex-col gap-1.5 ${className ?? ""}`}>
       <label
         htmlFor={id}
-        className="text-faint text-[10.5px] uppercase"
-        style={{ letterSpacing: "0.05em" }}
+        className="text-faint text-[9.5px] uppercase"
+        style={{ letterSpacing: "var(--track-engrave)" }}
       >
         {label}
       </label>
@@ -60,18 +57,17 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={error ? true : undefined}
         className={[
-          "bg-sunken h-10 w-full rounded-[var(--radius-control)] border px-3",
-          mono ? "tnum font-mono text-[12.5px]" : "text-[13.5px]",
-          "text-text placeholder:text-faint/55 text-left",
+          "inset text-text placeholder:text-ghost h-9 w-full px-2.5 text-left text-[12px]",
           "transition-[border-color,box-shadow] duration-[var(--dur-fast)]",
-          "[transition-timing-function:var(--ease-out)]",
-          "hover:border-hairline-strong focus:outline-none",
+          "[transition-timing-function:var(--ease-out)] focus:outline-none",
           error
-            ? "border-st-error/70 focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-st-error)_20%,transparent)]"
-            : "border-hairline focus:border-brand/70 focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-brand)_20%,transparent)]",
+            ? "border-st-error/70 focus:border-st-error"
+            : "hover:border-edge focus:border-live",
         ].join(" ")}
       />
-      {error && <span className="text-st-error text-[11px]">{error}</span>}
+      {/* The message replaces nothing and shifts nothing: the row keeps its
+          height whether or not it is in error. */}
+      <span className="text-st-error h-[11px] text-[10px] leading-none">{error ?? ""}</span>
     </div>
   );
 }
@@ -98,10 +94,10 @@ export function ProfileEditor({
 
   const errors = {
     name: name.trim() ? undefined : "Required.",
-    host: isValidIp(host.trim()) ? undefined : "Must be an IPv4 address.",
-    listenPort: isValidPort(listenPort) ? undefined : "1 to 65535.",
-    connectIp: isValidIp(connectIp.trim()) ? undefined : "Must be an IPv4 address.",
-    connectPort: isValidPort(connectPort) ? undefined : "1 to 65535.",
+    host: isValidIp(host.trim()) ? undefined : "IPv4 address.",
+    listenPort: isValidPort(listenPort) ? undefined : "1–65535.",
+    connectIp: isValidIp(connectIp.trim()) ? undefined : "IPv4 address.",
+    connectPort: isValidPort(connectPort) ? undefined : "1–65535.",
     sni: sni.trim() ? undefined : "Required.",
   };
   const valid = Object.values(errors).every((e) => e === undefined);
@@ -121,39 +117,41 @@ export function ProfileEditor({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex shrink-0 items-center gap-2 px-3 pb-3">
+      <header className="border-line flex shrink-0 items-center gap-2 border-b px-4 pb-3">
         <button
           type="button"
           onClick={onCancel}
-          className="text-brand focus-visible:ring-brand/60 flex h-8 items-center gap-0.5 rounded-[10px] pr-2 pl-1 text-[13px] transition-transform duration-[var(--dur-press)] [transition-timing-function:var(--ease-out)] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.97]"
+          className="text-faint hover:text-text flex items-center gap-1.5 text-[10px] uppercase transition-colors focus-visible:outline-none"
+          style={{ letterSpacing: "var(--track-engrave)" }}
         >
-          <ChevronLeft className="size-4" />
-          Back
+          &lsaquo; Back
         </button>
-        <span className="text-text flex-1 text-center text-[13px] font-semibold">
-          {isNew ? "New profile" : "Edit profile"}
-        </span>
-        {/* bg-brand-press, not bg-brand: white on #0a84ff is 3.65:1 and this
-            label is 13px. See DESIGN.md, decision log, 2026-08-27. */}
+        <h2
+          className="text-dim flex-1 text-center text-[10px] uppercase"
+          style={{ letterSpacing: "var(--track-engrave)" }}
+        >
+          {isNew ? "New" : "Edit"}
+        </h2>
+        {/* Solid green carrying dark ink — the same pairing as the lit power
+            switch, and used here for the same reason: this is the one
+            committing action on the screen. */}
         <button
           type="button"
           onClick={save}
           disabled={!valid}
-          className="bg-brand-press focus-visible:ring-brand/60 flex h-8 items-center gap-1 rounded-[10px] px-3 text-[13px] font-medium text-white transition-[transform,opacity] duration-[var(--dur-press)] [transition-timing-function:var(--ease-out)] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.97] disabled:opacity-35"
+          className="chip bg-live text-live-ink border-live hover:bg-live h-7 px-3 disabled:opacity-30"
         >
-          <Check className="size-3.5" />
           Save
         </button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-3 pb-4">
         <Field
           label="Name"
           value={name}
           onChange={setName}
           error={errors.name}
-          mono={false}
-          placeholder="Vercel"
+          placeholder="cloudflare"
         />
 
         <div className="flex gap-2">
@@ -172,7 +170,7 @@ export function ProfileEditor({
             error={errors.listenPort}
             numeric
             placeholder="40443"
-            className="w-[84px] shrink-0"
+            className="w-[78px] shrink-0"
           />
         </div>
 
@@ -192,7 +190,7 @@ export function ProfileEditor({
             error={errors.connectPort}
             numeric
             placeholder="443"
-            className="w-[84px] shrink-0"
+            className="w-[78px] shrink-0"
           />
         </div>
 
@@ -208,9 +206,9 @@ export function ProfileEditor({
           <button
             type="button"
             onClick={onDelete}
-            className="bg-st-error/12 text-st-error hover:bg-st-error/20 focus-visible:ring-st-error/60 mt-1 flex h-10 items-center justify-center gap-2 rounded-[var(--radius-control)] text-[13px] font-medium transition-[background-color,transform] duration-[var(--dur-press)] [transition-timing-function:var(--ease-out)] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.985]"
+            className="border-st-error/35 text-st-error hover:bg-st-error/12 hover:border-st-error/60 mt-3 h-9 rounded-[var(--radius-control)] border text-[10px] uppercase transition-colors duration-[var(--dur-fast)] focus-visible:outline-none"
+            style={{ letterSpacing: "var(--track-engrave)" }}
           >
-            <Trash2 className="size-3.5" />
             Delete profile
           </button>
         )}

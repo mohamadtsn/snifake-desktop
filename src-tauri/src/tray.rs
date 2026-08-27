@@ -86,7 +86,7 @@ pub fn setup_tray(app: &AppHandle, profile_name: &str) -> tauri::Result<()> {
     let icon = build_tray_icon(app, "stopped");
     TrayIconBuilder::with_id("main")
         .icon(icon)
-        .tooltip("SNI Spoof — Stopped")
+        .tooltip("Snifake — Stopped")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -130,7 +130,7 @@ pub fn update_tray(app: &AppHandle, state: &str, profile_name: &str) {
             let _ = tray.set_menu(Some(menu));
         }
         let label = format!(
-            "SNI Spoof — {}{} ({profile_name})",
+            "Snifake — {}{} ({profile_name})",
             &state[..1].to_uppercase(),
             &state[1..]
         );

@@ -1,4 +1,4 @@
-# ── SNI Spoof — Docker toolchain for Rust/Tauri ────────────────────
+# ── Snifake — Docker toolchain for Rust/Tauri ────────────────────
 #
 # Frontend (npm/React/Vite) tooling runs on the HOST; these services only
 # cover the Rust/Tauri side. Run `npm run build` on the host before any
@@ -23,11 +23,11 @@
 
 x-common: &common
   # One explicit image shared by every service. Without this, compose derives
-  # a per-service name (`<project>-<service>`, e.g. `sni-fake-test`) and will
+  # a per-service name (`<project>-<service>`, e.g. `snifake-test`) and will
   # silently REUSE any unrelated image that already answers to that name
   # rather than building this Dockerfile — which surfaces as
   # `sh: 1: cargo: not found` inside a container that was never ours.
-  image: sni-fake-toolchain:latest
+  image: snifake-toolchain:latest
   build:
     context: .
     dockerfile: Dockerfile
@@ -87,8 +87,8 @@ services:
         # system frameworks that a non-Darwin host cannot resolve, and every
         # macOS-specific line we own lives in the engine anyway.
         echo "── macos ──"
-        cargo check -p sni-fake-engine --all-targets --target aarch64-apple-darwin
-        cargo check -p sni-fake-engine --all-targets --target x86_64-apple-darwin
+        cargo check -p snifake-engine --all-targets --target aarch64-apple-darwin
+        cargo check -p snifake-engine --all-targets --target x86_64-apple-darwin
         chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
 
   build-linux:
@@ -97,7 +97,7 @@ services:
       - sh
       - -ec
       - |
-        cargo build --release -p sni-fake-engine
+        cargo build --release -p snifake-engine
         sh scripts/stage-resources.sh
         cargo tauri build --config tauri.docker.conf.json
         chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
@@ -108,7 +108,7 @@ services:
       - sh
       - -ec
       - |
-        cargo xwin build --release -p sni-fake-engine --target x86_64-pc-windows-msvc
+        cargo xwin build --release -p snifake-engine --target x86_64-pc-windows-msvc
         sh scripts/stage-resources.sh x86_64-pc-windows-msvc
         # NSIS only: the MSI/WiX bundler needs a real Windows host.
         cargo tauri build --config tauri.docker.conf.json \

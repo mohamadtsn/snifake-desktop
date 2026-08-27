@@ -14,7 +14,7 @@ sha256(WinDivert64.sys)       = 8da085332782708d8767bcace5327a6ec7283c17cfb85e40
 an unsigned `.sys` is rejected with `ERROR_INVALID_IMAGE_HASH` on any
 machine that has not had test signing enabled, which is all of them.
 
-Both files must land in the same directory as `sni-fake-engine.exe`.
+Both files must land in the same directory as `snifake-engine.exe`.
 `scripts/stage-resources.sh` copies them into `src-tauri/resources/` for any
 `*-windows-*` target, and `bundle.resources` in `tauri.conf.json` ships that
 directory flat into the installed layout. The engine loads the DLL by name,

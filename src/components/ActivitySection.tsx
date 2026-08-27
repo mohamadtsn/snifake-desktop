@@ -64,26 +64,33 @@ export function ActivitySection({
   }, [lines]);
 
   return (
-    <Disclosure label="Activity" badge={unseen} open={open} onOpenChange={onOpenChange}>
-      <label className="mb-2 flex cursor-pointer items-center gap-2 text-[11px] text-faint">
+    <Disclosure label="Log" badge={unseen} open={open} onOpenChange={onOpenChange}>
+      <label
+        className="text-faint hover:text-dim mb-2 flex w-fit cursor-pointer items-center gap-2 text-[9.5px] uppercase transition-colors"
+        style={{ letterSpacing: "var(--track-engrave)" }}
+      >
         <input
           type="checkbox"
           checked={verbose}
           onChange={(e) => setVerbose(e.target.checked)}
-          className="size-3 accent-[var(--color-brand)]"
+          className="size-3 rounded-[2px] accent-[var(--color-live)]"
         />
-        Verbose (per-packet)
+        Per-packet
       </label>
 
       <div
         ref={viewRef}
-        className="log-scroll h-[168px] p-2.5 font-mono text-[10.5px] leading-[1.55] text-dim"
+        className="log-scroll text-dim h-[160px] px-2.5 py-2 text-[10.5px] leading-[1.6]"
       >
         {lines.length === 0 ? (
-          <div className="text-faint">No activity yet.</div>
+          /* An empty log is a normal condition, not a missing feature, so it
+             says what would fill it rather than apologising for being empty. */
+          <p className="text-ghost">
+            {"// engine output appears here once the proxy is running"}
+          </p>
         ) : (
           lines.map((line, i) => (
-            <div key={i} className="break-all whitespace-pre-wrap">
+            <div key={i} className="whitespace-pre">
               {line}
             </div>
           ))

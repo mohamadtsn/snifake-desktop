@@ -42,10 +42,9 @@ export function Sheet({
   /** Where the panel already was when the drag started, px. */
   const grabOffset = useRef(0);
   const [dragging, setDragging] = useState(false);
-  // Base UI portals to <body> by default, which would put the panel's square
-  // bottom corners outside the shell's rounded window corners, over the
-  // transparent desktop. Portal into .shell instead: it is `relative` and
-  // `overflow-hidden`, so `inset: 0` resolves against it and the corners clip.
+  // Base UI portals to <body> by default. Portal into .shell instead: it is
+  // `relative` and `overflow-hidden`, so `inset: 0` resolves against the
+  // console rather than the viewport and the drawer stays inside the bezel.
   const [container, setContainer] = useState<HTMLElement | null>(null);
   useEffect(() => setContainer(document.querySelector<HTMLElement>(".shell")), []);
 

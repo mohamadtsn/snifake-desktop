@@ -23,7 +23,7 @@ rm -rf "$out"
 mkdir -p "$out"
 
 staged=""
-for name in sni-fake-engine.exe sni-fake-engine; do
+for name in snifake-engine.exe snifake-engine; do
     if [ -f "$bin_dir/$name" ]; then
         cp "$bin_dir/$name" "$out/"
         staged=$name
@@ -36,9 +36,9 @@ if [ -z "$staged" ]; then
 fi
 
 # Windows also needs the driver sitting next to the engine; see
-# vendor/windivert/README.md.
-case "$triple" in
-*windows*)
+# vendor/windivert/README.md. Keyed on the staged binary rather than on the
+# triple, so a native Windows build (which passes no triple) gets it too.
+if [ "$staged" = "snifake-engine.exe" ]; then
     for f in WinDivert.dll WinDivert64.sys; do
         if [ ! -f "$root/vendor/windivert/$f" ]; then
             echo "stage-resources: missing vendor/windivert/$f" >&2
@@ -46,7 +46,6 @@ case "$triple" in
         fi
         cp "$root/vendor/windivert/$f" "$out/"
     done
-    ;;
-esac
+fi
 
 echo "stage-resources: staged $(ls "$out" | tr '\n' ' ')into resources/"

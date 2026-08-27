@@ -17,22 +17,26 @@ export interface Store {
   active_id: string | null;
 }
 
+/**
+ * Instrument vocabulary, not app vocabulary. A console reports a condition
+ * ("ACTIVE") where an app reports an activity ("Running"); the difference
+ * matters because the reading is meant to be scanned, not read.
+ */
 export const STATE_TEXT: Record<ProxyState, string> = {
-  stopped: "Stopped",
-  starting: "Starting",
-  running: "Running",
-  error: "Error",
+  stopped: "OFFLINE",
+  starting: "STARTING",
+  running: "ACTIVE",
+  error: "FAULT",
 };
 
-/** The subtitle names the action the disc performs, not the state again. */
+/** The label on the switch names what pressing it does, never the state. */
 export const STATE_ACTION: Record<ProxyState, string> = {
-  stopped: "Tap to start",
-  starting: "Tap to cancel",
-  running: "Tap to stop",
-  error: "Tap to retry",
+  stopped: "Start",
+  starting: "Abort",
+  running: "Stop",
+  error: "Retry",
 };
 
-/** Feeds the `--disc` custom property on `.disc`. */
 export const STATE_COLOR: Record<ProxyState, string> = {
   stopped: "var(--color-st-stopped)",
   starting: "var(--color-st-starting)",
@@ -42,4 +46,14 @@ export const STATE_COLOR: Record<ProxyState, string> = {
 
 export function activeProfile(store: Store): Profile | undefined {
   return store.profiles.find((p) => p.id === store.active_id);
+}
+
+/** `h:mm:ss` from a millisecond duration. Hours are uncapped on purpose. */
+export function formatUptime(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }

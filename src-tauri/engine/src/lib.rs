@@ -1,7 +1,7 @@
-//! Shared crate for the privileged sni-fake engine.
+//! Shared crate for the privileged Snifake engine.
 //!
 //! The GUI depends on this crate for `proto` only. Everything else is
-//! compiled into the `sni-fake-engine` binary, which is the process that
+//! compiled into the `snifake-engine` binary, which is the process that
 //! actually runs as root.
 
 pub mod capture;

@@ -6,7 +6,7 @@
 # the single password prompt the user should ever see.
 #
 # $1 = the unprivileged username to grant the rule to
-# $2 = absolute path to the sni-fake-engine binary
+# $2 = absolute path to the snifake-engine binary
 set -e
 user="$1"
 program="$2"
@@ -15,5 +15,5 @@ tmp="$(mktemp)"
 printf '%s\n' "$rule" > "$tmp"
 chmod 0440 "$tmp"
 visudo -cf "$tmp"
-install -o root -g root -m 0440 "$tmp" /etc/sudoers.d/sni-fake
+install -o root -g root -m 0440 "$tmp" /etc/sudoers.d/snifake
 rm -f "$tmp"

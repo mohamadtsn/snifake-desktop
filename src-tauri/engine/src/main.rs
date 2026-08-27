@@ -1,18 +1,18 @@
-//! The privileged half of sni-fake.
+//! The privileged half of Snifake.
 //!
-//! Usage: `sni-fake-engine <socket-path> <token>`
+//! Usage: `snifake-engine <socket-path> <token>`
 //!
 //! Connects back to the socket the unprivileged GUI is listening on, sends
 //! the token as its first line, then speaks NDJSON: commands in, events out.
 //! It stays alive for the whole GUI session so the user is only asked to
 //! authenticate once.
 
-use sni_fake_engine::capture;
-use sni_fake_engine::forward::{discover_egress, Forwarder};
-use sni_fake_engine::proto::{Command, Event, LogLevel, Profile};
-use sni_fake_engine::sniffer::{self, LogFn, PortTable};
-use sni_fake_engine::transport::Stream;
-use sni_fake_engine::validate::validate;
+use snifake_engine::capture;
+use snifake_engine::forward::{discover_egress, Forwarder};
+use snifake_engine::proto::{Command, Event, LogLevel, Profile};
+use snifake_engine::sniffer::{self, LogFn, PortTable};
+use snifake_engine::transport::Stream;
+use snifake_engine::validate::validate;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
@@ -58,7 +58,7 @@ impl Running {
 fn main() {
     let mut args = std::env::args().skip(1);
     let (Some(endpoint), Some(token)) = (args.next(), args.next()) else {
-        eprintln!("usage: sni-fake-engine <endpoint> <token>");
+        eprintln!("usage: snifake-engine <endpoint> <token>");
         std::process::exit(2);
     };
 

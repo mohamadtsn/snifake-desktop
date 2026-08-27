@@ -41,7 +41,7 @@ mod imp {
 
     impl Listener {
         pub fn bind() -> io::Result<Listener> {
-            let path = socket_dir().join(format!("sni-fake-{}.sock", crate::sysrand::hex(8)));
+            let path = socket_dir().join(format!("snifake-{}.sock", crate::sysrand::hex(8)));
             let _ = std::fs::remove_file(&path);
             let inner = UnixListener::bind(&path)?;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
@@ -149,7 +149,7 @@ mod imp {
             // Default security: the creating user and SYSTEM. The elevated
             // engine runs as the same user, so it is allowed; another
             // account on the machine is not.
-            let name = format!(r"\\.\pipe\sni-fake-{}", crate::sysrand::hex(8));
+            let name = format!(r"\\.\pipe\snifake-{}", crate::sysrand::hex(8));
             let wide_name = wide(&name);
             // SAFETY: wide_name is a valid NUL-terminated UTF-16 string.
             let handle = unsafe {

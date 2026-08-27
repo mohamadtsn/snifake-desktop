@@ -19,14 +19,14 @@ pub fn app_dir() -> PathBuf {
     } else {
         dirs::config_dir().unwrap_or_else(|| dirs::home_dir().unwrap().join(".config"))
     };
-    base.join("sni-fake")
+    base.join("snifake")
 }
 
 fn engine_name() -> &'static str {
     if cfg!(target_os = "windows") {
-        "sni-fake-engine.exe"
+        "snifake-engine.exe"
     } else {
-        "sni-fake-engine"
+        "snifake-engine"
     }
 }
 

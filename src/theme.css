@@ -2,100 +2,135 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
+/* =======================================================================
+   CONSOLE
+   An instrument, not an app. The visual language is a piece of network
+   equipment: cool graphite, hairline rules, one amber signal lamp, and
+   type that lines up in columns because every value here is a number or
+   an address.
+
+   Three rules the whole file obeys:
+     1. Amber is the only accent. Red appears in exactly one situation
+        (error) and grey is the absence of signal. There is no green:
+        green-for-running is the reflex everything else already uses.
+     2. Corners are tight (2-6px). A console is machined, not moulded.
+     3. Rules and labels do the work that cards and shadows used to.
+        There is one elevation in the app, and it is the sheet.
+   ===================================================================== */
+
 @theme {
-  /* ---- Surfaces -------------------------------------------------------
-     Two depth levels, as before. Base moves from the blue-black #070b16 to
-     a near-neutral graphite with a cold cast: Apple's dark materials read
-     as grey with a hint of blue, never as navy. The shell is still the only
-     element carrying backdrop-filter, because WebKitGTK re-blurs a backdrop
-     layer on every repaint of anything above it. */
-  --color-shell: #0c0c0f;
-  --color-shell-edge: rgba(235, 240, 255, 0.12);
-  --color-raised: rgba(255, 255, 255, 0.055);
-  --color-raised-hover: rgba(255, 255, 255, 0.085);
-  --color-sunken: rgba(0, 0, 0, 0.42);
-  --color-hairline: rgba(255, 255, 255, 0.09);
-  --color-hairline-strong: rgba(255, 255, 255, 0.16);
+  /* ---- Surfaces --------------------------------------------------------
+     A single cool-graphite family, no second hue. Each step is a real
+     lightness step rather than a translucent white overlay, because
+     WebKitGTK composites a flat fill for free and re-blends an alpha layer
+     on every repaint underneath it. */
+  --color-bg: #0d0e10;
+  --color-panel: #131518;
+  --color-inset: #0a0b0c;
+  --color-hover: #191c20;
 
-  /* ---- Text: three steps. Every one clears 4.5:1 on --color-shell,
-     --color-faint included (4.71:1), so there is no size floor to remember.
-     A fourth, dimmer step would fail and is banned. */
-  --color-text: #f5f5f7;
-  --color-dim: #a1a1a6;
-  --color-faint: #7c7c82;
+  /* Rules, not borders. `line` is structural (it separates), `edge` is
+     decorative (it defines a control), `beam` is the lit state. */
+  --color-line: #23262b;
+  --color-edge: #2d3137;
+  --color-beam: #3b4048;
 
-  /* ---- Accent + state, from Apple's dark-mode system palette.
-     Named `brand`, not `accent`: the `@theme inline` block below re-maps
-     --color-accent onto shadcn's muted hover token and would win.
-     --color-brand is for text, icons, rings and tints on dark (5.35:1).
-     Solid fills that carry white text use --color-brand-press, because
-     white on #0a84ff is 3.65:1 and fails AA below 18px. */
-  --color-brand: #0a84ff;        /* systemBlue   (dark) */
-  --color-brand-press: #0071e3;
-  --color-st-stopped: #8e8e93;   /* systemGray */
-  --color-st-starting: #ff9f0a;  /* systemOrange (dark) */
-  --color-st-running: #30d158;   /* systemGreen  (dark) */
-  --color-st-error: #ff453a;     /* systemRed    (dark) */
+  /* ---- Text: four steps. `text` and `dim` carry meaning, `faint` carries
+     labels, `ghost` is for the unlit half of the signal bar and never
+     carries text. */
+  --color-text: #e9ebee;
+  --color-dim: #969ba2;
+  --color-faint: #6a6f76;
+  --color-ghost: #2a2d32;
 
-  /* ---- Motion.
-     Strong custom curves: the built-in CSS easings are too weak to read as
-     intentional. `sheet` is the iOS drawer curve.
-     There is deliberately no overshooting CSS curve. The one this file used
-     to carry only ever fed the old status orb, and a cubic-bezier that
-     overshoots reads as elastic rather than physical because it has no
-     velocity term. Overshoot that has to feel real comes from motion/react's
-     spring, which does. */
-  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  /* ---- Signal. Three colours, three meanings, no overlap.
+
+     `live` is a CRT phosphor green, not the mint every SaaS dashboard
+     reaches for: desaturated enough to sit inside the graphite family, and
+     the archetypal colour of a terminal, which is what this app is dressed
+     as. 10.0:1 on --color-bg.
+
+     Amber does NOT mean "good". On real equipment an amber lamp means
+     caution — a degraded link, a device still negotiating — and a panel lit
+     entirely amber while everything is fine says the opposite of what it
+     means. So amber is `starting` and the unread-log badge only: states
+     that are in transition or want a look. */
+  --color-live: #4ed17f;
+  --color-live-deep: #2ea863;
+  --color-live-ink: #04150c;
+
+  --color-amber: #ffb224;
+  --color-amber-deep: #d98a00;
+
+  --color-st-stopped: #6a6f76;
+  --color-st-starting: #ffb224;
+  --color-st-running: #4ed17f;
+  --color-st-error: #ff5c4d;
+
+  /* ---- Motion. Console motion is short and mechanical: things latch,
+     they do not float. The one long curve is the sheet, which is a
+     physical drawer and keeps the iOS curve. */
+  --ease-out: cubic-bezier(0.2, 0.9, 0.25, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
 
-  --dur-press: 120ms;
-  --dur-fast: 180ms;
-  --dur-panel: 260ms;
-  --dur-sheet: 420ms;
+  --dur-press: 90ms;
+  --dur-fast: 150ms;
+  --dur-panel: 220ms;
+  --dur-sheet: 380ms;
 
-  /* ---- Shape. Generous and consistent, for continuous-corner feel.
-     These three plus 9999px are the only radii in the app. */
-  --radius-shell: 20px;
-  --radius-card: 16px;
-  --radius-control: 12px;
+  /* ---- Shape. Machined, not moulded. These four are the only radii. */
+  --radius-panel: 6px;
+  --radius-control: 4px;
+  --radius-chip: 3px;
 
-  /* ---- Tracking is size-specific. One letter-spacing value is wrong
-     somewhere: display type reads too loose as it grows, micro type too
-     tight to stay legible. Apple's own tracking table, in em. */
-  --track-display: -0.026em; /* 28px+ */
-  --track-title: -0.021em;   /* 20-24px */
-  --track-body: -0.011em;    /* 15-17px */
-  --track-caption: -0.003em; /* 12-13px */
-  --track-micro: 0.006em;    /* <=11px */
+  /* ---- Tracking. Mono labels are tracked out hard so they read as
+     engraving; display numbers are tracked in so the columns stay tight. */
+  --track-engrave: 0.14em; /* uppercase mono labels, <=10px */
+  --track-label: 0.06em;   /* uppercase mono, 11-12px */
+  --track-value: 0.005em;  /* mono values */
+  --track-display: -0.02em;
+  --track-body: -0.008em;
 }
 
-/* The window is `transparent: true` with rounded corners drawn in CSS. Every
-   layer between the webview canvas and .shell has to stay transparent, or an
-   opaque sharp-cornered rectangle shows through at the corners. */
-html, body, #root {
+/* The window is opaque and square-cornered. It used to be
+   `transparent: true` with CSS-rounded corners, which on WebKitGTK under
+   Wayland leaves the GTK surface with an empty input region: the window
+   renders but receives no pointer events at all. Nothing in the app was
+   clickable. Opaque is not a compromise here — a console has a bezel. */
+html,
+body,
+#root {
   height: 100%;
   margin: 0;
-  background: transparent;
+  background: var(--color-bg);
 }
 
 body {
-  background: transparent;
-  /* Platform font first: SF Pro and Segoe UI Variable ship real optical
-     sizing and tracking tables that no substitute reproduces. Geist is the
-     Linux answer and sits ahead of system-ui to keep it off Cantarell. */
+  /* Console runs on the mono face by default. The sans is the exception,
+     reserved for prose in dialogs, because a paragraph set in mono is a
+     ransom note. */
   font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    "Segoe UI Variable Text", "Geist Variable", system-ui, sans-serif;
-  font-optical-sizing: auto;
-  letter-spacing: var(--track-body);
-  /* Desktop app chrome, not a web page: no text-selection handles or
-     drag-to-select. Form fields opt back in below. */
+    "Geist Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono",
+    "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-value);
+  color: var(--color-text);
+  /* Desktop chrome, not a web page. Form fields opt back in below. */
   user-select: none;
   -webkit-user-select: none;
+}
+
+.prose-face {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Geist Variable", system-ui, sans-serif;
+  font-variant-numeric: normal;
+  letter-spacing: var(--track-body);
 }
 
 input,
@@ -104,205 +139,394 @@ textarea {
   -webkit-user-select: text;
 }
 
-/* --- Browser surfaces --------------------------------------------------
-   The parts we did not draw still carry the design. Left at the user-agent
-   default they are the cheapest tell that a UI was assembled rather than
-   built. */
+/* --- Browser surfaces we did not draw ---------------------------------- */
 ::selection {
-  background: color-mix(in oklab, var(--color-brand) 36%, transparent);
+  background: color-mix(in oklab, var(--color-live) 30%, transparent);
   color: var(--color-text);
 }
 
 input {
-  caret-color: var(--color-brand);
+  caret-color: var(--color-live);
 }
 
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-hairline-strong);
-  border: 2px solid transparent;
-  background-clip: content-box;
-  border-radius: 9999px;
+  background: var(--color-edge);
+  border-radius: 0;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in oklab, var(--color-dim) 55%, transparent);
-  background-clip: content-box;
+  background: var(--color-beam);
 }
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-/* Anything that changes in place while the user is looking at it, so the
-   value does not shimmy as digit widths change. */
-.tnum {
-  font-variant-numeric: tabular-nums;
+/* Hidden-but-scrollable, for the profile rail. */
+.rail {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.rail::-webkit-scrollbar {
+  display: none;
 }
 
-/* Level 1: the window itself. The only backdrop-filter in the app. */
+/* =====================================================================
+   Engraved labels
+   The section headers and field labels are the same object at two sizes.
+   A rule runs from the end of the word to the edge of the panel, which is
+   what gives the layout its instrument-panel spine.
+   ===================================================================== */
+.engrave {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9.5px;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: var(--track-engrave);
+  color: var(--color-faint);
+}
+.engrave::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  /* --color-line is structural and disappears at 1px against the panel;
+     the engraved rule has to be seen, so it uses the decorative step. */
+  background: var(--color-edge);
+}
+
+/* =====================================================================
+   The shell
+   One panel, one bezel. The faint top-edge highlight is the only lighting
+   in the app and it comes from directly above, so every inset border in
+   the file darkens the top edge and lightens the bottom.
+   ===================================================================== */
 .shell {
-  background:
-    radial-gradient(120% 80% at 50% -10%, rgba(10, 132, 255, 0.13), transparent 62%),
-    var(--color-shell);
-  border: 1px solid var(--color-shell-edge);
-  border-radius: var(--radius-shell);
-  /* No outer drop shadow: .shell fills the whole window, so a 60px blur
-     would be rasterised every repaint and then clipped away unseen. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: var(--color-bg);
+  /* A very fine grid, the way a rack panel is silkscreened. 2% alpha: it
+     should be felt at arm's length and only seen up close. */
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 28px 28px;
 }
 
-/* Level 2: a raised card. Flat fill, no blur: these sit above the shell's
-   gradient and any blur here would repaint on every state change. */
-.raised {
-  background: var(--color-raised);
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-card);
+.panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
 }
 
-/* --- Power disc -------------------------------------------------------
-   The status indicator and the primary action are the same object. Colour
-   lives in --disc, set per state by PowerDisc. Only transform and opacity
-   animate, so WebKitGTK composites every state without repainting. */
-.disc {
-  --disc-size: 152px;
+.inset {
+  background: var(--color-inset);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* =====================================================================
+   Signal bar
+   Twenty segments. This encodes state and nothing else — there is no
+   fabricated throughput here. Stopped is dark, starting fills and
+   refills, running is lit with a slow scan passing across it, error is
+   the whole bar in red.
+   ===================================================================== */
+.signal {
+  display: flex;
+  gap: 2px;
+  height: 44px;
+  --lit: var(--color-ghost);
+}
+
+.signal-seg {
+  flex: 1;
+  border-radius: 1px;
+  background: var(--color-ghost);
+  /* The unlit segment is not flat: a real bar graph's dark cells still
+     catch the light from above, and without this the bar reads as a
+     printed graphic rather than as a row of lamps. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.signal[data-state="running"] {
+  --lit: var(--color-live);
+}
+.signal[data-state="starting"] {
+  --lit: var(--color-amber-deep);
+}
+.signal[data-state="error"] {
+  --lit: var(--color-st-error);
+}
+
+/* Running: every segment lit, with a scan sweeping left to right. The
+   sweep is a per-segment delay on one opacity keyframe rather than a
+   moving gradient overlay, so nothing composites above the bar. */
+.signal[data-state="running"] .signal-seg {
+  background: var(--lit);
+  animation: seg-scan 2600ms linear infinite;
+  animation-delay: calc(var(--i) * 65ms);
+}
+
+@keyframes seg-scan {
+  0%,
+  60%,
+  100% {
+    opacity: 0.42;
+  }
+  22% {
+    opacity: 1;
+  }
+}
+
+/* Starting: a filling wipe, so the bar reads as work in progress rather
+   than as a level. */
+.signal[data-state="starting"] .signal-seg {
+  animation: seg-fill 1500ms var(--ease-in-out) infinite;
+  animation-delay: calc(var(--i) * 55ms);
+}
+
+@keyframes seg-fill {
+  0%,
+  100% {
+    background: var(--color-ghost);
+  }
+  35%,
+  70% {
+    background: var(--color-amber-deep);
+  }
+}
+
+.signal[data-state="error"] .signal-seg {
+  background: color-mix(in oklab, var(--color-st-error) 55%, var(--color-ghost));
+}
+
+/* =====================================================================
+   Power switch
+   A latching rocker, not a round button. It is wide, it is labelled in
+   engraved caps, and pressing it drops it 1px into the panel — the whole
+   feedback vocabulary of a physical switch.
+   ===================================================================== */
+.switch {
   position: relative;
   display: grid;
   place-items: center;
-  width: var(--disc-size);
-  height: var(--disc-size);
-  border-radius: 9999px;
-  background:
-    radial-gradient(
-      circle at 34% 28%,
-      color-mix(in oklab, var(--disc) 96%, white),
-      var(--disc) 58%,
-      color-mix(in oklab, var(--disc) 62%, black)
-    );
+  width: 100%;
+  height: 46px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-edge);
+  background: linear-gradient(180deg, var(--color-hover), var(--color-panel));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 0 0 1px color-mix(in oklab, var(--disc) 34%, transparent);
-  will-change: transform;
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 1px 0 rgba(0, 0, 0, 0.5);
+  color: var(--color-text);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: var(--track-engrave);
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
 }
 
-/* The halo. A gradient, not a filter: a real blur here would re-rasterise
-   on every frame of the breathe animation. This is the one glow in the app,
-   and it is a state channel rather than a shadow. */
-.disc::before {
-  content: "";
-  position: absolute;
-  inset: calc(var(--disc-size) * -0.22);
-  border-radius: 9999px;
-  background: radial-gradient(
-    circle,
-    color-mix(in oklab, var(--disc) 34%, transparent),
-    transparent 66%
-  );
-  /* --halo is driven by the state spring in PowerDisc, so the glow blooms
-     as the proxy comes up and settles back when it stops. A pseudo-element
-     cannot be a motion component, so the spring writes the variable on the
-     wrapper and this inherits it. */
-  opacity: var(--halo, 0.9);
-  pointer-events: none;
+.switch:hover {
+  border-color: var(--color-beam);
 }
 
-/* Feedback on press, not on release. The scale lives on the button rather
-   than on .disc because .disc is running a keyframe animation in two of the
-   four states, and a running animation's transform wins over any transform
-   the :active rule sets on the same element. Nested transforms compose, so
-   this fires in every state. */
-.disc-button {
-  transition: transform var(--dur-press) var(--ease-out);
-}
-.disc-button:active {
-  transform: scale(0.965);
+.switch:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.55);
 }
 
-.disc-button:focus-visible {
+.switch:focus-visible {
   outline: none;
-}
-.disc-button:focus-visible .disc {
+  border-color: var(--color-live);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 0 0 3px color-mix(in oklab, var(--color-brand) 55%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 2px color-mix(in oklab, var(--color-live) 40%, transparent);
 }
 
-/* Running: a slow, shallow breath. Amplitude is deliberately below the
-   point where it reads as movement; it reads as *alive*. */
-.disc[data-state="running"] {
-  animation: disc-breathe 3200ms ease-in-out infinite;
+/* Lit: the switch itself becomes the lamp. Solid green carrying near-black
+   text, which is the one high-contrast pairing in the app and is reserved
+   for the single most important control. */
+.switch[data-lit] {
+  background: linear-gradient(180deg, var(--color-live), var(--color-live-deep));
+  border-color: var(--color-live);
+  color: var(--color-live-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 0 22px -6px color-mix(in oklab, var(--color-live) 60%, transparent);
+}
+.switch[data-lit]:hover {
+  border-color: var(--color-live);
+  background: linear-gradient(180deg, #66dd93, var(--color-live));
 }
 
-@keyframes disc-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.03);
-  }
+/* Error: one shake, once. A loop nags; once reports. */
+.switch[data-state="error"] {
+  border-color: color-mix(in oklab, var(--color-st-error) 70%, transparent);
+  color: var(--color-st-error);
+  animation: switch-knock 360ms var(--ease-out) 1;
 }
 
-/* Starting: a real rotating arc, not the word "Starting". A conic gradient
-   masked to a ring, spun with a single transform. */
-.disc-arc {
-  position: absolute;
-  inset: -7px;
-  border-radius: 9999px;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 250deg,
-    color-mix(in oklab, var(--disc) 85%, white) 340deg,
-    transparent 360deg
-  );
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-  animation: disc-spin 1100ms linear infinite;
-  pointer-events: none;
-}
-
-@keyframes disc-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Error: one shake on entry. Not a loop: a loop is nagging, once is a
-   report. */
-.disc[data-state="error"] {
-  animation: disc-shake 420ms var(--ease-out) 1;
-}
-
-@keyframes disc-shake {
+@keyframes switch-knock {
   0%,
   100% {
     transform: translateX(0);
   }
-  20% {
-    transform: translateX(-5px);
+  25% {
+    transform: translateX(-4px);
   }
-  45% {
-    transform: translateX(4px);
+  55% {
+    transform: translateX(3px);
   }
-  70% {
-    transform: translateX(-2px);
+  80% {
+    transform: translateX(-1px);
   }
 }
 
-/* The label block is keyed on state, so it remounts and cross-fades. */
-.disc-label {
-  animation: disc-label-in var(--dur-fast) var(--ease-out) both;
+/* =====================================================================
+   Profile selector
+   A channel selector, not a row of chips. Switching while the engine is up
+   restarts it, so the control that does it must cost two deliberate
+   actions; a chip rail put that one stray click away. It also keeps one
+   fixed row whatever the profile count, which a rail does not.
+   ===================================================================== */
+.selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-line);
+  background: var(--color-panel);
+  color: var(--color-text);
+  text-align: left;
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.selector:hover {
+  border-color: var(--color-edge);
+  background: var(--color-hover);
+}
+.selector:focus-visible,
+.selector[data-popup-open] {
+  outline: none;
+  border-color: var(--color-live);
+}
+.selector[data-popup-open] .select-caret,
+.selector[data-popup-open] [data-slot="select-icon"] {
+  transform: rotate(180deg);
 }
 
-@keyframes disc-label-in {
+/* The drop-down. Flat, hairline, square-ish — a menu on equipment, not a
+   floating card. The only shadow in the app lives here, because this is
+   the only thing that genuinely floats over something else. */
+.menu {
+  min-width: var(--anchor-width);
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-edge);
+  border-radius: var(--radius-control);
+  box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.8);
+  outline: none;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.menu[data-starting-style],
+.menu[data-ending-style] {
+  opacity: 0;
+  transform: scaleY(0.94);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-chip);
+  color: var(--color-dim);
+  cursor: default;
+  outline: none;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.menu-item[data-highlighted] {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+.menu-item[data-selected] {
+  color: var(--color-text);
+}
+
+/* The running profile is marked by a lit rule down the side of its row,
+   the same signal the switch and the status bar use. */
+.menu-mark {
+  width: 2px;
+  align-self: stretch;
+  border-radius: 1px;
+  background: transparent;
+}
+.menu-mark[data-live] {
+  background: var(--color-live);
+}
+
+/* =====================================================================
+   Disclosure
+   Base UI publishes the measured height as --collapsible-panel-height, so
+   the open/close needs no JS measure pass.
+   ===================================================================== */
+.disclosure-panel {
+  overflow: hidden;
+  contain: paint;
+}
+.disclosure-panel[data-open] {
+  animation: panel-open var(--dur-panel) var(--ease-out);
+}
+.disclosure-panel[data-closed] {
+  animation: panel-close 170ms var(--ease-out);
+}
+/* Height cannot be composited and can step under load. Sliding the
+   contents at the same time is what actually reads as smooth: the eye
+   tracks the content, not the container edge. */
+.disclosure-panel[data-open] > * {
+  animation: panel-content-in var(--dur-panel) var(--ease-out);
+}
+
+@keyframes panel-open {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--collapsible-panel-height);
+  }
+}
+@keyframes panel-close {
+  from {
+    height: var(--collapsible-panel-height);
+  }
+  to {
+    height: 0;
+  }
+}
+@keyframes panel-content-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
@@ -310,55 +534,18 @@ input {
   }
 }
 
-/* --- Base UI Collapsible panel ---------------------------------------
-   Base UI exposes the measured height as --collapsible-panel-height, so
-   height can be keyframed without a JS measure pass. */
-.disclosure-panel {
-  overflow: hidden;
-  /* Height is the one property here that can't be composited, so keep its
-     repaint from escaping the panel's own box. */
-  contain: paint;
-}
-
-.disclosure-panel[data-open] {
-  animation: panel-open var(--dur-panel) var(--ease-sheet);
-}
-
-.disclosure-panel[data-closed] {
-  animation: panel-close 200ms var(--ease-sheet);
-}
-
-/* The height keyframes drive layout and can step under load. Sliding the
-   content on the compositor at the same time is what actually reads as
-   smooth: the eye tracks the contents, not the container edge. */
-.disclosure-panel[data-open] > * {
-  animation: panel-content-in var(--dur-panel) var(--ease-sheet);
-}
-
-@keyframes panel-open {
-  from { height: 0; }
-  to   { height: var(--collapsible-panel-height); }
-}
-
-@keyframes panel-close {
-  from { height: var(--collapsible-panel-height); }
-  to   { height: 0; }
-}
-
-@keyframes panel-content-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to   { opacity: 1; transform: none; }
-}
-
-/* --- Bottom sheet ------------------------------------------------------
-   Enter and exit travel the same path. Transform-only, so the whole
-   movement is composited. The transition is removed while a finger is down
-   (via [data-dragging]) so tracking is exactly 1:1: a transition during a
-   drag is what makes a sheet feel like it is on a rubber leash. */
+/* =====================================================================
+   Bottom sheet
+   The one elevated surface in the app. Enter and exit travel the same
+   path; the transition is dropped while a finger is down so tracking is
+   exactly 1:1.
+   ===================================================================== */
 .sheet-backdrop {
   position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  /* 36px is the bezel height: the drawer and its scrim both stop below the
+     title bar so the window controls stay live. */
+  inset: 36px 0 0 0;
+  background: rgba(0, 0, 0, 0.62);
   opacity: 0;
   transition: opacity var(--dur-sheet) var(--ease-sheet);
 }
@@ -368,12 +555,11 @@ input {
 
 .sheet-panel {
   position: absolute;
-  inset: 0;
+  inset: 36px 0 0 0;
   display: flex;
   flex-direction: column;
-  background: #17171a;
-  border-top: 1px solid var(--color-hairline-strong);
-  border-radius: var(--radius-shell) var(--radius-shell) 0 0;
+  background: var(--color-panel);
+  border-top: 1px solid var(--color-edge);
   transform: translateY(100%);
   transition: transform var(--dur-sheet) var(--ease-sheet);
   will-change: transform;
@@ -385,38 +571,34 @@ input {
   transition: none;
 }
 
-/* The grab handle. Wide hit area, small visible bar. */
 .sheet-handle {
   display: grid;
   place-items: center;
-  height: 26px;
+  height: 24px;
   flex-shrink: 0;
   cursor: grab;
   touch-action: none;
 }
 .sheet-handle::after {
   content: "";
-  width: 38px;
-  height: 4px;
-  border-radius: 9999px;
-  background: var(--color-hairline-strong);
+  width: 34px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--color-beam);
 }
 .sheet-handle:active {
   cursor: grabbing;
 }
 
-/* The content behind is pushed back while a sheet is over it. */
+/* The console dims while the drawer is over it. No scale: a rack panel
+   does not shrink. */
 .sheet-host {
-  transition:
-    transform var(--dur-sheet) var(--ease-sheet),
-    opacity var(--dur-sheet) var(--ease-sheet);
+  transition: opacity var(--dur-sheet) var(--ease-sheet);
 }
 .sheet-host[data-pushed] {
-  transform: scale(0.98);
-  opacity: 0.6;
+  opacity: 0.35;
 }
 
-/* Horizontal push navigation inside the sheet. Same path in and out. */
 .sheet-view {
   position: absolute;
   inset: 0;
@@ -427,7 +609,7 @@ input {
     opacity var(--dur-panel) var(--ease-out);
 }
 .sheet-view[data-position="behind"] {
-  transform: translateX(-28%);
+  transform: translateX(-24%);
   opacity: 0;
   pointer-events: none;
 }
@@ -437,50 +619,44 @@ input {
   pointer-events: none;
 }
 
-/* --- Log scroller -----------------------------------------------------
-   Opaque, no blur, no shadow: this is the one surface that repaints
-   continuously while the proxy is streaming. */
+/* =====================================================================
+   Log
+   The one surface that repaints continuously while the engine streams:
+   flat fill, no blur, no shadow, contained.
+   ===================================================================== */
 .log-scroll {
-  background: var(--color-sunken);
-  border: 1px solid var(--color-hairline);
+  background: var(--color-inset);
+  border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
-  overflow-y: auto;
+  /* Log lines scroll sideways rather than wrap. Wrapping breaks an address
+     across two lines mid-octet, which is worse than having to scroll: the
+     whole reason to read this pane is to check addresses. */
+  overflow: auto;
   overscroll-behavior: contain;
   contain: content;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Gentler, not absent: movement and overshoot go, colour and opacity stay. */
-  .disc,
-  .disc[data-state="running"],
-  .disc[data-state="error"],
-  .disc-arc,
+  /* Gentler, not absent: movement goes, colour and opacity stay. The
+     signal bar keeps its lit/unlit colours and loses only the scan. */
+  .signal .signal-seg,
+  .switch[data-state="error"],
   .disclosure-panel[data-open],
   .disclosure-panel[data-open] > *,
   .disclosure-panel[data-closed] {
     animation: none;
   }
-  .disc-button:active {
+  .signal[data-state="running"] .signal-seg,
+  .signal[data-state="starting"] .signal-seg {
+    background: var(--lit);
+  }
+  .switch:active {
     transform: none;
-    opacity: 0.85;
   }
-  .disc-label {
-    animation: disc-label-fade var(--dur-fast) ease both;
-  }
-  @keyframes disc-label-fade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  /* The sheet cross-fades in place instead of travelling. Written as
-     explicit open/closed pairs rather than `transform: none !important`
-     for two reasons: the panel still needs *something* to transition or
-     Base UI has no exit animation to wait on before unmounting, and an
-     !important transform would beat the inline transform the drag writes.
-     A drag is direct manipulation, not animation, so it stays 1:1 here. */
+  /* Explicit open/closed pairs rather than `transform: none !important`:
+     Base UI needs something to transition or it has no exit animation to
+     wait on, and an !important transform would beat the inline one the
+     drag writes. A drag is direct manipulation, so it stays 1:1. */
   .sheet-panel {
     transform: none;
     opacity: 0;
@@ -497,12 +673,6 @@ input {
   .sheet-view[data-position="ahead"] {
     transform: none;
   }
-  .sheet-host {
-    transition: opacity var(--dur-sheet) ease;
-  }
-  .sheet-host[data-pushed] {
-    transform: none;
-  }
   *,
   *::before,
   *::after {
@@ -513,7 +683,8 @@ input {
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: "Geist Variable", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -545,59 +716,53 @@ input {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
+  --radius-4xl: 8px;
 }
 
-/* App is always dark (dark-glass UI, no light mode toggle), so :root uses
-   the same values as .dark, with --border pointed at the custom palette
-   above instead of shadcn's default translucent white. */
+/* The app is always dark — a console has no light mode — so :root and
+   .dark carry identical values. These feed the only shadcn surface on
+   screen, AlertDialog, through --popover and --card. --primary is the
+   deep amber because the dialog's action button carries dark ink on it. */
 :root,
 .dark {
-  /* The app is always dark, so :root and .dark carry the same values. These
-     feed the only shadcn surface on screen, AlertDialog, through --popover
-     and --card. Left at the hand-edited navy oklch values they used to hold,
-     the dialogs would stay blue while the rest of the app moved to graphite.
-     Pointed at the semantic tokens above so there is one source of truth.
-     --primary is --color-brand-press, not --color-brand: AlertDialogAction
-     puts white text on it and #0a84ff under white is 3.65:1. */
-  --background: var(--color-shell);
+  --background: var(--color-bg);
   --foreground: var(--color-text);
-  --card: #17171a;
+  --card: var(--color-panel);
   --card-foreground: var(--color-text);
-  --popover: #17171a;
+  --popover: var(--color-panel);
   --popover-foreground: var(--color-text);
-  --primary: var(--color-brand-press);
-  --primary-foreground: #ffffff;
-  --secondary: rgba(255, 255, 255, 0.085);
+  --primary: var(--color-live);
+  --primary-foreground: var(--color-live-ink);
+  --secondary: var(--color-hover);
   --secondary-foreground: var(--color-text);
-  --muted: rgba(255, 255, 255, 0.085);
+  --muted: var(--color-hover);
   --muted-foreground: var(--color-dim);
-  --accent: rgba(255, 255, 255, 0.085);
+  --accent: var(--color-hover);
   --accent-foreground: var(--color-text);
   --destructive: var(--color-st-error);
-  --border: var(--color-hairline);
-  --input: var(--color-hairline);
-  --ring: var(--color-brand);
-  --radius: 0.9rem;
-  --chart-1: var(--color-brand);
-  --chart-2: var(--color-st-running);
-  --chart-3: var(--color-st-starting);
+  --border: var(--color-line);
+  --input: var(--color-line);
+  --ring: var(--color-live);
+  --radius: 6px;
+  --chart-1: var(--color-live);
+  --chart-2: var(--color-amber);
+  --chart-3: var(--color-dim);
   --chart-4: var(--color-st-error);
-  --chart-5: var(--color-st-stopped);
-  --sidebar: #17171a;
+  --chart-5: var(--color-faint);
+  --sidebar: var(--color-panel);
   --sidebar-foreground: var(--color-text);
-  --sidebar-primary: var(--color-brand-press);
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, 0.085);
+  --sidebar-primary: var(--color-live);
+  --sidebar-primary-foreground: var(--color-live-ink);
+  --sidebar-accent: var(--color-hover);
   --sidebar-accent-foreground: var(--color-text);
-  --sidebar-border: var(--color-hairline);
-  --sidebar-ring: var(--color-brand);
+  --sidebar-border: var(--color-line);
+  --sidebar-ring: var(--color-live);
 }
 
 @layer base {
@@ -606,8 +771,5 @@ input {
   }
   body {
     @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
   }
 }

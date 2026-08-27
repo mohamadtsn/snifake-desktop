@@ -1,48 +1,121 @@
-# SNI Spoof
+# Snifake
 
-Cross-platform desktop app (Tauri + React) that manages an external `sni-spoof` binary process — a TLS SNI-spoofing proxy. This app does not implement the proxy itself; it configures, launches (with elevated privileges), monitors, and stops the pre-built `sni-spoof-{platform}-{arch}` binary as a subprocess.
+Cross-platform desktop app (Tauri + React) for a TLS SNI-spoofing forwarder.
+
+Unlike earlier versions, Snifake 2.0 **contains its own engine**. There is no
+external binary to download and drop next to the app: `snifake-engine` is built
+from source in this repository (`src-tauri/engine`) and ships inside the
+installer.
 
 ## Features
 
-- System tray with live status (stopped/starting/running/error)
-- Config form: Listen Host/Port, Connect IP/Port, Fake SNI
-- Start/Stop/Save/Autostart toggle/Exit
-- Activity log
-- Elevated privilege launch of the bundled proxy binary
-- Persistent JSON config in the platform app-data dir
+- One-switch start/stop, with a live condition readout and uptime clock
+- Named connection profiles you can switch between while running
+- System tray with status badge
+- Activity log, streamed only while it is open
+- Elevated engine launch — one password prompt per machine on Linux, one UAC
+  prompt per session on Windows
+- In-app updates from GitHub Releases
+
+## Install
+
+Grab the installer for your platform from
+[Releases](https://github.com/mohamadtsn/snifake-desktop/releases):
+
+| Platform | File |
+| --- | --- |
+| Windows 10/11 (x64) | `Snifake_<version>_x64-setup.exe` or the `.msi` |
+| macOS (Apple silicon) | `Snifake_<version>_aarch64.dmg` |
+| macOS (Intel) | `Snifake_<version>_x64.dmg` |
+| Linux | `.AppImage` (portable), `.deb` or `.rpm` |
+
+Snifake is not code-signed. Windows SmartScreen needs **More info → Run
+anyway**; macOS needs a right-click → **Open** on the first launch.
+
+Once installed, the app checks for updates on launch and offers to install
+them in place. Nothing is downloaded until you accept.
+
+### Coexisting with older versions
+
+Snifake 2.x installs as `snifake` under the identifier
+`io.github.mohamadtsn.snifake`, where 1.x installed as `sni-fake` under
+`com.snifake.desktop`. They are separate packages: 2.x will not upgrade or
+remove a 1.x install, and the two do not share profiles. Uninstall 1.x
+yourself once you are happy with 2.x — and do not run both at once, since
+they would fight over the same listen port.
 
 ## Configuration
 
-Config keys (`LISTEN_HOST`, `LISTEN_PORT`, `CONNECT_IP`, `CONNECT_PORT`, `FAKE_SNI`) are edited in the GUI form, saved via the `save_config` command to a JSON file in the platform app-data dir, and passed to the proxy subprocess as environment variables on start.
-
-## Requirements
-
-- Node.js 18+
-- Rust (stable, via [rustup](https://rustup.rs)) — only needed for building/running outside Docker
-- Platform build dependencies per the [Tauri prerequisites guide](https://tauri.app/start/prerequisites/)
-- A `sni-spoof-{platform}-{arch}` binary placed at the repo root (not included in this repo)
+A profile carries `LISTEN_HOST`, `LISTEN_PORT`, `CONNECT_IP`, `CONNECT_PORT`
+and `FAKE_SNI`. Profiles live in `profiles.json` in the platform app-data dir
+(`~/.config/snifake` on Linux) and are passed to the engine on start.
 
 ## Development
 
+Frontend tooling runs on the host (Node.js 18+). The Rust/Tauri side runs
+either on the host (with Rust installed) or entirely in Docker.
+
 ```bash
 npm install
-npm run tauri dev
+npm run tauri dev       # needs Rust on the host
+npm run tauri build     # -> src-tauri/target/release/bundle/
+npm test
 ```
 
-## Building
+### Docker
+
+The image carries the whole Rust/Tauri toolchain — Linux bundles, Windows
+cross-builds, macOS type-checks and the test suite. Run `npm run build` on the
+host first.
 
 ```bash
-npm run tauri build
+docker compose run --rm doctor          # verify the toolchain
+docker compose run --rm test            # cargo test --workspace
+docker compose run --rm check           # type-check linux + windows + macos
+docker compose run --rm build-linux     # -> target/release/bundle/{deb,rpm,appimage}
+docker compose run --rm build-windows   # -> target/x86_64-pc-windows-msvc/release/bundle/nsis/
 ```
 
-Produces platform-native installers/binaries in `src-tauri/target/release/bundle/`.
+macOS is check-only here: `cargo check` never links, so the macOS code is
+type-checked, but a real `.app`/`.dmg` needs a Mac (which CI provides).
 
-## Docker (Linux Rust/Tauri build & dev only)
+## Releasing
 
-Frontend tooling runs on the host; Docker only covers the Rust/Tauri side:
+Versions follow [SemVer](https://semver.org). One version number lives in
+`package.json`; `tauri.conf.json` reads it from there, and
+`scripts/set-version.mjs` writes it into both Cargo manifests so they cannot
+drift.
 
 ```bash
-npm run build && docker compose run --rm build   # Linux bundle -> src-tauri/target/release/bundle
-npm run dev                                       # in one terminal
-docker compose run --rm dev                       # in another, X11 passthrough
+npm run version:set 2.1.0
+git commit -am "chore: 🔖 v2.1.0"
+git tag v2.1.0
+git push --follow-tags
 ```
+
+Pushing the tag runs `.github/workflows/release.yml`, which builds all four
+bundles in parallel and uploads them to a **draft** release together with the
+`latest.json` the in-app updater reads. Review the draft, then publish it —
+publishing is what makes the update visible to everyone already running the
+app.
+
+Bump **patch** for fixes, **minor** for features that keep profiles working,
+**major** for anything that changes the profile format or the install identity.
+
+### One-time repository setup
+
+The release workflow needs two secrets (Settings → Secrets and variables →
+Actions):
+
+| Secret | Value |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | contents of `~/.tauri/snifake.key` |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's password (empty if none) |
+
+The matching public key is already in `src-tauri/tauri.conf.json`. **Keep the
+private key.** Losing it means no existing install can ever be updated
+in-app again — they would all have to reinstall by hand.
+
+## License
+
+MIT

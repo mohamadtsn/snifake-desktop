@@ -65,8 +65,8 @@ mod tests {
     #[test]
     fn every_argument_is_quoted_so_spaces_survive() {
         assert_eq!(
-            join_args(&[r"\\.\pipe\sni-fake-ab".into(), "deadbeef".into()]),
-            "\"\\\\.\\pipe\\sni-fake-ab\" \"deadbeef\""
+            join_args(&[r"\\.\pipe\snifake-ab".into(), "deadbeef".into()]),
+            "\"\\\\.\\pipe\\snifake-ab\" \"deadbeef\""
         );
     }
 

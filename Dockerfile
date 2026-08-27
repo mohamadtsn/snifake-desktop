@@ -1,4 +1,4 @@
-# Rust/Tauri toolchain for SNI Spoof — Linux bundles, Windows cross-builds,
+# Rust/Tauri toolchain for Snifake — Linux bundles, Windows cross-builds,
 # macOS compile checks, and the test suite.
 #
 # Frontend (npm/React/Vite) tooling stays on the host; this image only runs

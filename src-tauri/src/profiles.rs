@@ -4,7 +4,7 @@
 
 use crate::config::app_dir;
 use serde::{Deserialize, Serialize};
-use sni_fake_engine::proto::Profile;
+use snifake_engine::proto::Profile;
 use std::fs;
 use std::path::PathBuf;
 

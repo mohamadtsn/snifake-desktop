@@ -9,6 +9,10 @@ config.json
 .ruff_cache/
 .idea/
 .vscode/
-# Graphify
-graphify-out/cache/
 src-tauri/resources/
+__pycache__/
+*.pyc
+
+# Local-only: session plans and the generated codebase graph
+docs/
+graphify-out/

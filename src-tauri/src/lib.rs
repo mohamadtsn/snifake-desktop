@@ -13,7 +13,7 @@ use tauri::{Emitter, Listener, Manager};
 use engine_host::EngineHost;
 use logbuf::LogBuffer;
 use profiles::Store;
-use sni_fake_engine::proto::Profile;
+use snifake_engine::proto::Profile;
 
 pub(crate) struct AppState {
     pub(crate) engine: Mutex<EngineHost>,
@@ -136,6 +136,9 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }));
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init());
     }
 
     builder

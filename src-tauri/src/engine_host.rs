@@ -13,8 +13,8 @@
 use crate::auth::elevated_argv;
 use crate::config::engine_path;
 use crate::logbuf::LogBuffer;
-use sni_fake_engine::proto::{Command, Event, LogLevel, Profile};
-use sni_fake_engine::transport::{Listener, Stream};
+use snifake_engine::proto::{Command, Event, LogLevel, Profile};
+use snifake_engine::transport::{Listener, Stream};
 use std::io::{BufRead, BufReader, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -27,7 +27,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
 /// 128 bits of hex from the OS. The endpoint's own access control is the
 /// real barrier; this is defence in depth against a race on the socket path.
 fn new_token() -> String {
-    sni_fake_engine::sysrand::hex(16)
+    snifake_engine::sysrand::hex(16)
 }
 
 /// The engine process, however it got started.

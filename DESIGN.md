@@ -135,14 +135,15 @@ and would win.
 | `--ease-out` | `cubic-bezier(.23,1,.32,1)` | Default. Anything travelling to a rest position. |
 | `--ease-in-out` | `cubic-bezier(.77,0,.175,1)` | Something leaving and arriving in one move: the power glyph morph. |
 | `--ease-sheet` | `cubic-bezier(.32,.72,0,1)` | The iOS drawer curve. The sheet, and the disclosure panel. |
-| `--ease-spring` | `cubic-bezier(.34,1.56,.64,1)` | The only curve that overshoots. Reserved for motion the user's own gesture started. Overshoot on something that merely faded in reads as a bug. |
 | `--dur-press` | `120ms` | Press and hover feedback |
 | `--dur-fast` | `180ms` | Label cross-fade, focus ring, small state |
 | `--dur-panel` | `260ms` | Disclosure, horizontal push inside the sheet |
 | `--dur-sheet` | `420ms` | The sheet's own travel |
 
 The built-in CSS easings (`ease`, `ease-out`) are banned. They are too weak to
-read as intentional at these durations.
+read as intentional at these durations. There is no overshooting CSS curve:
+see the decision log. Overshoot comes from `motion`'s spring, which has a
+velocity term, or it does not happen.
 
 **Shape**
 
@@ -265,9 +266,9 @@ Five, and only five. Each answers one of the four questions in Principle 4.
 
 | Moment | Answers | How |
 |---|---|---|
-| Disc press | what did I press | `scale(.965)` on pointer-down, `--dur-press` |
+| Disc press | what did I press | `scale(.965)` on the *button*, on pointer-down, `--dur-press` |
 | Disc state change | what changed | Colour swap plus a keyed label cross-fade, `--dur-fast` |
-| Disc running breath | is it still alive | `scale(1) -> scale(1.03)`, 3200ms, infinite |
+| Disc running breath | is it still alive | `scale(1)` to `scale(1.03)` on `.disc`, 3200ms, infinite |
 | Sheet travel | where did this come from and go | `translateY`, `--dur-sheet` `--ease-sheet`, same path in and out |
 | Sheet push navigation | where did the editor come from | `translateX` plus opacity, `--dur-panel` |
 
@@ -298,7 +299,19 @@ CSS animations carry their own `@media` block. `motion` components are covered
 globally by `<MotionConfig reducedMotion="user">` in `src/main.tsx`. Both are
 required: one does not cover the other.
 
-### 6.5 Library boundary
+### 6.5 Press feedback lives on the button, not on the disc
+
+`.disc` runs a keyframe animation in two of its four states (`running`
+breathes, `error` shakes). A running animation's `transform` wins over any
+`transform` an `:active` rule sets on the same element, so a press scale on
+`.disc` is silently dead in exactly the two states where feedback matters
+most. The scale therefore lives on `.disc-button`, one level up: nested
+transforms compose rather than compete, and the press fires in every state.
+
+Anything else that needs to move a disc which may be animating goes on the
+button too, for the same reason.
+
+### 6.6 Library boundary
 
 Filled in by Task 9. Until then: everything is CSS.
 
@@ -564,3 +577,30 @@ Resolution: Task 2 neutralises the shadcn block to match the new shell rather
 than adopting shadcn's own defaults, and `--ring` and `--primary` point at
 `--color-brand`. The dialogs are the only shadcn surface on screen, so this is
 a five-line change, not a migration.
+
+### 2026-08-27: no overshooting CSS curve
+
+`impeccable`'s detector flagged `--ease-spring`
+(`cubic-bezier(.34, 1.56, .64, 1)`) as bounce easing. Checked: after the
+status orb was deleted in Task 2 the token had zero consumers.
+
+Removed rather than kept. The finding is also correct on the merits: a
+cubic-bezier that overshoots has no velocity term, so it always overshoots by
+the same proportion no matter how the motion was started, which is what makes
+it read as elastic instead of physical. Overshoot that has to feel real comes
+from `motion`'s spring, which inherits velocity. If a future CSS-only
+animation genuinely needs overshoot, that is a signal it should be a `motion`
+component instead.
+
+### 2026-08-27: Task 8 static pass, two defects fixed
+
+Item 1, press feedback on pointer-down: failed in the `running` and `error`
+states. See Section 6.5.
+
+Item 7, interruption: grabbing the sheet while it was still closing snapped it
+to its base transform, because `[data-dragging]` removes the transition and
+the inline transform was not written until the first `pointermove`. Fixed by
+reading the presentation `translateY` at `pointerdown`, writing it inline
+immediately, and treating it as the drag origin. An interrupted drag is now
+continuous. Reopening a sheet that has already committed to closing is out of
+scope: that is Base UI's lifecycle, not ours.

@@ -3,6 +3,21 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { rubberband, shouldDismiss, velocityFrom, type Sample } from "@/lib/gesture";
 
 /**
+ * Reads the panel's *presentation* translateY, which is where it visually is
+ * right now, mid-transition included. Grabbing a sheet that is still closing
+ * has to continue from there; without this the panel snaps to its base
+ * transform the instant `data-dragging` kills the transition.
+ */
+function currentTranslateY(el: HTMLElement): number {
+  const t = getComputedStyle(el).transform;
+  if (!t || t === "none") return 0;
+  // Both matrix() and matrix3d() put translateY in the last-but-one slot.
+  const parts = t.slice(t.indexOf("(") + 1, -1).split(",");
+  const y = Number(parts[parts.length - 1]);
+  return Number.isFinite(y) ? y : 0;
+}
+
+/**
  * A bottom sheet you can throw away.
  *
  * Base UI's Dialog supplies focus trapping, Esc and scroll lock; the
@@ -24,6 +39,8 @@ export function Sheet({
   const panelRef = useRef<HTMLDivElement>(null);
   const samples = useRef<Sample[]>([]);
   const grabY = useRef(0);
+  /** Where the panel already was when the drag started, px. */
+  const grabOffset = useRef(0);
   const [dragging, setDragging] = useState(false);
   // Base UI portals to <body> by default, which would put the panel's square
   // bottom corners outside the shell's rounded window corners, over the
@@ -38,6 +55,10 @@ export function Sheet({
     const panel = panelRef.current;
     if (!panel) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    grabOffset.current = currentTranslateY(panel);
+    // Pin it where it visually is before the transition is removed, so the
+    // very next frame does not jump back to the base transform.
+    panel.style.transform = `translateY(${grabOffset.current}px)`;
     grabY.current = e.clientY;
     samples.current = [{ y: e.clientY, t: performance.now() }];
     setDragging(true);
@@ -49,7 +70,7 @@ export function Sheet({
     samples.current.push({ y: e.clientY, t: performance.now() });
     if (samples.current.length > 12) samples.current.shift();
 
-    const raw = e.clientY - grabY.current;
+    const raw = grabOffset.current + (e.clientY - grabY.current);
     // Downward is free; upward resists progressively instead of hitting a
     // wall, because a hard stop reads as the interface having frozen.
     const offset = raw >= 0 ? raw : -rubberband(-raw, panel.clientHeight);
@@ -62,7 +83,7 @@ export function Sheet({
     setDragging(false);
     e.currentTarget.releasePointerCapture(e.pointerId);
 
-    const offset = Math.max(0, e.clientY - grabY.current);
+    const offset = Math.max(0, grabOffset.current + (e.clientY - grabY.current));
     const velocity = velocityFrom(samples.current);
     samples.current = [];
     // Hand back to CSS from wherever the finger left it: the transition

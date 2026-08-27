@@ -50,6 +50,11 @@ jobs:
           node-version: lts/*
           cache: npm
       - run: npm ci && npm run build
+      # `cargo clippy` runs tauri-build, which validates bundle.resources —
+      # and that glob points at src-tauri/resources/, which only exists once
+      # the engine is staged. A release build gets this from
+      # beforeBuildCommand; a bare cargo invocation has to do it itself.
+      - run: sh src-tauri/scripts/build-engine.sh
       # Not `-D warnings`: the tree carries ~10 pre-existing lints and a
       # gate that fails on day one just gets disabled. Tighten this once
       # they are cleaned up.

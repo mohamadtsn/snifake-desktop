@@ -2,7 +2,7 @@ use image::{Rgba, RgbaImage};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Wry};
 
 fn state_color(state: &str) -> Rgba<u8> {
     match state {
@@ -49,24 +49,33 @@ pub fn build_tray_icon(app: &AppHandle, state: &str) -> Image<'static> {
     Image::new_owned(img.into_raw(), base_icon.width(), base_icon.height())
 }
 
-/// Builds a fresh menu (rather than reusing one instance) every time it's
-/// needed. Some appindicator/GTK backends have been seen leaving menu item
-/// labels blank after the tray icon is swapped while an existing Menu
-/// instance is still attached — rebuilding on every update sidesteps that
-/// instead of relying on in-place mutation of a long-lived menu.
-fn build_menu<R: Runtime>(
-    app: &AppHandle<R>,
-    state: &str,
-    profile_name: &str,
-) -> tauri::Result<Menu<R>> {
+/// The three menu items that change at runtime, kept so the menu can be
+/// mutated in place.
+///
+/// The alternative — rebuilding the whole `Menu` and calling `set_menu` on
+/// every state change — is what this replaced, and it is why the tray items
+/// rendered blank under GNOME. Replacing the menu bumps the DBusMenu
+/// revision and hands the shell a fresh set of item ids; the labels are all
+/// correct on the bus (verified with `GetLayout`), but the appindicator
+/// extension keeps the menu it already built and draws the new ids with no
+/// text. Mutating properties instead emits `ItemsPropertiesUpdated`, which
+/// is the path every DBusMenu consumer actually implements.
+pub struct TrayMenu {
+    current: MenuItem<Wry>,
+    start: MenuItem<Wry>,
+    stop: MenuItem<Wry>,
+}
+
+fn start_enabled(state: &str) -> bool {
+    state == "stopped" || state == "error"
+}
+
+fn stop_enabled(state: &str) -> bool {
+    state == "running" || state == "starting"
+}
+
+pub fn setup_tray(app: &AppHandle, profile_name: &str) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-    let start_enabled = state == "stopped" || state == "error";
-    let stop_enabled = state == "running" || state == "starting";
-    let start = MenuItem::with_id(app, "start", "Start Proxy", start_enabled, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "stop", "Stop Proxy", stop_enabled, None::<&str>)?;
-    let sep1 = PredefinedMenuItem::separator(app)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>)?;
     // Disabled: a label, not a control. Tells you which profile Start acts on.
     let current = MenuItem::with_id(
         app,
@@ -75,14 +84,21 @@ fn build_menu<R: Runtime>(
         false,
         None::<&str>,
     )?;
-    Menu::with_items(
+    let start = MenuItem::with_id(app, "start", "Start Proxy", true, None::<&str>)?;
+    let stop = MenuItem::with_id(app, "stop", "Stop Proxy", false, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(
         app,
         &[&show, &sep1, &current, &start, &stop, &sep2, &quit],
-    )
-}
+    )?;
+    app.manage(TrayMenu {
+        current,
+        start,
+        stop,
+    });
 
-pub fn setup_tray(app: &AppHandle, profile_name: &str) -> tauri::Result<()> {
-    let menu = build_menu(app, "stopped", profile_name)?;
     let icon = build_tray_icon(app, "stopped");
     TrayIconBuilder::with_id("main")
         .icon(icon)
@@ -133,11 +149,13 @@ pub fn setup_tray(app: &AppHandle, profile_name: &str) -> tauri::Result<()> {
 }
 
 pub fn update_tray(app: &AppHandle, state: &str, profile_name: &str) {
+    if let Some(items) = app.try_state::<TrayMenu>() {
+        let _ = items.current.set_text(format!("Profile: {profile_name}"));
+        let _ = items.start.set_enabled(start_enabled(state));
+        let _ = items.stop.set_enabled(stop_enabled(state));
+    }
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_icon(Some(build_tray_icon(app, state)));
-        if let Ok(menu) = build_menu(app, state, profile_name) {
-            let _ = tray.set_menu(Some(menu));
-        }
         let label = format!(
             "Snifake — {}{} ({profile_name})",
             &state[..1].to_uppercase(),

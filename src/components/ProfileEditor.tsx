@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { Profile } from "@/types";
+import { undoIntent, useUndoHistory } from "@/lib/undo";
 
 function isValidIp(value: string): boolean {
   const parts = value.split(".");
@@ -36,6 +37,21 @@ function Field({
   className?: string;
 }) {
   const id = useId();
+  // The field owns its undo stack rather than relying on the webview's —
+  // see src/lib/undo.ts for why.
+  const history = useUndoHistory(value);
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    const intent = undoIntent(e);
+    if (!intent) return;
+    const restored = intent === "undo" ? history.undo() : history.redo();
+    // Nothing of ours to restore: leave the event alone so the platform
+    // still gets its shot at it.
+    if (restored === undefined) return;
+    e.preventDefault();
+    onChange(restored);
+  }
+
   return (
     <div className={`flex min-w-0 flex-col gap-1.5 ${className ?? ""}`}>
       <label
@@ -54,7 +70,11 @@ function Field({
         spellCheck={false}
         placeholder={placeholder}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          history.record(e.target.value);
+          onChange(e.target.value);
+        }}
+        onKeyDown={onKeyDown}
         aria-invalid={error ? true : undefined}
         className={[
           "inset text-text placeholder:text-ghost h-9 w-full px-2.5 text-left text-[12px]",

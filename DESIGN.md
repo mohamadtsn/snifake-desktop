@@ -372,7 +372,28 @@ and the title, description and button all name the same one at the same
 time. The button said "Installing…" while the description said "Downloading",
 which is exactly the inconsistency §"writing" warns about.
 
-### 4.7 The log
+### 4.7 Undo in text fields
+
+The browser already keeps an undo stack, and in Chrome it works through a
+controlled React input (verified: typing over a value and pressing Ctrl+Z
+restores it). Under WebKitGTK, which is what this app ships on, it does not.
+
+Rather than chase an engine difference that cannot be reproduced without a
+Linux webview, each field owns its history (`src/lib/undo.ts`). That behaves
+identically on every platform and adds redo, which a controlled input tends
+to lose from the native stack anyway.
+
+- Keystrokes within 500ms collapse into one step, the way a native stack
+  chunks by word. Undoing five times to remove "hello" is not undo.
+- A new edit discards the redo branch — the rule every text editor uses.
+- Ctrl/Cmd+Shift+Z **and** Ctrl+Y both redo, because this app ships on all
+  three platforms.
+- When our stack is empty the event is left alone, so whatever the platform
+  would have done still happens.
+- It is all refs: undo state is never rendered, so changing it costs no
+  render. That also makes it testable without a DOM (`undo.test.ts`).
+
+### 4.8 The log
 
 The one surface that repaints continuously while the engine streams: flat
 fill, no blur, no shadow, `contain: content`.
@@ -399,6 +420,14 @@ one `push_back` in Rust: no IPC, no React render.
   the bar's motion, carry the state without it.
 - Focus is visible on every control: an amber border, never a removed
   outline.
+- Every enabled control shows a pointer cursor, and disabled ones keep the
+  arrow. Tailwind v4's preflight sets `cursor: default` on buttons, which is
+  the HTML default and wrong for an app where every control is one; a single
+  rule in `@layer base` fixes it for all of them, so a control is pointable
+  because it is a control rather than because someone remembered a class.
+  The bezel's drag region is explicitly excluded — a pointer there promises
+  a click that does nothing.
+- Text fields support Ctrl/Cmd+Z and both redo conventions. See §4.8.
 - Inputs keep a real `<label>`. A placeholder is an example, not a label.
 - Addresses are `dir="ltr"` and left-read regardless of UI language.
 - `prefers-reduced-motion` is **gentler, not absent**: movement goes, colour
@@ -441,6 +470,16 @@ and a rail's width tracked the profile count. See §4.3.
 **2026-08-27 — The bezel left the sheet host.** With the title bar inside it,
 opening the profile drawer made the window controls inert: no way to quit
 without first closing the drawer.
+
+**2026-08-28 — The profile drawer got a visible way out.** Drag-to-dismiss
+and Esc both closed it, but neither is visible, and a drawer with no visible
+exit is one people learn to distrust. Its header now uses the same three
+slots as the editor's: leave on the left, view name in the middle, the one
+action on the right.
+
+**2026-08-28 — Pointer cursors, once, at the root.** See §5.
+
+**2026-08-28 — Fields own their undo stack.** See §4.7.
 
 **2026-08-28 — The update meter joined the system.** It arrived with a
 pill radius (not one of the app's four), a sweep that was off-screen for 77%

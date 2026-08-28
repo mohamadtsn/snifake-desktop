@@ -578,7 +578,7 @@ input {
     padding: 7px 8px;
     border-radius: var(--radius-chip);
     color: var(--color-dim);
-    cursor: default;
+    cursor: pointer;
     outline: none;
     transition: background-color var(--dur-fast) var(--ease-out);
   }
@@ -936,6 +936,26 @@ input {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+
+  /* Tailwind v4's preflight sets `cursor: default` on buttons, which is the
+     HTML default but wrong for an app: every control here is a button, and
+     an arrow over one reads as "not clickable". Fixed once at the root
+     rather than by hanging `cursor-pointer` on twenty call sites — a
+     control is pointable because it is a control, not because someone
+     remembered. Disabled controls keep the arrow, which is the whole point
+     of the distinction. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="option"],
+  label:has(input[type="checkbox"]) {
+    cursor: pointer;
+  }
+
+  /* Except the bezel, which is a drag surface. A pointer there promises a
+     click that does nothing. */
+  [data-tauri-drag-region] {
+    cursor: default;
   }
   body {
     @apply bg-background text-foreground;

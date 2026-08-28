@@ -69,9 +69,33 @@ export function ProfileSheet({
     >
       {/* Both views stay mounted so the horizontal push can animate. */}
       <div className="sheet-view" data-position={view.kind === "list" ? "current" : "behind"}>
+        {/* Three slots, the same three the editor's header uses: leave on
+            the left, where the editor puts Back; the view's name in the
+            middle; the one action on the right. Dragging the sheet down and
+            Esc both still close it, but neither is visible, and a drawer
+            with no visible way out is a drawer people learn to distrust. */}
         <header className="flex shrink-0 items-center gap-2 px-4 pb-3">
+          <button
+            type="button"
+            onClick={close}
+            className="text-faint hover:text-text flex items-center gap-1.5 text-[10px] uppercase transition-colors focus-visible:outline-none"
+            style={{ letterSpacing: "var(--track-engrave)" }}
+          >
+            <svg
+              viewBox="0 0 12 12"
+              className="size-2.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.6}
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" />
+            </svg>
+            Close
+          </button>
           <h2
-            className="text-dim flex-1 text-[10px] uppercase"
+            className="text-dim flex-1 text-center text-[10px] uppercase"
             style={{ letterSpacing: "var(--track-engrave)" }}
           >
             Profiles

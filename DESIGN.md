@@ -219,6 +219,7 @@ exists to provide.
 | `Disclosure` | an engraved header made pressable |
 | `ActivitySection` | owns all log state; drives `set_log_streaming` |
 | `AboutDialog` | identity, metadata and the manual update check |
+| `UpdateMeter` | real download bytes, in `App.tsx` beside the update dialog |
 | `UpdateMeter` | the download bar in the update dialog — the only progress bar |
 | `Sheet` / `ProfileSheet` / `ProfileEditor` | the drawer |
 
@@ -338,7 +339,40 @@ without reading as "cancel".
   *commit* actions; checking for updates commits nothing, and an About box
   has no primary action worth accenting.
 
-### 4.6 The log
+### 4.6 The update meter
+
+Real bytes, never a fake sweep to fill the wait — the same law that keeps a
+throughput meter off the status face (§4.1). When the download server sends
+no `content-length` the bar says exactly that by refusing to claim a
+position, and sweeps instead.
+
+- **Radius is 1px**, the same as a signal-bar segment. §2.6 lists 3/4/6px
+  plus that 1px and the list is closed; a pill is the one shape this app
+  does not make. It also rhymes the meter with the other horizontal readout
+  on screen.
+- **The sweep is `linear`.** An easing curve lingers at both extremes, which
+  are precisely where the bar sits outside the track, and easing implies
+  phases an indeterminate sweep does not have.
+- **The sweep travels -35% → 105%.** The fill is `scaleX(0.3)` about its left
+  edge, so those are one bar-width off each end. Percentages resolve against
+  the *unscaled* box, which is easy to get wrong: an earlier -110% → 440%
+  put the bar off-screen for three quarters of every cycle.
+- **The readout is in the value face**, not the dialog's prose face. Bytes
+  are a value (§2.5). Geist Variable happens to ship equal-width digits so
+  nothing visibly jitters today, but a fallback to Cantarell has no such
+  guarantee and this is a number the user watches change.
+- **The readout is `--color-dim`, not `--color-faint`.** Faint clears 4.5:1
+  on `--color-bg`; on the dialog's lighter `--color-panel` it does not.
+- Fill and sweep are `transform`/`translate` only, so the whole thing is
+  composited. Under `prefers-reduced-motion` the indeterminate bar goes
+  static and dims rather than disappearing.
+
+**Copy follows the phase.** Download and install are two phases of one flow,
+and the title, description and button all name the same one at the same
+time. The button said "Installing…" while the description said "Downloading",
+which is exactly the inconsistency §"writing" warns about.
+
+### 4.7 The log
 
 The one surface that repaints continuously while the engine streams: flat
 fill, no blur, no shadow, `contain: content`.
@@ -407,6 +441,19 @@ and a rail's width tracked the profile count. See §4.3.
 **2026-08-27 — The bezel left the sheet host.** With the title bar inside it,
 opening the profile drawer made the window controls inert: no way to quit
 without first closing the drawer.
+
+**2026-08-28 — The update meter joined the system.** It arrived with a
+pill radius (not one of the app's four), a sweep that was off-screen for 77%
+of its cycle (measured), a readout inheriting the dialog's prose face, and a
+button naming the wrong phase. Fixed rather than reverted: the underlying
+call — real bytes, honest indeterminate state — was right, and is the same
+call §4.1 makes about the status face. See §4.6.
+
+**2026-08-28 — `.value-face`, for numbers on a prose surface.** `.prose-face`
+switches a dialog to the sans and turns tabular figures off, which is correct
+for a paragraph and wrong for a byte counter inside one. Applied to the
+element itself, so it beats the inherited face without a cascade-layer
+argument.
 
 **2026-08-28 — About moved from an inline accordion to a bezel dialog.**
 Version metadata at the foot of the scrolling operating panel is both a

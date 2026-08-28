@@ -125,6 +125,22 @@ body {
   -webkit-user-select: none;
 }
 
+/* Numbers inside a .prose-face surface. Applied to the element itself, so
+   it beats the ancestor's inherited prose face without any cascade-layer
+   argument. DESIGN.md 2.5: bytes, ports and clocks are values, and values
+   are set in the mono face with tabular figures. Geist Variable happens to
+   ship equal-width digits, so nothing visibly jitters today — but a machine
+   that falls back to Cantarell has no such guarantee, and a counter that
+   shifts while you watch it is exactly what the mono face is here to
+   prevent. */
+.value-face {
+  font-family:
+    "Geist Mono Variable", ui-monospace, "SF Mono", "Cascadia Mono",
+    "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-value);
+}
+
 .prose-face {
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
@@ -452,7 +468,11 @@ input {
     position: relative;
     height: 3px;
     overflow: hidden;
-    border-radius: 999px;
+    /* 1px, not a pill. DESIGN.md 2.6 lists 3/4/6px plus the 1px the signal
+       bar's segments use, and that is the whole list — a pill radius is the
+       one shape this app does not make. 1px also rhymes it with the signal
+       bar, which is the other horizontal readout on screen. */
+    border-radius: 1px;
     background: var(--color-inset);
     box-shadow: inset 0 0 0 1px var(--color-line);
   }
@@ -467,14 +487,24 @@ input {
      without claiming to know how far along it is. */
   .meter[data-indeterminate] .meter-fill {
     transform: scaleX(0.3);
-    animation: meter-sweep 1200ms var(--ease-in-out) infinite;
+    /* linear, not ease-in-out: an easing curve lingers at both extremes,
+       which are precisely where the bar is outside the track — measured 27%
+       of the cycle with nothing on screen. Easing also implies phases that
+       an indeterminate sweep does not have. */
+    animation: meter-sweep 1200ms linear infinite;
   }
+  /* The fill is scaleX(0.3) about its left edge, so it is 30% of the track
+     wide inside a full-width box: -35% parks it just off the left, 105%
+     just off the right. The previous -110%→440% translated by percentages
+     of the *unscaled* box, which left the bar off-screen for roughly three
+     quarters of every cycle — measured visible in 9 of 40 samples. A
+     progress indicator that is absent most of the time reads as a hang. */
   @keyframes meter-sweep {
     from {
-      translate: -110%;
+      translate: -35%;
     }
     to {
-      translate: 440%;
+      translate: 105%;
     }
   }
 }

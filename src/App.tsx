@@ -156,6 +156,12 @@ export default function App() {
   const profile = activeProfile(store);
   if (!profile) return null;
 
+  // Two phases, one flow. `Finished` reports total === received, so the
+  // download is over exactly when they meet; before the first event there is
+  // no progress object yet and we are certainly still downloading.
+  const downloading =
+    !progress || progress.total === null || progress.received < progress.total;
+
   return (
     <div className="shell relative flex h-screen flex-col overflow-hidden">
       {/* The bezel sits outside the sheet host on purpose: the drawer stops
@@ -239,9 +245,11 @@ export default function App() {
           <AlertDialogHeader>
             <AlertDialogTitle>Version {update?.version} is available</AlertDialogTitle>
             <AlertDialogDescription>
-              {updating
-                ? "Downloading. Snifake will restart when it finishes."
-                : "It will be downloaded and installed, then Snifake restarts."}
+              {!updating
+                ? "It will be downloaded and installed, then Snifake restarts."
+                : downloading
+                  ? "Snifake will restart once the download is installed."
+                  : "Installing. Snifake will restart when it finishes."}
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -265,7 +273,7 @@ export default function App() {
                 });
               }}
             >
-              {updating ? "Installing…" : "Install"}
+              {!updating ? "Install" : downloading ? "Downloading…" : "Installing…"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -317,7 +325,7 @@ function UpdateMeter({ progress }: { progress: Progress | null }) {
           style={total ? { transform: `scaleX(${fraction})` } : undefined}
         />
       </div>
-      <p className="text-faint pick mt-1.5 text-[10.5px] leading-none" dir="ltr">
+      <p className="value-face text-dim pick mt-1.5 text-[10.5px] leading-none" dir="ltr">
         {total === null
           ? `${mib(received)} MB`
           : `${mib(received)} / ${mib(total)} MB · ${Math.round(fraction * 100)}%`}

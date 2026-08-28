@@ -10,7 +10,7 @@ import { ProxyState, STATE_COLOR, STATE_TEXT } from "@/types";
  * at 10px an outlined lucide stroke reads as fuzz, and these two shapes
  * are two lines of SVG each.
  */
-export function TitleBar({ state }: { state: ProxyState }) {
+export function TitleBar({ state, onAbout }: { state: ProxyState; onAbout: () => void }) {
   const appWindow = getCurrentWindow();
 
   return (
@@ -37,6 +37,19 @@ export function TitleBar({ state }: { state: ProxyState }) {
       </span>
 
       <span className="flex-1" data-tauri-drag-region />
+
+      {/* About sits with the window controls but on its own side of a
+          hairline: it acts on the app, the other two act on the window.
+          This is the bezel affordance every desktop already trains for —
+          GNOME's header-bar menu, Windows' Help, macOS' app menu — so it
+          costs no discovery. */}
+      <ChromeButton label="About Snifake" onClick={onAbout}>
+        <circle cx="6" cy="6" r="4.6" />
+        <path d="M6 5.4v2.7" />
+        <path d="M6 3.8v.1" />
+      </ChromeButton>
+
+      <span className="bg-line mx-0.5 h-3.5 w-px shrink-0" aria-hidden />
 
       <ChromeButton label="Minimize" onClick={() => void appWindow.minimize()}>
         <path d="M2 6h8" />

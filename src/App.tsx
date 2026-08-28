@@ -19,9 +19,9 @@ import { RouteRows } from "@/components/RouteRows";
 import { ProfileSelect } from "@/components/ProfileSelect";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { ActivitySection } from "@/components/ActivitySection";
-import { AboutSection } from "@/components/AboutSection";
+import { AboutDialog } from "@/components/AboutDialog";
 import { Profile, ProxyState, Store, activeProfile } from "@/types";
-import { applyUpdate, findUpdate } from "@/lib/updater";
+import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 export default function App() {
@@ -39,6 +39,7 @@ export default function App() {
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
   const [update, setUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [progress, setProgress] = useState<Progress | null>(null);
 
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
@@ -161,7 +162,7 @@ export default function App() {
           below it, so quit and minimise stay reachable while a sheet is
           open. Inside the host it would be dimmed and inert, and the only
           way out of the profile drawer would be the drawer itself. */}
-      <TitleBar state={state} />
+      <TitleBar state={state} onAbout={() => setAboutOpen(true)} />
 
       <div
         className="sheet-host flex min-h-0 flex-1 flex-col"
@@ -181,10 +182,6 @@ export default function App() {
             onSelect={(id) => void select(id)}
             onManage={() => setSheetOpen(true)}
           />
-
-          <div className="mt-auto">
-            <AboutSection open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
-          </div>
         </main>
 
         {/* Outside the scroller: the switch and the log rule are fixed
@@ -196,6 +193,8 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
 
       <ProfileSheet
         open={sheetOpen}
@@ -245,6 +244,8 @@ export default function App() {
                 : "It will be downloaded and installed, then Snifake restarts."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {updating && <UpdateMeter progress={progress} />}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={updating}>Later</AlertDialogCancel>
             <AlertDialogAction
@@ -255,8 +256,10 @@ export default function App() {
                 e.preventDefault();
                 if (!update) return;
                 setUpdating(true);
-                void applyUpdate(update).catch((err) => {
+                setProgress(null);
+                void applyUpdate(update, setProgress).catch((err) => {
                   setUpdating(false);
+                  setProgress(null);
                   setUpdate(null);
                   setErrorDialog(`Update: ${err}`);
                 });
@@ -286,3 +289,41 @@ export default function App() {
     </div>
   );
 }
+
+/**
+ * Real bytes, never a fake sweep to fill the wait — except when the server
+ * sends no content-length, and then the bar says exactly that by refusing to
+ * claim a position.
+ */
+function UpdateMeter({ progress }: { progress: Progress | null }) {
+  const total = progress?.total ?? null;
+  const received = progress?.received ?? 0;
+  const fraction = total ? Math.min(received / total, 1) : 0;
+
+  return (
+    <div className="mt-3">
+      <div
+        className="meter"
+        data-indeterminate={total === null ? "" : undefined}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total ?? undefined}
+        aria-valuenow={total ? received : undefined}
+      >
+        {/* No inline transform while indeterminate: it would win over the
+            sweep's own scaleX and leave a bar of zero width. */}
+        <div
+          className="meter-fill"
+          style={total ? { transform: `scaleX(${fraction})` } : undefined}
+        />
+      </div>
+      <p className="text-faint pick mt-1.5 text-[10.5px] leading-none" dir="ltr">
+        {total === null
+          ? `${mib(received)} MB`
+          : `${mib(received)} / ${mib(total)} MB · ${Math.round(fraction * 100)}%`}
+      </p>
+    </div>
+  );
+}
+
+const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(1);

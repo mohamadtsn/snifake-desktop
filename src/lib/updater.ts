@@ -23,8 +23,40 @@ export async function findUpdate(): Promise<Update | null> {
   }
 }
 
-/** Downloads, installs, and restarts into the new version. */
-export async function applyUpdate(update: Update): Promise<void> {
-  await update.downloadAndInstall();
+/** Bytes received so far. `total` is null when the server sent no length. */
+export type Progress = { received: number; total: number | null };
+
+/**
+ * Downloads, installs, and restarts into the new version, reporting real
+ * byte counts as they arrive.
+ *
+ * The plugin reports each chunk's size, not a running total, so the sum is
+ * kept here. `contentLength` is whatever the download server sent and can
+ * be absent — a caller that treats a missing total as zero draws a bar that
+ * sits at 100% for the whole download.
+ */
+export async function applyUpdate(
+  update: Update,
+  onProgress?: (progress: Progress) => void,
+): Promise<void> {
+  let total: number | null = null;
+  let received = 0;
+  await update.downloadAndInstall((event) => {
+    switch (event.event) {
+      case "Started":
+        total = event.data.contentLength ?? null;
+        onProgress?.({ received: 0, total });
+        break;
+      case "Progress":
+        received += event.data.chunkLength;
+        onProgress?.({ received, total });
+        break;
+      case "Finished":
+        // Installing is not measurable, so the bar ends full and the copy
+        // takes over from here.
+        onProgress?.({ received, total: received });
+        break;
+    }
+  });
   await relaunch();
 }

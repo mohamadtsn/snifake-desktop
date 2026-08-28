@@ -212,13 +212,14 @@ exists to provide.
 | Component | What it is |
 |---|---|
 | `TitleBar` | the bezel: name, condition readout, two window glyphs (× hides to tray) |
-| `AboutSection` | disclosure: version, identity, license, check-for-updates |
 | `StatusPanel` | the instrument face: 20-segment bar, condition, uptime |
 | `PowerSwitch` | the only control that starts or stops the engine |
 | `RouteRows` | the route as a three-column grid |
 | `ProfileSelect` | the channel selector plus the way into the drawer |
 | `Disclosure` | an engraved header made pressable |
 | `ActivitySection` | owns all log state; drives `set_log_streaming` |
+| `AboutDialog` | identity, metadata and the manual update check |
+| `UpdateMeter` | the download bar in the update dialog — the only progress bar |
 | `Sheet` / `ProfileSheet` / `ProfileEditor` | the drawer |
 
 ### 4.1 The signal bar
@@ -229,6 +230,11 @@ costs **zero React renders** for the animation.
 It encodes state and **only** state. There is deliberately no throughput
 meter: the engine does not report bytes, and a bar that moves without data
 behind it is a lie the user has no way to detect.
+
+The update download bar is the one exception, and it is not one: the updater
+reports the size of every chunk it receives, so that bar is backed by counted
+bytes. Where the server sends no `Content-Length` it refuses to claim a
+position and sweeps instead — an admission, not a guess.
 
 - `stopped` — dark
 - `starting` — a filling wipe, per-segment delay
@@ -295,7 +301,44 @@ leash.
   numbers that decide how it feels.
 - Since switching moved to the selector, this is purely a management surface.
 
-### 4.5 The log
+### 4.5 About
+
+Reached from an `ⓘ` on the bezel, opening a **dialog**. It was an accordion
+at the foot of the operating panel, which is a place nobody looks for version
+metadata and which cost the console height it needed for controls.
+
+The bezel is where every desktop already puts this — GNOME's header-bar menu,
+Windows' Help menu, macOS' app menu — so it costs no discovery. The `ⓘ` sits
+with the window controls but behind a hairline: it acts on the *app*, the
+other two act on the *window*.
+
+A `Dialog`, not the `AlertDialog` everything else uses. About asks nothing
+and decides nothing, so Esc, the backdrop and Close must all dismiss it
+without reading as "cancel".
+
+**Typography inside it** is where the app's type scale gets used properly:
+
+- The name is the bezel's engraved uppercase wordmark two steps up the scale
+  (21px, `--track-label`). One product, one lockup — not a different
+  treatment per surface. The hairline between name and version is the same
+  separator the bezel puts between name and condition.
+- The version is the second-most-read fact in an About box, so it sits on the
+  name's baseline rather than buried as a table row.
+- The description is the only prose here and therefore the only thing in the
+  sans face, with `text-wrap: balance` so it never orphans a word.
+- Metadata rows reuse the Route block's label-column geometry, so the two
+  read as the same kind of object.
+- Values are `leading-[1.4]`, not `leading-none`: a *stack* of rows needs
+  vertical rhythm that a single row set solid does not have.
+- Values carry `.pick` — the one place the app's global `user-select: none`
+  is lifted, because these get pasted into bug reports.
+- `Source` shows `owner/repo`, not the full URL. The URL wrapped and orphaned
+  "desktop" onto its own line, and `owner/repo` is how GitHub is read anyway.
+- Neither button is accented. Green is the signal colour and the accent for
+  *commit* actions; checking for updates commits nothing, and an About box
+  has no primary action worth accenting.
+
+### 4.6 The log
 
 The one surface that repaints continuously while the engine streams: flat
 fill, no blur, no shadow, `contain: content`.
@@ -364,6 +407,17 @@ and a rail's width tracked the profile count. See §4.3.
 **2026-08-27 — The bezel left the sheet host.** With the title bar inside it,
 opening the profile drawer made the window controls inert: no way to quit
 without first closing the drawer.
+
+**2026-08-28 — About moved from an inline accordion to a bezel dialog.**
+Version metadata at the foot of the scrolling operating panel is both a
+non-standard place to look and a claim on height the controls needed. Every
+desktop platform reaches it from the window's own chrome; this now does too.
+See §4.5.
+
+**2026-08-28 — `.chip` restored as the small secondary button.** It was
+defined inside the profile-rail block and was deleted with it, leaving Save,
+"+ New" and both About buttons rendering unstyled. It is now defined on its
+own terms, since it outlived the rail it was written for.
 
 **2026-08-27 — Log lines stopped wrapping.** `break-all` was splitting IPv4
 addresses across lines mid-octet.

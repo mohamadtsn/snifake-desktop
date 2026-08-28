@@ -134,7 +134,10 @@ body {
 }
 
 input,
-textarea {
+textarea,
+/* Values a user is expected to copy into a bug report. The app is desktop
+   chrome and disables selection globally; these opt back in. */
+.pick {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -393,96 +396,226 @@ input {
   }
 }
 
-/* =====================================================================
-   Profile selector
-   A channel selector, not a row of chips. Switching while the engine is up
-   restarts it, so the control that does it must cost two deliberate
-   actions; a chip rail put that one stray click away. It also keeps one
-   fixed row whatever the profile count, which a rail does not.
-   ===================================================================== */
-.selector {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 42px;
-  padding: 0 10px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--color-line);
-  background: var(--color-panel);
-  color: var(--color-text);
-  text-align: left;
-  transition:
-    border-color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out);
-}
-.selector:hover {
-  border-color: var(--color-edge);
-  background: var(--color-hover);
-}
-.selector:focus-visible,
-.selector[data-popup-open] {
-  outline: none;
-  border-color: var(--color-live);
-}
-.selector[data-popup-open] .select-caret,
-.selector[data-popup-open] [data-slot="select-icon"] {
-  transform: rotate(180deg);
+@layer components {
+  /* =====================================================================
+     Chip
+     The small secondary button: Save, + New, and the two in the About
+     dialog. It outlived the profile rail it was originally written for, so
+     it is defined here on its own terms rather than as a rail item.
+     ===================================================================== */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-chip);
+    border: 1px solid var(--color-line);
+    background: transparent;
+    color: var(--color-dim);
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: var(--track-value);
+    white-space: nowrap;
+    transition:
+      color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out);
+  }
+  .chip:hover:not(:disabled) {
+    border-color: var(--color-edge);
+    color: var(--color-text);
+  }
+  .chip:focus-visible {
+    outline: none;
+    border-color: var(--color-live);
+  }
+  .chip:disabled {
+    cursor: default;
+  }
 }
 
-/* The drop-down. Flat, hairline, square-ish — a menu on equipment, not a
-   floating card. The only shadow in the app lives here, because this is
-   the only thing that genuinely floats over something else. */
-.menu {
-  min-width: var(--anchor-width);
-  max-height: 220px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 3px;
+@layer components {
+  /* =====================================================================
+     Meter
+     The update download bar, and the only progress indicator in the app.
+     It reports bytes actually received — the engine has no throughput to
+     report, so this is the one place a moving bar is telling the truth.
+
+     Width is driven by scaleX rather than by `width`, so a bar that ticks
+     several times a second never lays the dialog out again. The transition
+     is short and linear: chunks arrive irregularly, and easing each one
+     turns a steady download into a stutter.
+     ===================================================================== */
+  .meter {
+    position: relative;
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--color-inset);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+  }
+  .meter-fill {
+    position: absolute;
+    inset: 0;
+    transform-origin: left center;
+    background: var(--color-live);
+    transition: transform 120ms linear;
+  }
+  /* No content-length from the server: show that something is happening
+     without claiming to know how far along it is. */
+  .meter[data-indeterminate] .meter-fill {
+    transform: scaleX(0.3);
+    animation: meter-sweep 1200ms var(--ease-in-out) infinite;
+  }
+  @keyframes meter-sweep {
+    from {
+      translate: -110%;
+    }
+    to {
+      translate: 440%;
+    }
+  }
+}
+
+@layer components {
+  /* =====================================================================
+     Profile selector
+     A channel selector, not a row of chips. Switching while the engine is up
+     restarts it, so the control that does it must cost two deliberate
+     actions; a chip rail put that one stray click away. It also keeps one
+     fixed row whatever the profile count, which a rail does not.
+     ===================================================================== */
+  .selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 10px;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--color-line);
+    background: var(--color-panel);
+    color: var(--color-text);
+    text-align: left;
+    transition:
+      border-color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out);
+  }
+  .selector:hover {
+    border-color: var(--color-edge);
+    background: var(--color-hover);
+  }
+  .selector:focus-visible,
+  .selector[data-popup-open] {
+    outline: none;
+    border-color: var(--color-live);
+  }
+  .selector[data-popup-open] .select-caret,
+  .selector[data-popup-open] [data-slot="select-icon"] {
+    transform: rotate(180deg);
+  }
+
+  /* The drop-down. Flat, hairline, square-ish — a menu on equipment, not a
+     floating card. The only shadow in the app lives here, because this is
+     the only thing that genuinely floats over something else. */
+  .menu {
+    min-width: var(--anchor-width);
+    max-height: 220px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 3px;
+    background: var(--color-panel);
+    border: 1px solid var(--color-edge);
+    border-radius: var(--radius-control);
+    box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.8);
+    outline: none;
+    transform-origin: var(--transform-origin);
+    transition:
+      opacity var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out);
+  }
+  .menu[data-starting-style],
+  .menu[data-ending-style] {
+    opacity: 0;
+    transform: scaleY(0.94);
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: var(--radius-chip);
+    color: var(--color-dim);
+    cursor: default;
+    outline: none;
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+  .menu-item[data-highlighted] {
+    background: var(--color-hover);
+    color: var(--color-text);
+  }
+  .menu-item[data-selected] {
+    color: var(--color-text);
+  }
+
+  /* The running profile is marked by a lit rule down the side of its row,
+     the same signal the switch and the status bar use. */
+  .menu-mark {
+    width: 2px;
+    align-self: stretch;
+    border-radius: 1px;
+    background: transparent;
+  }
+  .menu-mark[data-live] {
+    background: var(--color-live);
+  }
+}
+
+/* =====================================================================
+   Dialog
+   Same material as the menu — panel fill, hairline edge, one shadow —
+   because they are the same kind of thing: something that floats over the
+   console for as long as you are looking at it. About is the only user of
+   this; every decision in the app goes through shadcn's AlertDialog.
+   ===================================================================== */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  /* 0.75, not 0.62: the lit power switch reads straight through a lighter
+     scrim, and a dialog competing with the thing behind it is not a
+     dialog. */
+  background: rgba(0, 0, 0, 0.75);
+  opacity: 0;
+  transition: opacity var(--dur-panel) var(--ease-out);
+}
+.dialog-backdrop[data-open] {
+  opacity: 1;
+}
+
+.dialog-popup {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(356px, calc(100vw - 28px));
+  padding: 18px;
   background: var(--color-panel);
   border: 1px solid var(--color-edge);
-  border-radius: var(--radius-control);
-  box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.8);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 18px 40px -12px rgba(0, 0, 0, 0.85);
   outline: none;
-  transform-origin: var(--transform-origin);
+  transform: translate(-50%, -50%);
   transition:
-    opacity var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
+    opacity var(--dur-panel) var(--ease-out),
+    transform var(--dur-panel) var(--ease-out);
 }
-.menu[data-starting-style],
-.menu[data-ending-style] {
+/* Scale from 96%, not from below: a dialog that slides up reads as a sheet,
+   and this one is centred furniture, not a drawer. */
+.dialog-popup[data-starting-style],
+.dialog-popup[data-ending-style] {
   opacity: 0;
-  transform: scaleY(0.94);
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: var(--radius-chip);
-  color: var(--color-dim);
-  cursor: default;
-  outline: none;
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-.menu-item[data-highlighted] {
-  background: var(--color-hover);
-  color: var(--color-text);
-}
-.menu-item[data-selected] {
-  color: var(--color-text);
-}
-
-/* The running profile is marked by a lit rule down the side of its row,
-   the same signal the switch and the status bar use. */
-.menu-mark {
-  width: 2px;
-  align-self: stretch;
-  border-radius: 1px;
-  background: transparent;
-}
-.menu-mark[data-live] {
-  background: var(--color-live);
+  transform: translate(-50%, -50%) scale(0.96);
 }
 
 /* =====================================================================
@@ -640,11 +773,16 @@ input {
   /* Gentler, not absent: movement goes, colour and opacity stay. The
      signal bar keeps its lit/unlit colours and loses only the scan. */
   .signal .signal-seg,
+  .meter[data-indeterminate] .meter-fill,
   .switch[data-state="error"],
   .disclosure-panel[data-open],
   .disclosure-panel[data-open] > *,
   .disclosure-panel[data-closed] {
     animation: none;
+  }
+  .meter[data-indeterminate] .meter-fill {
+    transform: scaleX(1);
+    opacity: 0.4;
   }
   .signal[data-state="running"] .signal-seg,
   .signal[data-state="starting"] .signal-seg {

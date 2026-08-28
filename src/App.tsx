@@ -19,6 +19,7 @@ import { RouteRows } from "@/components/RouteRows";
 import { ProfileSelect } from "@/components/ProfileSelect";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { ActivitySection } from "@/components/ActivitySection";
+import { AboutSection } from "@/components/AboutSection";
 import { Profile, ProxyState, Store, activeProfile } from "@/types";
 import { applyUpdate, findUpdate } from "@/lib/updater";
 import type { Update } from "@tauri-apps/plugin-updater";
@@ -32,6 +33,7 @@ export default function App() {
   const [since, setSince] = useState<number | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
@@ -179,6 +181,10 @@ export default function App() {
             onSelect={(id) => void select(id)}
             onManage={() => setSheetOpen(true)}
           />
+
+          <div className="mt-auto">
+            <AboutSection open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
+          </div>
         </main>
 
         {/* Outside the scroller: the switch and the log rule are fixed

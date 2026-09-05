@@ -15,8 +15,8 @@ jobs:
   frontend:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
@@ -31,7 +31,7 @@ jobs:
   rust:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install linux build dependencies
         run: |
           sudo apt-get update
@@ -45,7 +45,7 @@ jobs:
           workspaces: ./src-tauri -> target
       # tauri::generate_context! needs the frontend dist to exist, so the
       # Rust job has to build the frontend even though it never runs it.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm

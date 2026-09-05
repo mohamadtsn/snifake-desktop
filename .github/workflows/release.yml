@@ -21,7 +21,7 @@ jobs:
   verify-version:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: tag must match package.json
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -57,7 +57,7 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: install linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -67,7 +67,7 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils \
             rpm
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
           cache: npm
@@ -127,8 +127,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: lts/*
       - run: node scripts/release-assets.mjs "${GITHUB_REF_NAME}"

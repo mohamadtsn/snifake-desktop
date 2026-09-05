@@ -1,0 +1,73 @@
+<!-- The source of every icon in this directory — see DESIGN.md §7.
+
+     Regenerate the raster set after editing this file:
+       npx tauri icon src-tauri/icons/icon.svg
+
+     The mark is the letter S traced as a route: three runs, four right-angle
+     turns, and a node wherever the path terminates or changes direction. It
+     is the product's own subject — a connection that goes somewhere by way of
+     something — drawn in the console's vocabulary rather than illustrated
+     with a globe. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- The graphite family of DESIGN.md §2.1, lit from directly above:
+         the one light source the whole design system has. -->
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c2025" />
+      <stop offset="0.55" stop-color="#121417" />
+      <stop offset="1" stop-color="#08090b" />
+    </linearGradient>
+    <!-- Every inset border in the system darkens its top edge and lightens
+         its bottom; a plate that stands proud does the reverse. -->
+    <linearGradient id="bevel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a5058" stop-opacity="0.95" />
+      <stop offset="0.35" stop-color="#2d3137" stop-opacity="0.35" />
+      <stop offset="1" stop-color="#000000" stop-opacity="0.55" />
+    </linearGradient>
+    <linearGradient id="trace" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6fe39a" />
+      <stop offset="1" stop-color="#2ea863" />
+    </linearGradient>
+    <!-- Phosphor bloom: the spill a lit display leaves on its own faceplate,
+         not a glow effect stuck behind the shape. -->
+    <filter id="bloom" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="30" />
+    </filter>
+
+    <path
+      id="route"
+      d="M 652 288 H 372 V 512 H 652 V 736 H 372"
+      fill="none"
+      stroke-width="60"
+      stroke-linecap="butt"
+      stroke-linejoin="miter"
+    />
+    <!-- Chamfered, not round and not square. A circular node read as soft
+         against the mitred turns and a plain square merged into them; the
+         cut corner is what a machined part actually has, so the pads and the
+         path finally belong to one system. -->
+    <g id="nodes">
+      <polygon points="618,224 686,224 716,254 716,322 686,352 618,352 588,322 588,254" />
+      <polygon points="338,448 406,448 436,478 436,546 406,576 338,576 308,546 308,478" />
+      <polygon points="618,448 686,448 716,478 716,546 686,576 618,576 588,546 588,478" />
+      <polygon points="338,672 406,672 436,702 436,770 406,800 338,800 308,770 308,702" />
+    </g>
+  </defs>
+
+  <rect x="32" y="32" width="960" height="960" rx="212" fill="url(#plate)" />
+  <rect
+    x="34"
+    y="34"
+    width="956"
+    height="956"
+    rx="210"
+    fill="none"
+    stroke="url(#bevel)"
+    stroke-width="4"
+  />
+
+  <use href="#route" stroke="#4ed17f" filter="url(#bloom)" opacity="0.45" />
+  <use href="#nodes" fill="#4ed17f" filter="url(#bloom)" opacity="0.45" />
+  <use href="#route" stroke="url(#trace)" />
+  <use href="#nodes" fill="url(#trace)" />
+</svg>

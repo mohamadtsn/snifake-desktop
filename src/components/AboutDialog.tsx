@@ -105,6 +105,19 @@ export function AboutDialog({
             <Row label="License" value="MIT" />
           </dl>
 
+          {/* The maker's plate. Real equipment carries one, and this is the
+              same object the rest of the app uses for a section header — the
+              engraved label with a rule running to the edge — so authorship
+              is stated in the console's own voice rather than added as one
+              more metadata row. The name/handle pair reuses the header's
+              hairline idiom for exactly the same reason. */}
+          <p className="engrave mt-4">Designed and built by</p>
+          <div className="mt-2.5 flex items-baseline gap-2.5">
+            <span className="text-text pick text-[13px] leading-none">Mohamad Tsn</span>
+            <span className="bg-edge h-3 w-px shrink-0 translate-y-px" aria-hidden />
+            <span className="text-dim pick text-[11.5px] leading-none">@mohamadtsn</span>
+          </div>
+
           <hr className="border-line my-4" />
 
           <div className="flex items-center justify-between gap-3">

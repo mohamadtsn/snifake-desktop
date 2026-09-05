@@ -339,6 +339,16 @@ without reading as "cancel".
   *commit* actions; checking for updates commits nothing, and an About box
   has no primary action worth accenting.
 
+**Authorship** closes the dialog, above the buttons, as a maker's plate — the
+engraved label with a rule running to the edge, the same `.engrave` object the
+app's section headers use, followed by the name at the `--color-text` step and
+the handle after the header's hairline. Real equipment carries a plate; adding a
+`Developer` row to the metadata list instead would have filed the person who
+built the thing alongside its licence identifier. The name is not a link:
+opening a URL needs a plugin and a capability this app does not otherwise
+carry, and §4.5 already decided that `Source` reads better as `owner/repo`
+than as a URL.
+
 ### 4.6 The update meter
 
 Real bytes, never a fake sweep to fill the wait — the same law that keeps a
@@ -437,7 +447,47 @@ one `push_back` in Rust: no IPC, no React render.
 
 ---
 
-## 6. Decision log
+## 6. The mark
+
+`src-tauri/icons/icon.svg` is the source; everything else in that directory is
+generated from it with `npx tauri icon`. Edit the SVG, regenerate, commit both.
+
+**The letter S, traced as a route.** Three runs, four right-angle turns, and a
+node wherever the path terminates or changes direction. The subject is the
+product's own: a connection that reaches its destination by way of something
+else. It is drawn in the console's vocabulary rather than illustrated — the
+icon it replaced was a stock globe with a red swap badge, in blue and red,
+sharing not one value with the app behind it.
+
+- **The plate is the app's own surface.** Graphite gradient from the §2.1
+  family, lit from directly above, with the bevel every raised edge in the
+  system has: light at the top, dark at the bottom. §2.1's law that surfaces
+  are real lightness steps holds here too — no translucency.
+- **The trace is `--color-live`**, the phosphor green of a lit segment, with
+  a bloom behind it. The bloom is the spill a real display leaves on its own
+  faceplate, which is why it is soft and low-opacity rather than an outline
+  glow.
+- **The nodes are chamfered, not round and not square.** A circular node read
+  as *soft* against mitred turns, and a plain square merged into them. The cut
+  corner is what a machined part actually has, and it is the one shape that
+  lets the pads and the path read as a single system.
+- **In the tray, the trace itself carries the state.** `tray.rs` relights it
+  in the state colour — grey stopped, amber starting, green running, red
+  fault, the same four values as §2.4 — by swapping the hue of every pixel
+  with chroma while keeping its saturation and brightness, which is what
+  preserves the gradient, the antialiased edge and the bloom. It replaced a
+  status dot painted over the corner: at the 22px a tray actually renders,
+  that dot was a few pixels of colour, and the whole lamp changing is legible
+  without looking for it. The window icon stays green — it is the product's
+  mark, not a readout.
+- **Two earlier attempts are recorded in the file's own comments.** A
+  five-segment display glyph dissolved into stripes at 32px; folding the
+  stroke into right angles without nodes read as the digit 5, which is the
+  same glyph on a segment display.
+
+---
+
+## 7. Decision log
 
 **2026-08-27 — Window is opaque and square-cornered.** It was
 `transparent: true` with CSS-rounded corners. On WebKitGTK under Wayland that
@@ -504,6 +554,20 @@ See §4.5.
 defined inside the profile-rail block and was deleted with it, leaving Save,
 "+ New" and both About buttons rendering unstyled. It is now defined on its
 own terms, since it outlived the rail it was written for.
+
+**2026-09-05 — The stock globe was replaced by a drawn mark.** The old icon
+was a blue wireframe globe with a red swap badge: a category illustration
+that shared no surface, colour or geometry with the app it launched, and the
+one asset the design system had never reached. See §6.
+
+**2026-09-05 — The tray shows state by relighting the mark.** The status dot
+in the icon's corner was drawn at icon resolution and then scaled to a 22px
+panel, where it survived as a smudge — and it used a palette (`#2ecc71`,
+`#e74c3c`) that belonged to no part of this design system. Both fixed: the
+trace is the lamp, and the four values come from §2.4. See §6.
+
+**2026-09-05 — About names who built it.** As a maker's plate rather than a
+metadata row. See §4.5.
 
 **2026-08-27 — Log lines stopped wrapping.** `break-all` was splitting IPv4
 addresses across lines mid-octet.

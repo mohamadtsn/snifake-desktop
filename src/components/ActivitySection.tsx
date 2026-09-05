@@ -80,7 +80,7 @@ export function ActivitySection({
 
       <div
         ref={viewRef}
-        className="log-scroll text-dim h-[160px] px-2.5 py-2 text-[10.5px] leading-[1.6]"
+        className="log-scroll pick text-dim h-[160px] px-2.5 py-2 text-[10.5px] leading-[1.6]"
       >
         {lines.length === 0 ? (
           /* An empty log is a normal condition, not a missing feature, so it

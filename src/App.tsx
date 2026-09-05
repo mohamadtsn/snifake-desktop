@@ -285,7 +285,7 @@ export default function App() {
             <AlertDialogTitle>
               {errorDialog?.startsWith("Update:") ? "Update failed" : "Could not start the proxy"}
             </AlertDialogTitle>
-            <AlertDialogDescription className="font-mono text-[11px] break-all">
+            <AlertDialogDescription className="pick font-mono text-[11px] break-all">
               {errorDialog}
             </AlertDialogDescription>
           </AlertDialogHeader>

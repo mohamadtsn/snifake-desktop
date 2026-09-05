@@ -114,3 +114,24 @@ jobs:
           # updater endpoint points at.
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # Tauri's bundlers name their output after the product, version and
+  # architecture, leaving the platform to be inferred from an extension. This
+  # puts it in the name — and, in the same pass, rewrites the latest.json
+  # URLs that point at those files, which is why it cannot run until every
+  # build job has uploaded.
+  name-assets:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: node scripts/release-assets.mjs "${GITHUB_REF_NAME}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

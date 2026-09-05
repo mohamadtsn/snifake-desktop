@@ -14,15 +14,43 @@ fn is_root() -> bool {
 }
 
 /// True when `sudo -n <program>` currently runs without prompting.
+///
+/// `sudo -n -l <program>` answers a different question — "may this user run
+/// it at all" — so a desktop admin's plain `(ALL : ALL) ALL` entry makes it
+/// exit 0 while the real run still stops for a password, which no `-n` launch
+/// can ever supply. Only a NOPASSWD rule covering the program means no
+/// prompt, so read the listing and look for one.
 #[cfg(target_os = "linux")]
 pub fn has_passwordless_sudo(program: &str) -> bool {
-    std::process::Command::new("sudo")
-        .args(["-n", "-l", program])
-        .stdout(std::process::Stdio::null())
+    let Ok(out) = std::process::Command::new("sudo")
+        .args(["-n", "-l"])
         .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .output()
+    else {
+        return false;
+    };
+    if !out.status.success() {
+        return false;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| nopasswd_covers(line, program))
+}
+
+/// Whether one `sudo -l` listing line grants `program` without a password.
+#[cfg(target_os = "linux")]
+fn nopasswd_covers(line: &str, program: &str) -> bool {
+    let Some((_, commands)) = line.split_once("NOPASSWD:") else {
+        return false;
+    };
+    commands.split(',').any(|entry| {
+        // Drop any further tags (`SETENV:` and friends) before the command.
+        let command = entry
+            .split_whitespace()
+            .find(|token| !token.ends_with(':'))
+            .unwrap_or("");
+        command == "ALL" || command == program
+    })
 }
 
 /// Full argv to run `program args...` with administrator privileges.
@@ -107,6 +135,32 @@ fn try_install_sudoers(app: &AppHandle, program: &str) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn only_a_nopasswd_entry_counts_as_passwordless() {
+        let engine = "/usr/lib/Snifake/snifake-engine";
+        // The entry every desktop admin account has: allowed, but prompts.
+        assert!(!super::nopasswd_covers("    (ALL : ALL) ALL", engine));
+        // A NOPASSWD rule for some other binary is not ours.
+        assert!(!super::nopasswd_covers(
+            "    (root) NOPASSWD: /usr/lib/sni-fake/run-proxy.sh",
+            engine
+        ));
+        assert!(super::nopasswd_covers(
+            &format!("    (root) NOPASSWD: {engine}"),
+            engine
+        ));
+        assert!(super::nopasswd_covers(
+            &format!("    (root) NOPASSWD: SETENV: {engine}"),
+            engine
+        ));
+        assert!(super::nopasswd_covers(
+            &format!("    (root) NOPASSWD: /bin/ls, {engine}"),
+            engine
+        ));
+        assert!(super::nopasswd_covers("    (ALL) NOPASSWD: ALL", engine));
+    }
+
     #[test]
     fn root_detection_matches_the_effective_uid() {
         #[cfg(unix)]

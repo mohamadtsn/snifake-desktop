@@ -69,6 +69,17 @@ pub trait Capture: Send {
     fn recv(&mut self, out: &mut Captured) -> io::Result<bool>;
     /// Transmits a packet built by `netpkt::build_fake_packet`.
     fn send(&mut self, pkt: &Captured) -> io::Result<()>;
+
+    /// A second handle usable **only** for [`send`](Capture::send), so the
+    /// sniff loop can hand injection to another thread and never block
+    /// classification on the pre-injection delay.
+    ///
+    /// `None` — the default — means this backend cannot split, and the sniff
+    /// loop injects inline as it always has. That is a latency difference,
+    /// never a correctness one, so a backend is free to leave it unimplemented.
+    fn split_sender(&self) -> Option<Box<dyn Capture>> {
+        None
+    }
 }
 
 /// The macOS backend's wire-format half, split out because it needs no
@@ -76,6 +87,11 @@ pub trait Capture: Send {
 /// `macos.rs` cannot be built at all.
 #[cfg(any(target_os = "macos", test))]
 mod bpf;
+/// The kernel-side packet filter. Linux attaches it today; the program is
+/// written to the BSD encoding as well, so the macOS backend can adopt it
+/// through `BIOCSETF` without changing a byte of it.
+#[cfg(any(target_os = "linux", test))]
+mod filter;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -92,7 +108,11 @@ pub fn open(
 ) -> io::Result<Box<dyn Capture>> {
     let _ = (iface_name, iface_index, connect_ip, connect_port);
     #[cfg(target_os = "linux")]
-    return Ok(Box::new(linux::AfPacket::open(iface_index)?));
+    return Ok(Box::new(linux::AfPacket::open(
+        iface_index,
+        connect_ip,
+        connect_port,
+    )?));
     #[cfg(target_os = "macos")]
     return Ok(Box::new(macos::Bpf::open(iface_name)?));
     #[cfg(target_os = "windows")]

@@ -170,6 +170,21 @@ fn handle(
     let server = TcpStream::connect_timeout(&upstream, Duration::from_secs(5))
         .map_err(|e| format!("dial {upstream}: {e}"))?;
     let port = server.local_addr().map_err(|e| e.to_string())?.port();
+
+    // A TLS stream is a procession of small records, and Nagle holds a small
+    // write back until the previous segment is acknowledged — up to a round
+    // trip of latency added to every request, on both legs of the relay.
+    // Best effort: a socket that refuses the option still works, just with
+    // Nagle's delay, so this must not fail a connection.
+    for (sock, which) in [(&client, "client"), (&server, "upstream")] {
+        if let Err(e) = sock.set_nodelay(true) {
+            log(
+                LogLevel::Warn,
+                format!("conn #{port}  could not disable Nagle on the {which} socket: {e}"),
+            );
+        }
+    }
+
     log(LogLevel::Info, format!("conn #{port}  → {upstream}"));
 
     // The sniffer is the only other owner of this entry and it never evicts;

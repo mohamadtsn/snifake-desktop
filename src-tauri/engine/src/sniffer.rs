@@ -11,8 +11,8 @@ use crate::netpkt::{build_fake_packet, parse_ipv4_tcp, TcpView, ACK, FIN, RST, S
 use crate::proto::LogLevel;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 pub type LogFn = Arc<dyn Fn(LogLevel, String) + Send + Sync>;
 
@@ -148,6 +148,96 @@ impl PortTable {
     }
 }
 
+/// How long the fake must trail the real ACK that triggered it. The Go
+/// original sleeps the same millisecond, for the same reason: a packet socket
+/// sees an outbound frame before the driver transmits it, so injecting the
+/// instant we see the ACK risks the two crossing on the wire.
+const INJECT_DELAY: Duration = Duration::from_millis(1);
+
+/// One fake ClientHello, built and waiting out [`INJECT_DELAY`].
+struct Injection {
+    port: u16,
+    /// When the packet may go out — measured from the moment the ACK was
+    /// *classified*, so the wait is not extended by the work of building it.
+    due: Instant,
+    packet: Captured,
+}
+
+/// Puts injections on the wire.
+///
+/// The delay is the whole reason this exists: waiting it out on the sniff
+/// thread stops classification for every other connection, so a page opening
+/// thirty connections at once pushes the last one's confirmation back by
+/// thirty milliseconds. When the backend can hand out a transmit-only handle
+/// ([`Capture::split_sender`]) the wait and the send move to a thread of their
+/// own; otherwise this is the original inline path, unchanged.
+enum Injector {
+    OffThread {
+        tx: mpsc::Sender<Injection>,
+        thread: std::thread::JoinHandle<()>,
+    },
+    Inline,
+}
+
+impl Injector {
+    fn start(sender: Option<Box<dyn Capture>>, sni: String, log: LogFn) -> Injector {
+        let Some(mut cap) = sender else {
+            return Injector::Inline;
+        };
+        let (tx, rx) = mpsc::channel::<Injection>();
+        let thread = std::thread::spawn(move || {
+            // Ends when the sniff loop drops its sender, after any queued
+            // injection has gone out.
+            for job in rx {
+                send_fake(&mut *cap, job, &sni, &log);
+            }
+        });
+        Injector::OffThread { tx, thread }
+    }
+
+    /// `cap` is the sniff loop's own handle and is touched only by the inline
+    /// path — the off-thread path never borrows it, which is what keeps the
+    /// loop free to go back to `recv`.
+    fn submit(&self, cap: &mut dyn Capture, job: Injection, sni: &str, log: &LogFn) {
+        match self {
+            // A closed channel would mean the injector thread panicked; the
+            // connection then times out on its own, as it does for any other
+            // injection failure.
+            Injector::OffThread { tx, .. } => {
+                let _ = tx.send(job);
+            }
+            Injector::Inline => send_fake(cap, job, sni, log),
+        }
+    }
+
+    /// Waits for the queue to drain, so the run's extra descriptor is closed
+    /// and no injection outlives the capture handle it was built from.
+    fn finish(self) {
+        if let Injector::OffThread { tx, thread } = self {
+            drop(tx);
+            let _ = thread.join();
+        }
+    }
+}
+
+fn send_fake(cap: &mut dyn Capture, job: Injection, sni: &str, log: &LogFn) {
+    let wait = job.due.saturating_duration_since(Instant::now());
+    if !wait.is_zero() {
+        std::thread::sleep(wait);
+    }
+    let port = job.port;
+    match cap.send(&job.packet) {
+        Ok(()) => log(
+            LogLevel::Info,
+            format!("conn #{port}  fake ClientHello injected (sni={sni})"),
+        ),
+        Err(e) => log(
+            LogLevel::Error,
+            format!("conn #{port}  injection failed: {e}"),
+        ),
+    }
+}
+
 /// Blocking sniff loop. Owns the capture handle for the life of a run and
 /// returns once `stop` is set — the caller must keep the `JoinHandle` and
 /// join it, or the thread outlives the run and keeps the capture socket.
@@ -166,6 +256,7 @@ pub fn run(
     stop: Arc<AtomicBool>,
     log: LogFn,
 ) {
+    let injector = Injector::start(cap.split_sender(), sni.clone(), log.clone());
     let mut pkt = Captured::default();
     while !stop.load(Ordering::Relaxed) {
         // Ok(false) is a timeout *or* a frame the backend filtered out. Both
@@ -175,7 +266,7 @@ pub fn run(
             Ok(false) => continue,
             Err(e) => {
                 log(LogLevel::Error, format!("capture read failed: {e}"));
-                return;
+                break;
             }
         }
         let Some(view) = parse_ipv4_tcp(&pkt.ip) else {
@@ -193,12 +284,12 @@ pub fn run(
                 Err(e) => log(LogLevel::Error, format!("conn #{port}  {e}")),
             },
             Action::InjectFake { port } => {
+                // Taken before anything else can fail: the delay is counted
+                // from the ACK, not from the end of the work below.
+                let due = Instant::now() + INJECT_DELAY;
                 let Some((isn, fake)) = table.take_for_injection(port) else {
                     continue;
                 };
-                // The Go version sleeps 1 ms here so the injected segment
-                // lands strictly after the real ACK. Keep it.
-                std::thread::sleep(Duration::from_millis(1));
                 // A template we cannot build from is not recoverable for this
                 // connection: the fake is already spent, so the gate will never
                 // open and the forwarder will time out. Say so loudly rather
@@ -210,22 +301,13 @@ pub fn run(
                     );
                     continue;
                 };
-                let injected = Captured {
+                let packet = Captured {
                     l2: pkt.l2,
                     ip,
                     #[cfg(windows)]
                     addr: pkt.addr,
                 };
-                match cap.send(&injected) {
-                    Ok(()) => log(
-                        LogLevel::Info,
-                        format!("conn #{port}  fake ClientHello injected (sni={sni})"),
-                    ),
-                    Err(e) => log(
-                        LogLevel::Error,
-                        format!("conn #{port}  injection failed: {e}"),
-                    ),
-                }
+                injector.submit(&mut *cap, Injection { port, due, packet }, &sni, &log);
             }
             Action::ConfirmFake { port, ack } => {
                 if table.confirm(port, ack) {
@@ -235,6 +317,7 @@ pub fn run(
             Action::Ignore => unreachable!("filtered above"),
         }
     }
+    injector.finish();
 }
 
 #[cfg(test)]

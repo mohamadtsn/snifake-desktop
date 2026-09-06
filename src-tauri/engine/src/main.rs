@@ -9,9 +9,10 @@
 
 use snifake_engine::capture;
 use snifake_engine::forward::{discover_egress, Forwarder};
-use snifake_engine::proto::{Command, Event, LogLevel, Profile};
+use snifake_engine::proto::{Command, Event, LogLevel, Profile, TunnelSpec};
 use snifake_engine::sniffer::{self, LogFn, PortTable};
 use snifake_engine::transport::Stream;
+use snifake_engine::tunnel::TunnelSupervisor;
 use snifake_engine::validate::validate;
 
 use std::io::{BufRead, BufReader, Write};
@@ -91,6 +92,7 @@ fn main() {
 
     let verbose = Arc::new(AtomicBool::new(false));
     let mut running: Option<Running> = None;
+    let mut tunnel: Option<TunnelSupervisor> = None;
 
     for line in reader.lines() {
         let Ok(line) = line else { break };
@@ -144,25 +146,88 @@ fn main() {
             }
             Command::Verbose { on } => verbose.store(on, Ordering::Relaxed),
             Command::Shutdown => break,
-            // The supervisor arrives in the next commit. Answering with a
-            // fault rather than silently ignoring the command means a GUI
-            // built against a newer protocol than the engine it launched
-            // gets told so, instead of waiting forever for a state that is
-            // never coming.
-            Command::TunnelStart { .. }
-            | Command::TunnelStop
-            | Command::TunnelReconcile { .. } => {
+            Command::TunnelStart { spec } => {
+                // The dependency is enforced here as well as in the UI:
+                // this process is the trust boundary, and a tunnel whose
+                // outbound has nothing to dial is worse than no tunnel.
+                if running.is_none() {
+                    out.send(&Event::TunnelState {
+                        state: "fault".into(),
+                        detail: Some("the SNI stage is not running".into()),
+                    });
+                    continue;
+                }
+                if let Some(t) = tunnel.take() {
+                    t.stop();
+                }
                 out.send(&Event::TunnelState {
-                    state: "fault".into(),
-                    detail: Some("This engine build has no tunnel supervisor.".into()),
+                    state: "starting".into(),
+                    detail: None,
+                });
+                match start_tunnel(&spec, &out, verbose.clone()) {
+                    Ok(t) => {
+                        tunnel = Some(t);
+                        out.send(&Event::TunnelState {
+                            state: "active".into(),
+                            detail: None,
+                        });
+                    }
+                    Err(e) => {
+                        out.send(&Event::TunnelState {
+                            state: "fault".into(),
+                            detail: Some(e),
+                        });
+                    }
+                }
+            }
+            Command::TunnelStop => {
+                if let Some(t) = tunnel.take() {
+                    t.stop();
+                }
+                out.send(&Event::TunnelState {
+                    state: "offline".into(),
+                    detail: None,
+                });
+            }
+            Command::TunnelReconcile { link: _ } => {
+                // Phase 1 has no routes or firewall rules to move, and the
+                // GUI regenerates and restarts the tunnel on a profile
+                // switch. The real work arrives with TUN mode.
+                out.send(&Event::Log {
+                    level: LogLevel::Debug,
+                    msg: "[tunnel] reconcile: nothing to do in proxy modes".into(),
                 });
             }
         }
     }
 
+    // Order matters: the tunnel's outbound dials the SNI listener, so
+    // tearing the listener down first would give the core a window of
+    // failing connections to log noisily about.
+    if let Some(t) = tunnel.take() {
+        t.stop();
+    }
     if let Some(r) = running.take() {
         r.stop();
     }
+}
+
+/// Mirrors `start` for the tunnel: builds the log sink the supervisor
+/// writes through, so core output reaches the GUI on the same channel as
+/// everything else.
+fn start_tunnel(
+    spec: &TunnelSpec,
+    out: &Out,
+    verbose: Arc<AtomicBool>,
+) -> Result<TunnelSupervisor, String> {
+    let sink = out.clone();
+    let log: LogFn = Arc::new(move |level, msg| {
+        if level == LogLevel::Debug && !verbose.load(Ordering::Relaxed) {
+            return;
+        }
+        sink.send(&Event::Log { level, msg });
+    });
+    TunnelSupervisor::start(spec, log)
 }
 
 fn start(

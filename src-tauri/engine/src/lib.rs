@@ -13,6 +13,7 @@ pub mod proto;
 pub mod sniffer;
 pub mod sysrand;
 pub mod transport;
+pub mod tunnel;
 pub mod validate;
 
 #[cfg(test)]

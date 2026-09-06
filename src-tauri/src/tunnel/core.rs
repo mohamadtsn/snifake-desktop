@@ -18,9 +18,12 @@ use std::path::{Path, PathBuf};
 // here, because the *privileged* half must be able to check the binary it
 // is about to execute against a constant an unprivileged process cannot
 // influence.
-pub use snifake_engine::corepin::{
-    archive_sha256 as expected_sha256, binary_sha256, target, SINGBOX_VERSION,
-};
+// `binary_sha256` is deliberately *not* re-exported here. The unprivileged
+// half checks the archive before unpacking it; checking the binary before
+// executing it is the engine's job, and pretending otherwise would suggest
+// this side had a say in it. The tests below reach for it by its full path.
+pub use snifake_engine::corepin::{archive_sha256 as expected_sha256, target, SINGBOX_VERSION};
+
 
 fn archive_extension() -> &'static str {
     if cfg!(windows) {
@@ -231,12 +234,12 @@ mod tests {
     #[test]
     fn both_pinned_hashes_exist_for_every_target_we_build_for() {
         assert!(expected_sha256().is_some(), "no archive pin for {}", target());
-        assert!(binary_sha256().is_some(), "no binary pin for {}", target());
+        assert!(snifake_engine::corepin::binary_sha256().is_some(), "no binary pin for {}", target());
         assert_eq!(expected_sha256().unwrap().len(), 64);
-        assert_eq!(binary_sha256().unwrap().len(), 64);
+        assert_eq!(snifake_engine::corepin::binary_sha256().unwrap().len(), 64);
         assert_ne!(
             expected_sha256().unwrap(),
-            binary_sha256().unwrap(),
+            snifake_engine::corepin::binary_sha256().unwrap(),
             "the archive and the binary inside it cannot hash the same"
         );
     }
@@ -351,7 +354,7 @@ mod tests {
         let bytes = std::fs::read(&installed).unwrap();
         assert_eq!(
             sha256_hex(&bytes),
-            binary_sha256().unwrap(),
+            snifake_engine::corepin::binary_sha256().unwrap(),
             "the installed binary does not match the pinned binary digest"
         );
 

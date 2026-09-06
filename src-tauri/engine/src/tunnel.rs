@@ -19,7 +19,11 @@ use crate::proto::{LogLevel, ReadyProbe, TunnelSpec};
 use crate::sniffer::LogFn;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
+// Only the unix branch of `write_config` needs it: the windows branch uses
+// `fs::write`, which takes the bytes rather than a handle.
+#[cfg(unix)]
+use std::io::Write;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};

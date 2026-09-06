@@ -19,6 +19,7 @@ use snifake_engine::proto::Profile;
 pub(crate) struct AppState {
     pub(crate) engine: Mutex<EngineHost>,
     pub(crate) store: Mutex<Store>,
+    pub(crate) tunnels: Mutex<tunnel::model::TunnelStore>,
     pub(crate) logs: Arc<LogBuffer>,
 }
 
@@ -85,9 +86,14 @@ fn start_proxy(
     state.engine.lock().unwrap().start(&app, &profile)
 }
 
+/// The tunnel's outbound dials this listener, so it goes first. Without
+/// that order the core is left dialling something that is gone, and the
+/// user sees a tunnel fault they did not cause.
 #[tauri::command]
 fn stop_proxy(app: tauri::AppHandle, state: tauri::State<AppState>) {
-    state.engine.lock().unwrap().stop(&app);
+    let mut engine = state.engine.lock().unwrap();
+    engine.tunnel_stop();
+    engine.stop(&app);
 }
 
 /// The frontend only wants log traffic while Activity is open; with it
@@ -133,6 +139,171 @@ fn import_core(path: String) -> Result<(), String> {
     tunnel::core::install_from_archive(std::path::Path::new(&path)).map(|_| ())
 }
 
+#[tauri::command]
+fn list_tunnels(state: tauri::State<AppState>) -> tunnel::model::TunnelStore {
+    state.tunnels.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn save_tunnel(
+    state: tauri::State<AppState>,
+    profile: tunnel::model::TunnelProfile,
+) -> Result<tunnel::model::TunnelStore, String> {
+    let mut store = state.tunnels.lock().unwrap();
+    tunnel::model::upsert(&mut store, profile);
+    tunnel::model::save(&store)?;
+    Ok(store.clone())
+}
+
+#[tauri::command]
+fn delete_tunnel(
+    state: tauri::State<AppState>,
+    id: String,
+) -> Result<tunnel::model::TunnelStore, String> {
+    let mut store = state.tunnels.lock().unwrap();
+    tunnel::model::delete(&mut store, &id);
+    tunnel::model::save(&store)?;
+    Ok(store.clone())
+}
+
+#[tauri::command]
+fn set_active_tunnel(
+    state: tauri::State<AppState>,
+    id: String,
+) -> Result<tunnel::model::TunnelStore, String> {
+    let mut store = state.tunnels.lock().unwrap();
+    tunnel::model::set_active(&mut store, &id)?;
+    tunnel::model::save(&store)?;
+    Ok(store.clone())
+}
+
+/// Mode, proxy port and the three lists, saved as one unit — they are
+/// edited on one screen and validated together.
+#[tauri::command]
+fn save_routing(
+    state: tauri::State<AppState>,
+    mode: tunnel::model::TunnelMode,
+    proxy_host: String,
+    proxy_port: u16,
+    routing: tunnel::model::Routing,
+) -> Result<tunnel::model::TunnelStore, String> {
+    // Reject a rule the core would refuse, here, while the user is still
+    // looking at the field they typed it into.
+    for (name, lines) in [
+        ("Block", &routing.block),
+        ("Bypass", &routing.bypass),
+        ("Proxy", &routing.proxy),
+    ] {
+        if let Err(errs) = tunnel::rules::parse_list(lines) {
+            let (i, msg) = &errs[0];
+            return Err(format!("{name} list, line {}: {msg}", i + 1));
+        }
+    }
+    let mut store = state.tunnels.lock().unwrap();
+    store.mode = mode;
+    store.proxy_host = proxy_host;
+    store.proxy_port = proxy_port;
+    store.routing = routing;
+    tunnel::model::save(&store)?;
+    Ok(store.clone())
+}
+
+#[derive(serde::Serialize)]
+struct ImportResult {
+    profile: tunnel::model::TunnelProfile,
+    warnings: Vec<String>,
+    source_address: String,
+    source_port: u16,
+}
+
+#[tauri::command]
+fn import_tunnel(text: String) -> Result<ImportResult, String> {
+    let got = tunnel::import::import(&text)?;
+    Ok(ImportResult {
+        profile: got.profile,
+        warnings: got.warnings,
+        source_address: got.source_address,
+        source_port: got.source_port,
+    })
+}
+
+#[tauri::command]
+fn export_tunnel_uri(state: tauri::State<AppState>, id: String) -> Result<String, String> {
+    let tunnels = state.tunnels.lock().unwrap();
+    let profile = tunnels
+        .tunnels
+        .iter()
+        .find(|t| t.id == id)
+        .ok_or_else(|| format!("no tunnel with id '{id}'"))?;
+    let store = state.store.lock().unwrap();
+    let link = profiles::active(&store).ok_or("no active SNI profile")?;
+    Ok(tunnel::import::export_uri(
+        profile,
+        &link.listen_host,
+        link.listen_port,
+    ))
+}
+
+/// Everything that has to be true before a tunnel can start, checked in
+/// one place and reported as one message the UI can show verbatim.
+#[tauri::command]
+fn start_tunnel(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    let (profile, tunnels) = {
+        let tunnels = state.tunnels.lock().unwrap();
+        let profile = tunnels
+            .tunnels
+            .iter()
+            .find(|t| t.id == id)
+            .cloned()
+            .ok_or_else(|| format!("no tunnel with id '{id}'"))?;
+        (profile, tunnels.clone())
+    };
+
+    if !tunnel::core::is_installed() {
+        return Err("The sing-box core is not installed yet.".into());
+    }
+
+    let link = {
+        let store = state.store.lock().unwrap();
+        profiles::active(&store).cloned().ok_or("no active SNI profile")?
+    };
+
+    // Bind and release, so a clash is reported against the field the user
+    // can change rather than surfacing as an opaque core failure. The
+    // engine maps sing-box's own bind error to the same message, because
+    // the gap between this check and the spawn is real.
+    let bind = (tunnels.proxy_host.as_str(), tunnels.proxy_port);
+    match std::net::TcpListener::bind(bind) {
+        Ok(l) => drop(l),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            return Err(format!(
+                "Port {} is already in use. Choose another port.",
+                tunnels.proxy_port
+            ));
+        }
+        Err(e) => return Err(format!("Cannot listen on port {}: {e}", tunnels.proxy_port)),
+    }
+
+    let config = tunnel::generate::generate(&profile, &tunnels, &link)?;
+    let spec = snifake_engine::proto::TunnelSpec {
+        config,
+        core_path: tunnel::core::core_binary().to_string_lossy().into_owned(),
+        ready_probe: snifake_engine::proto::ReadyProbe::TcpAccept {
+            host: tunnels.proxy_host.clone(),
+            port: tunnels.proxy_port,
+        },
+        connect_ip: link.connect_ip.clone(),
+        connect_port: link.connect_port,
+        listen_host: link.listen_host.clone(),
+    };
+    state.engine.lock().unwrap().tunnel_start(spec)
+}
+
+#[tauri::command]
+fn stop_tunnel(state: tauri::State<AppState>) {
+    state.engine.lock().unwrap().tunnel_stop();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let logs = Arc::new(LogBuffer::new());
@@ -164,6 +335,7 @@ pub fn run() {
         .manage(AppState {
             engine: Mutex::new(EngineHost::new(logs.clone())),
             store: Mutex::new(store),
+            tunnels: Mutex::new(tunnel::model::load()),
             logs: logs.clone(),
         })
         .invoke_handler(tauri::generate_handler![
@@ -180,6 +352,15 @@ pub fn run() {
             core_status,
             download_core,
             import_core,
+            list_tunnels,
+            save_tunnel,
+            delete_tunnel,
+            set_active_tunnel,
+            save_routing,
+            import_tunnel,
+            export_tunnel_uri,
+            start_tunnel,
+            stop_tunnel,
         ])
         .setup(move |app| {
             tray::setup_tray(app.handle(), &active_name)?;

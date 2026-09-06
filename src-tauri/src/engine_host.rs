@@ -13,7 +13,7 @@
 use crate::auth::elevated_argv;
 use crate::config::engine_path;
 use crate::logbuf::LogBuffer;
-use snifake_engine::proto::{Command, Event, LogLevel, Profile};
+use snifake_engine::proto::{Command, Event, LogLevel, Profile, TunnelSpec};
 use snifake_engine::transport::{Listener, Stream};
 use std::io::{BufRead, BufReader, Write};
 use std::sync::{Arc, Mutex};
@@ -93,13 +93,23 @@ impl EngineProcess {
     }
 }
 
-/// Folds one engine event into the log buffer. Returns a new proxy state
-/// when the event carries one. Pure enough to test without a process.
-fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Option<String> {
+/// What an engine event means to the host. Three outcomes rather than an
+/// `Option<String>`, because there are now two independent state machines
+/// on the other end of the same socket.
+#[derive(Debug, PartialEq)]
+pub enum Applied {
+    Nothing,
+    Link(String),
+    Tunnel(String, Option<String>),
+}
+
+/// Folds one engine event into the log buffer and says what it changed.
+/// Pure enough to test without a process.
+fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
     match ev {
         Event::Ready { version } => {
             logs.push(format!("engine {version} ready"));
-            None
+            Applied::Nothing
         }
         Event::Log { level, msg } => {
             match level {
@@ -107,22 +117,18 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Option<String> {
                 LogLevel::Warn => logs.push(format!("warning: {msg}")),
                 LogLevel::Error => logs.push(format!("error: {msg}")),
             }
-            None
+            Applied::Nothing
         }
         Event::Error { code, msg } => {
             logs.push(format!("error [{code}]: {msg}"));
-            None
+            Applied::Nothing
         }
-        Event::State { state } => Some(state.clone()),
-        // Routed to its own listener in the commit that adds tunnel state
-        // to the host; until then it is a log line rather than a silent
-        // drop, so a fault from the engine is still visible in Activity.
+        Event::State { state } => Applied::Link(state.clone()),
         Event::TunnelState { state, detail } => {
-            match detail {
-                Some(d) => logs.push(format!("[tunnel] {state}: {d}")),
-                None => logs.push(format!("[tunnel] {state}")),
+            if let Some(d) = detail {
+                logs.push(format!("[tunnel] {d}"));
             }
-            None
+            Applied::Tunnel(state.clone(), detail.clone())
         }
     }
 }
@@ -143,6 +149,10 @@ fn active_profile_name(app: &AppHandle) -> String {
 pub struct EngineHost {
     logs: Arc<LogBuffer>,
     state: String,
+    /// Shared rather than plain, unlike `state`: the tunnel's state only
+    /// ever arrives on the reader thread, which has no route back to
+    /// `&mut self`. A clone of this handle is what the thread writes to.
+    tunnel_state: Arc<Mutex<String>>,
     child: Option<EngineProcess>,
     writer: Option<Arc<Mutex<Stream>>>,
 }
@@ -152,6 +162,7 @@ impl EngineHost {
         EngineHost {
             logs,
             state: "stopped".into(),
+            tunnel_state: Arc::new(Mutex::new("offline".into())),
             child: None,
             writer: None,
         }
@@ -208,12 +219,35 @@ impl EngineHost {
         }
     }
 
+    pub fn tunnel_state(&self) -> String {
+        self.tunnel_state.lock().unwrap().clone()
+    }
+
+    /// Requires the engine to already be up: the tunnel's outbound dials
+    /// the SNI listener, so there is nothing to start against.
+    pub fn tunnel_start(&mut self, spec: TunnelSpec) -> Result<(), String> {
+        if self.writer.is_none() {
+            return Err("Start the SNI stage first.".into());
+        }
+        self.send(&Command::TunnelStart { spec })
+    }
+
+    pub fn tunnel_stop(&mut self) {
+        if self.writer.is_some() {
+            let _ = self.send(&Command::TunnelStop);
+        }
+    }
+
     pub fn set_verbose(&mut self, on: bool) {
         let _ = self.send(&Command::Verbose { on });
     }
 
     /// Best-effort teardown on quit: ask nicely, then kill.
     pub fn shutdown(&mut self) {
+        // Same ordering as the engine's own teardown: the tunnel's outbound
+        // dials the SNI listener, so stopping the listener first would hand
+        // the core a window of failing connections to log about.
+        let _ = self.send(&Command::TunnelStop);
         let _ = self.send(&Command::Shutdown);
         self.writer = None;
         if let Some(mut child) = self.child.take() {
@@ -312,6 +346,7 @@ impl EngineHost {
 
         let logs = self.logs.clone();
         let handle = app.clone();
+        let tunnel_state = self.tunnel_state.clone();
         std::thread::spawn(move || {
             for line in reader.lines() {
                 let Ok(line) = line else { break };
@@ -320,14 +355,28 @@ impl EngineHost {
                 }
                 match serde_json::from_str::<Event>(&line) {
                     Ok(ev) => {
-                        if let Some(state) = apply_event(&ev, &logs) {
-                            let _ = handle.emit("state-changed", &state);
-                            let h = handle.clone();
-                            // Tray mutation must happen on the GTK main thread.
-                            let _ = handle.run_on_main_thread(move || {
-                                let name = active_profile_name(&h);
-                                crate::tray::update_tray(&h, &state, &name);
-                            });
+                        match apply_event(&ev, &logs) {
+                            Applied::Nothing => {}
+                            Applied::Link(state) => {
+                                let _ = handle.emit("state-changed", &state);
+                                let h = handle.clone();
+                                // Tray mutation must happen on the GTK main thread.
+                                let _ = handle.run_on_main_thread(move || {
+                                    let name = active_profile_name(&h);
+                                    crate::tray::update_tray(&h, &state, &name);
+                                });
+                            }
+                            // The tunnel deliberately does not touch the
+                            // tray in this phase: the badge means the SNI
+                            // stage, and two meanings on one dot is worse
+                            // than one meaning.
+                            Applied::Tunnel(state, detail) => {
+                                *tunnel_state.lock().unwrap() = state.clone();
+                                let _ = handle.emit(
+                                    "tunnel-state-changed",
+                                    serde_json::json!({ "state": state, "detail": detail }),
+                                );
+                            }
                         }
                     }
                     Err(e) => logs.push(format!("error: unparsable engine event: {e}")),
@@ -335,6 +384,14 @@ impl EngineHost {
             }
             logs.push("error: the engine connection closed".into());
             let _ = handle.emit("state-changed", "error");
+            // The tunnel cannot outlive the engine that supervises it, so
+            // saying otherwise would leave a switch lit for a process that
+            // is gone.
+            *tunnel_state.lock().unwrap() = "offline".into();
+            let _ = handle.emit(
+                "tunnel-state-changed",
+                serde_json::json!({ "state": "offline", "detail": null }),
+            );
         });
 
         Ok(())
@@ -401,15 +458,83 @@ mod tests {
         let logs = Arc::new(LogBuffer::new());
         let ev: Event =
             serde_json::from_str(r#"{"ev":"log","level":"info","msg":"hello"}"#).unwrap();
-        assert_eq!(apply_event(&ev, &logs), None);
+        assert_eq!(apply_event(&ev, &logs), Applied::Nothing);
         assert_eq!(logs.snapshot(), vec!["hello".to_string()]);
 
         let ev: Event = serde_json::from_str(r#"{"ev":"state","state":"running"}"#).unwrap();
-        assert_eq!(apply_event(&ev, &logs), Some("running".to_string()));
+        assert_eq!(apply_event(&ev, &logs), Applied::Link("running".to_string()));
 
         let ev: Event =
             serde_json::from_str(r#"{"ev":"error","code":"no_route","msg":"nope"}"#).unwrap();
-        assert_eq!(apply_event(&ev, &logs), None);
+        assert_eq!(apply_event(&ev, &logs), Applied::Nothing);
         assert!(logs.snapshot().iter().any(|l| l.contains("no_route")));
     }
+
+
+    fn logs() -> Arc<LogBuffer> {
+        Arc::new(LogBuffer::new())
+    }
+
+    #[test]
+    fn a_link_state_event_still_yields_a_link_state() {
+        let logs = logs();
+        let got = apply_event(&Event::State { state: "running".into() }, &logs);
+        assert_eq!(got, Applied::Link("running".into()));
+    }
+
+    #[test]
+    fn a_tunnel_state_event_yields_a_tunnel_state_and_keeps_its_detail() {
+        let logs = logs();
+        let got = apply_event(
+            &Event::TunnelState {
+                state: "fault".into(),
+                detail: Some("the SNI stage is not running".into()),
+            },
+            &logs,
+        );
+        assert_eq!(
+            got,
+            Applied::Tunnel("fault".into(), Some("the SNI stage is not running".into()))
+        );
+    }
+
+    #[test]
+    fn a_tunnel_fault_detail_is_also_written_to_the_log() {
+        // The dialog shows it once; the log is where the user looks for it
+        // again ten minutes later.
+        let logs = logs();
+        apply_event(
+            &Event::TunnelState {
+                state: "fault".into(),
+                detail: Some("core checksum mismatch".into()),
+            },
+            &logs,
+        );
+        assert!(logs
+            .snapshot()
+            .iter()
+            .any(|l| l.contains("core checksum mismatch")));
+    }
+
+    #[test]
+    fn a_tunnel_state_without_a_detail_writes_nothing_to_the_log() {
+        let logs = logs();
+        apply_event(
+            &Event::TunnelState { state: "active".into(), detail: None },
+            &logs,
+        );
+        assert!(logs.snapshot().is_empty());
+    }
+
+    #[test]
+    fn a_log_event_yields_nothing_and_lands_in_the_buffer() {
+        let logs = logs();
+        let got = apply_event(
+            &Event::Log { level: LogLevel::Info, msg: "hello".into() },
+            &logs,
+        );
+        assert_eq!(got, Applied::Nothing);
+        assert_eq!(logs.snapshot(), vec!["hello".to_string()]);
+    }
+
 }

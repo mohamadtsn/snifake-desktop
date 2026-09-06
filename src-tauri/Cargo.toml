@@ -54,6 +54,8 @@ futures-util = "0.3"
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# The file picker behind "Import a file" on the core setup screen.
+tauri-plugin-dialog = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -191,9 +191,10 @@ export function RoutingEditor({
           />
           <div className="min-h-[14px]">
             {!portValid && (
-              <span className="text-st-error text-[10px] leading-none">
-                Enter a port between 1 and 65535.
-              </span>
+              {/* The same words ProfileEditor uses for the same rule on the
+                  same kind of field. Two phrasings for one constraint reads
+                  as two different constraints. */}
+              <span className="text-st-error text-[10px] leading-none">1–65535.</span>
             )}
           </div>
         </div>

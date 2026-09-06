@@ -1,5 +1,4 @@
 import { Select } from "@base-ui/react/select";
-import { Profile } from "@/types";
 
 /**
  * The channel selector.
@@ -16,26 +15,33 @@ import { Profile } from "@/types";
  * and Esc. What is ours is the readout: the trigger shows the route as well
  * as the name, because the name alone does not tell you where traffic goes.
  */
-export function ProfileSelect({
-  profiles,
+export function ChannelSelect<T extends { id: string; name: string }>({
+  items,
   activeId,
   runningId,
+  subtitle,
+  manageLabel,
   onSelect,
   onManage,
 }: {
-  profiles: Profile[];
+  items: T[];
   activeId: string | null;
   runningId: string | null;
+  /** The line under the name. For a profile it is the route; for a tunnel
+   *  it is the protocol and the real destination. Either way it is what
+   *  the name alone does not tell you. */
+  subtitle: (item: T) => string;
+  manageLabel: string;
   onSelect: (id: string) => void;
   onManage: () => void;
 }) {
-  const active = profiles.find((p) => p.id === activeId);
+  const active = items.find((p) => p.id === activeId);
 
   return (
-    <section className="flex shrink-0 flex-col gap-2.5">
-      <h2 className="engrave">Profile</h2>
-
-      <div className="flex items-stretch gap-2">
+    /* No heading of its own any more: two rows of the same kind of thing
+       sit under one CHANNELS rule in App. Two headings would be two rules
+       where one belongs. */
+    <div className="flex shrink-0 items-stretch gap-2">
         <Select.Root
           value={activeId ?? ""}
           onValueChange={(next) => {
@@ -52,8 +58,7 @@ export function ProfileSelect({
                   dir="ltr"
                   className="text-faint mt-1.5 block truncate text-left text-[10px] leading-none"
                 >
-                  {active.LISTEN_HOST}:{active.LISTEN_PORT} &rarr; {active.CONNECT_IP}:
-                  {active.CONNECT_PORT}
+                  {subtitle(active)}
                 </span>
               )}
             </span>
@@ -78,7 +83,7 @@ export function ProfileSelect({
               className="z-50 outline-none"
             >
               <Select.Popup className="menu">
-                {profiles.map((p) => (
+                {items.map((p) => (
                   <Select.Item key={p.id} value={p.id} className="menu-item">
                     <span
                       className="menu-mark"
@@ -93,7 +98,7 @@ export function ProfileSelect({
                         dir="ltr"
                         className="text-faint mt-1.5 block truncate text-left text-[9.5px] leading-none"
                       >
-                        {p.LISTEN_HOST}:{p.LISTEN_PORT} &rarr; {p.CONNECT_IP}:{p.CONNECT_PORT}
+                        {subtitle(p)}
                       </span>
                     </span>
                     {/* Neutral, not green. Green means "carrying traffic"
@@ -112,8 +117,8 @@ export function ProfileSelect({
         <button
           type="button"
           onClick={onManage}
-          aria-label="Manage profiles"
-          title="Manage profiles"
+          aria-label={manageLabel}
+          title={manageLabel}
           className="selector text-faint hover:text-text w-10 shrink-0 justify-center px-0"
         >
           <svg
@@ -130,7 +135,6 @@ export function ProfileSelect({
             <path d="M9 4l3 3" />
           </svg>
         </button>
-      </div>
-    </section>
+    </div>
   );
 }

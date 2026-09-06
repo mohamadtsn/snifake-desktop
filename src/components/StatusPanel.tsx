@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { ProxyState, STATE_COLOR, STATE_TEXT, formatUptime } from "@/types";
+import {
+  ProxyState,
+  STATE_COLOR,
+  STATE_TEXT,
+  TUNNEL_STATE_COLOR,
+  TUNNEL_STATE_TEXT,
+  TunnelState,
+  formatUptime,
+  tunnelSignalState,
+} from "@/types";
 
 const SEGMENTS = 20;
 
@@ -13,8 +22,23 @@ const SEGMENTS = 20;
  * Everything the bar does (dark / filling / lit-with-scan / red) is driven
  * from CSS off `data-state`, so a running console costs no React renders.
  */
-export function StatusPanel({ state, since }: { state: ProxyState; since: number | null }) {
+export function StatusPanel({
+  state,
+  since,
+  tunnel,
+  tunnelSince,
+  tunnelMode,
+}: {
+  state: ProxyState;
+  since: number | null;
+  /** Absent when no tunnel is configured: the row does not exist then. */
+  tunnel?: TunnelState;
+  tunnelSince?: number | null;
+  tunnelMode?: string;
+}) {
   const uptime = useUptime(state === "running" ? since : null);
+  // The same hook twice. Neither clock ticks unless its own stage is up.
+  const tunnelUptime = useUptime(tunnel === "active" ? (tunnelSince ?? null) : null);
 
   return (
     <section className="flex shrink-0 flex-col gap-2.5">
@@ -58,6 +82,61 @@ export function StatusPanel({ state, since }: { state: ProxyState; since: number
             <span className="text-dim text-[16px] leading-none">{uptime ?? "—"}</span>
           </div>
         </div>
+
+        {tunnel !== undefined && (
+          <>
+            {/* A hairline, not a card edge: this is one instrument with two
+                readings, not two instruments stacked. */}
+            <span className="bg-line h-px w-full" aria-hidden />
+
+            <div
+              className="signal"
+              data-state={tunnelSignalState(tunnel)}
+              role="img"
+              aria-label={TUNNEL_STATE_TEXT[tunnel]}
+            >
+              {Array.from({ length: SEGMENTS }, (_, i) => (
+                <span key={i} className="signal-seg" style={{ ["--i" as string]: i }} aria-hidden />
+              ))}
+            </div>
+
+            <div className="flex items-end justify-between gap-3">
+              <div className="flex min-w-0 flex-col gap-2">
+                <span
+                  className="text-faint text-[9px] uppercase"
+                  style={{ letterSpacing: "var(--track-engrave)" }}
+                >
+                  Tunnel
+                </span>
+                {/* 20px against the link's 26px. The link is the primary
+                    reading and the tunnel is subordinate to it; equal sizes
+                    would say otherwise. */}
+                <span
+                  className="truncate text-[20px] leading-none uppercase"
+                  style={{
+                    letterSpacing: "var(--track-label)",
+                    color: TUNNEL_STATE_COLOR[tunnel],
+                  }}
+                >
+                  {TUNNEL_STATE_TEXT[tunnel]}
+                  {tunnelMode && tunnel === "active" && (
+                    <span className="text-faint text-[11px]"> &middot; {tunnelMode}</span>
+                  )}
+                </span>
+              </div>
+
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                <span
+                  className="text-faint text-[9px] uppercase"
+                  style={{ letterSpacing: "var(--track-engrave)" }}
+                >
+                  Uptime
+                </span>
+                <span className="text-dim text-[14px] leading-none">{tunnelUptime ?? "—"}</span>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </section>
   );

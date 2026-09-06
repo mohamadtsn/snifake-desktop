@@ -15,10 +15,18 @@ export function PowerSwitch({
   state,
   onStart,
   onStop,
+  label,
+  disabled,
+  describedBy,
 }: {
   state: ProxyState;
   onStart: () => void;
   onStop: () => void;
+  /** Names the stage when there are two switches. With one, the state's
+   *  own action word is the label and nothing changes. */
+  label?: string;
+  disabled?: boolean;
+  describedBy?: string;
 }) {
   // Stop stays reachable while starting: an elevation prompt that never
   // returns must not leave the only exit greyed out.
@@ -29,13 +37,19 @@ export function PowerSwitch({
       type="button"
       onClick={active ? onStop : onStart}
       aria-pressed={active}
-      className="switch"
+      disabled={disabled}
+      aria-describedby={describedBy}
+      // The label names the stage; the action word still has to be
+      // announced, or a screen reader is told which switch this is and
+      // never what pressing it does.
+      aria-label={label ? `${label}: ${STATE_ACTION[state]}` : undefined}
+      className="switch disabled:cursor-not-allowed disabled:opacity-40"
       data-state={state}
       data-lit={state === "running" ? "" : undefined}
     >
       <span className="flex items-center gap-2.5">
         <PowerGlyph active={active} />
-        {STATE_ACTION[state]}
+        {label ?? STATE_ACTION[state]}
       </span>
     </button>
   );

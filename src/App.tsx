@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,13 +14,26 @@ import {
 } from "@/components/ui/alert-dialog";
 import { TitleBar } from "@/components/TitleBar";
 import { StatusPanel } from "@/components/StatusPanel";
-import { PowerSwitch } from "@/components/PowerSwitch";
+import { SwitchBank } from "@/components/SwitchBank";
 import { RouteRows } from "@/components/RouteRows";
-import { ProfileSelect } from "@/components/ProfileSelect";
+import { ChannelSelect } from "@/components/ChannelSelect";
 import { ProfileSheet } from "@/components/ProfileSheet";
+import { TunnelSheet } from "@/components/TunnelSheet";
+import { CoreSetup } from "@/components/CoreSetup";
 import { ActivitySection } from "@/components/ActivitySection";
 import { AboutDialog } from "@/components/AboutDialog";
-import { Profile, ProxyState, Store, activeProfile } from "@/types";
+import {
+  Profile,
+  ProxyState,
+  Store,
+  activeProfile,
+  type Routing,
+  type TunnelMode,
+  type TunnelProfile,
+  type TunnelState,
+  type TunnelStore,
+} from "@/types";
+import { canStartTunnel, nextTunnelState } from "@/lib/tunnelMachine";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import { UpdateMeter } from "@/components/UpdateMeter";
 import type { Update } from "@tauri-apps/plugin-updater";
@@ -42,6 +55,15 @@ export default function App() {
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
 
+  // The optional second stage. `tunnels === null` only until the first load
+  // resolves; an empty store is the normal, shipped state.
+  const [tunnels, setTunnels] = useState<TunnelStore | null>(null);
+  const [tunnelState, setTunnelState] = useState<TunnelState>("offline");
+  const [tunnelSince, setTunnelSince] = useState<number | null>(null);
+  const [coreInstalled, setCoreInstalled] = useState(false);
+  const [tunnelSheetOpen, setTunnelSheetOpen] = useState(false);
+  const [confirmStopLink, setConfirmStopLink] = useState(false);
+
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
   const storeRef = useRef<Store | null>(null);
@@ -51,6 +73,8 @@ export default function App() {
 
   useEffect(() => {
     void invoke<Store>("list_profiles").then(setStore);
+    void invoke<TunnelStore>("list_tunnels").then(setTunnels);
+    void invoke<{ installed: boolean }>("core_status").then((s) => setCoreInstalled(s.installed));
   }, []);
 
   // One check per launch. Silent when we are current or the check fails.
@@ -80,6 +104,73 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const un = listen<{ state: TunnelState; detail: string | null }>(
+      "tunnel-state-changed",
+      (e) => {
+        setTunnelState(e.payload.state);
+        // Started when the engine says it is up, not when we asked — the
+        // same call App already makes for the link's clock.
+        setTunnelSince(e.payload.state === "active" ? Date.now() : null);
+        if (e.payload.state === "fault" && e.payload.detail) {
+          setErrorDialog(`Tunnel: ${e.payload.detail}`);
+        }
+      },
+    );
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
+  // The coupling: the tunnel cannot outlive the link it dials. Encoded once,
+  // in tunnelMachine, so the rule is tested rather than scattered.
+  useEffect(() => {
+    setTunnelState((current) => nextTunnelState(current, state));
+  }, [state]);
+
+  // Room for the second row, and only ever more of it: a window the user
+  // made bigger stays that size.
+  useEffect(() => {
+    const target = (tunnels?.tunnels.length ?? 0) > 0 ? 560 : 504;
+    void getCurrentWindow()
+      .innerSize()
+      .then((size) => {
+        if (size.height >= target) return;
+        return getCurrentWindow().setSize(new LogicalSize(420, target));
+      });
+  }, [tunnels]);
+
+  async function startTunnel() {
+    const id = tunnels?.active_id;
+    if (!id) return;
+    try {
+      await invoke("start_tunnel", { id });
+    } catch (e) {
+      setErrorDialog(String(e));
+    }
+  }
+
+  async function stopTunnel() {
+    await invoke("stop_tunnel");
+    setTunnelState("offline");
+    setTunnelSince(null);
+  }
+
+  /** Stops both in the order the engine does: the tunnel dials the link. */
+  async function stopBoth() {
+    await stopTunnel();
+    await stop();
+  }
+
+  async function saveTunnel(t: TunnelProfile) {
+    const withId = t.id ? t : { ...t, id: `t${Date.now()}` };
+    let next = await invoke<TunnelStore>("save_tunnel", { profile: withId });
+    // A brand new tunnel becomes the active one: creating it is a statement
+    // of intent to use it. The same call `save` makes for a profile.
+    if (!t.id) next = await invoke<TunnelStore>("set_active_tunnel", { id: withId.id });
+    setTunnels(next);
+  }
 
   async function start(id?: string) {
     const current = storeRef.current;
@@ -163,6 +254,10 @@ export default function App() {
   const downloading =
     !progress || progress.total === null || progress.received < progress.total;
 
+  const hasTunnels = (tunnels?.tunnels.length ?? 0) > 0;
+  const blockedReason = canStartTunnel(state, coreInstalled, tunnels?.active_id != null);
+  const tunnelRunning = tunnelState !== "offline";
+
   return (
     <div className="shell relative flex h-screen flex-col overflow-hidden">
       {/* The bezel sits outside the sheet host on purpose: the drawer stops
@@ -180,21 +275,68 @@ export default function App() {
             engraved rules rather than cards: a console is a single panel
             with sections silkscreened onto it. */}
         <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-4 pb-3">
-          <StatusPanel state={state} since={since} />
-          <RouteRows profile={profile} />
-          <ProfileSelect
-            profiles={store.profiles}
-            activeId={store.active_id}
-            runningId={runningId}
-            onSelect={(id) => void select(id)}
-            onManage={() => setSheetOpen(true)}
+          <StatusPanel
+            state={state}
+            since={since}
+            tunnel={hasTunnels ? tunnelState : undefined}
+            tunnelSince={tunnelSince}
+            tunnelMode={tunnels?.mode.replace("_", " ")}
           />
+          <RouteRows profile={profile} />
+
+          {/* Only once a tunnel exists. Asking someone to fetch a 24 MB core
+              before they have said they want the feature is a toll on the
+              way in. */}
+          {hasTunnels && !coreInstalled && (
+            <CoreSetup onInstalled={() => setCoreInstalled(true)} />
+          )}
+
+          {/* One rule over both rows: they are two of the same kind of
+              thing, and two headings would be two rules where one belongs. */}
+          <section className="flex shrink-0 flex-col gap-2.5">
+            <h2 className="engrave">Channels</h2>
+            <ChannelSelect
+              items={store.profiles}
+              activeId={store.active_id}
+              runningId={runningId}
+              manageLabel="Manage profiles"
+              subtitle={(p) =>
+                `${p.LISTEN_HOST}:${p.LISTEN_PORT} \u2192 ${p.CONNECT_IP}:${p.CONNECT_PORT}`
+              }
+              onSelect={(id) => void select(id)}
+              onManage={() => setSheetOpen(true)}
+            />
+            {hasTunnels && tunnels && (
+              <ChannelSelect
+                items={tunnels.tunnels}
+                activeId={tunnels.active_id}
+                runningId={tunnelRunning ? tunnels.active_id : null}
+                manageLabel="Manage tunnels"
+                subtitle={(t) => `${t.protocol} \u00b7 ${t.remote_host}${t.path}`}
+                onSelect={(id) =>
+                  void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
+                }
+                onManage={() => setTunnelSheetOpen(true)}
+              />
+            )}
+          </section>
         </main>
 
         {/* Outside the scroller: the switch and the log rule are fixed
             furniture. The primary control must never scroll off. */}
         <div className="border-line shrink-0 border-t px-4 pt-3 pb-3">
-          <PowerSwitch state={state} onStart={() => void start()} onStop={() => void stop()} />
+          <SwitchBank
+            link={state}
+            tunnel={tunnelState}
+            showTunnel={hasTunnels}
+            disabledReason={blockedReason}
+            onLinkStart={() => void start()}
+            // Stopping the link takes the tunnel with it, so it is a
+            // decision rather than a reflex once the tunnel is up.
+            onLinkStop={() => (tunnelRunning ? setConfirmStopLink(true) : void stop())}
+            onTunnelStart={() => void startTunnel()}
+            onTunnelStop={() => void stopTunnel()}
+          />
           <div className="mt-2">
             <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
           </div>
@@ -213,6 +355,38 @@ export default function App() {
         onDelete={(id) => void remove(id)}
       />
 
+      {tunnels && (
+        <TunnelSheet
+          open={tunnelSheetOpen}
+          onOpenChange={setTunnelSheetOpen}
+          store={tunnels}
+          listen={{ host: profile.LISTEN_HOST, port: profile.LISTEN_PORT }}
+          connectIp={profile.CONNECT_IP}
+          runningId={tunnelRunning ? tunnels.active_id : null}
+          saving={false}
+          onSelect={(id) =>
+            void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
+          }
+          onSave={(t) => void saveTunnel(t)}
+          onDelete={(id) =>
+            void invoke<TunnelStore>("delete_tunnel", { id }).then(setTunnels)
+          }
+          onSaveRouting={(patch: {
+            mode: TunnelMode;
+            proxy_host: string;
+            proxy_port: number;
+            routing: Routing;
+          }) =>
+            void invoke<TunnelStore>("save_routing", patch)
+              .then(setTunnels)
+              .catch((e) => setErrorDialog(String(e)))
+          }
+          onAdoptAddress={(ip, port) =>
+            void save({ ...profile, CONNECT_IP: ip, CONNECT_PORT: port })
+          }
+        />
+      )}
+
       <AlertDialog open={exitDialogOpen} onOpenChange={setExitDialogOpen}>
         <AlertDialogContent className="prose-face">
           <AlertDialogHeader>
@@ -222,6 +396,28 @@ export default function App() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmExit}>Quit</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmStopLink} onOpenChange={() => setConfirmStopLink(false)}>
+        <AlertDialogContent className="prose-face">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Stop the link?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The tunnel runs through it and will stop too.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmStopLink(false);
+                void stopBoth();
+              }}
+            >
+              Stop both
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -137,3 +137,27 @@ export const TUNNEL_STATE_COLOR: Record<TunnelState, string> = {
 export function activeTunnel(store: TunnelStore): TunnelProfile | undefined {
   return store.tunnels.find((t) => t.id === store.active_id);
 }
+
+/**
+ * The tunnel's five states, folded onto the four the signal bar and the
+ * power switch know. `holding` maps onto `starting` because that is both
+ * what it looks like and what it means: waiting, amber, not yet carrying
+ * traffic (`DESIGN.md §1.1`).
+ *
+ * One function rather than one per consumer. The bar and the switch must
+ * never disagree about what a state looks like, and two copies of a
+ * mapping is how they start to.
+ */
+export function tunnelSignalState(state: TunnelState): ProxyState {
+  switch (state) {
+    case "active":
+      return "running";
+    case "starting":
+    case "holding":
+      return "starting";
+    case "fault":
+      return "error";
+    default:
+      return "stopped";
+  }
+}

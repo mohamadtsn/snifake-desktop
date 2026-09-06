@@ -144,6 +144,19 @@ fn main() {
             }
             Command::Verbose { on } => verbose.store(on, Ordering::Relaxed),
             Command::Shutdown => break,
+            // The supervisor arrives in the next commit. Answering with a
+            // fault rather than silently ignoring the command means a GUI
+            // built against a newer protocol than the engine it launched
+            // gets told so, instead of waiting forever for a state that is
+            // never coming.
+            Command::TunnelStart { .. }
+            | Command::TunnelStop
+            | Command::TunnelReconcile { .. } => {
+                out.send(&Event::TunnelState {
+                    state: "fault".into(),
+                    detail: Some("This engine build has no tunnel supervisor.".into()),
+                });
+            }
         }
     }
 

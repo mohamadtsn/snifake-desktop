@@ -114,6 +114,16 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Option<String> {
             None
         }
         Event::State { state } => Some(state.clone()),
+        // Routed to its own listener in the commit that adds tunnel state
+        // to the host; until then it is a log line rather than a silent
+        // drop, so a fault from the engine is still visible in Activity.
+        Event::TunnelState { state, detail } => {
+            match detail {
+                Some(d) => logs.push(format!("[tunnel] {state}: {d}")),
+                None => logs.push(format!("[tunnel] {state}")),
+            }
+            None
+        }
     }
 }
 

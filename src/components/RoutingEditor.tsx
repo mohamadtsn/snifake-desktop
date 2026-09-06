@@ -189,11 +189,11 @@ export function RoutingEditor({
             value={port}
             onChange={(e) => setPort(e.target.value)}
           />
+          {/* The same words ProfileEditor uses for the same rule on the same
+              kind of field. Two phrasings for one constraint read as two
+              different constraints. */}
           <div className="min-h-[14px]">
             {!portValid && (
-              {/* The same words ProfileEditor uses for the same rule on the
-                  same kind of field. Two phrasings for one constraint reads
-                  as two different constraints. */}
               <span className="text-st-error text-[10px] leading-none">1–65535.</span>
             )}
           </div>

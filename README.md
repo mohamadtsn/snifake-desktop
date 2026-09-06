@@ -50,6 +50,46 @@ A profile carries `LISTEN_HOST`, `LISTEN_PORT`, `CONNECT_IP`, `CONNECT_PORT`
 and `FAKE_SNI`. Profiles live in `profiles.json` in the platform app-data dir
 (`~/.config/snifake` on Linux) and are passed to the engine on start.
 
+## The V2Ray tunnel
+
+An optional second stage that runs *in front of* the SNI forwarder. The SNI
+stage stands up a local listener; the tunnel's outbound dials that listener,
+so traffic goes application → tunnel → SNI stage → upstream. The tunnel
+cannot start unless the SNI stage is running, and the interface says so
+before you press the switch rather than after.
+
+Configurations are `vless` or `trojan` over WebSocket with TLS, imported from
+a share link, pasted as an Xray JSON outbound, or typed in. The address and
+port are deliberately not stored: they come from whichever SNI profile is
+active, because a stored copy of a read-only field eventually disagrees with
+reality. Tunnels live in `tunnels.json` beside `profiles.json`.
+
+**The core is not bundled.** The tunnel runs on
+[sing-box](https://github.com/SagerNet/sing-box), which is GPL-3.0 while this
+project is MIT, so it is fetched at first use into the app-data directory and
+pinned to one exact version verified by checksum. If you cannot reach GitHub —
+which is a fair description of why you might want this application — download
+the release archive by any other route and use **Import a file**; it goes
+through the same verification.
+
+Three modes, and their guarantees are stated plainly because they differ:
+
+| Mode | Captures | Leak guarantee |
+| --- | --- | --- |
+| Manual | only what you point at the local port | not applicable; nothing is captured that you did not aim |
+| System proxy | applications that read the OS proxy setting | none — an application that ignores the setting goes direct |
+| TUN | all system traffic | full: a firewall kill switch, failing closed |
+
+Manual is available today. System proxy and TUN arrive in later releases;
+until then TUN is shown greyed rather than hidden, so the list does not change
+shape under you at upgrade time.
+
+Routing is three lists — block, bypass, proxy — one rule per line, with typed
+prefixes (`domain:`, `suffix:`, `keyword:`, `regex:`, `ip:`, `port:`,
+`process:`, `path:`, `ruleset:`, `network:`) or bare domains, plus a raw JSON
+escape hatch. Four generated guard rules cannot be overridden by any of them:
+they are what stops the tunnel swallowing the SNI stage's own connection.
+
 ## Development
 
 Frontend tooling runs on the host (Node.js 18+). The Rust/Tauri side runs

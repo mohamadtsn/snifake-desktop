@@ -158,9 +158,20 @@ There is no overshoot curve in the file: overshoot without a velocity term
 reads as elastic rather than physical, so anything that genuinely needs it
 uses a `motion/react` spring, which has one.
 
-Only `transform`, `opacity`, `color`, `background-color` and `border-color`
-animate. The one exception is the disclosure panel's height, which is why it
-carries `contain: paint`.
+Only `transform`, `opacity`, `color`, `background-color`, `border-color` and
+`box-shadow` animate. Two exceptions, both deliberate:
+
+- **`box-shadow`** is not composited, and it is here anyway. It is the whole
+  tactile vocabulary: the switch swaps its outer shadow for an inner one to
+  read as pressed, and every input trades its inset for a focus ring. Doing
+  that with `transform` would move the control; doing it without a transition
+  would make it snap. It animates on single controls under the pointer, never
+  on a list, so the paint cost is one element.
+- **The disclosure panel's height**, which is why it carries `contain: paint`.
+
+*(This list said five properties until 2026-09-06. It had said that since
+before `.switch` and the input focus ring existed, both of which animate
+`box-shadow`; the audit that found it is recorded in the decision log.)*
 
 ---
 
@@ -215,13 +226,18 @@ exists to provide.
 | `StatusPanel` | the instrument face: 20-segment bar, condition, uptime |
 | `PowerSwitch` | the only control that starts or stops the engine |
 | `RouteRows` | the route as a three-column grid |
-| `ProfileSelect` | the channel selector plus the way into the drawer |
+| `ChannelSelect` | one channel row: the selector plus the way into its drawer. Generic, so the profile row and the tunnel row are the same component |
 | `Disclosure` | an engraved header made pressable |
 | `ActivitySection` | owns all log state; drives `set_log_streaming` |
 | `AboutDialog` | identity, metadata and the manual update check |
 | `UpdateMeter` | real download bytes, in `App.tsx` beside the update dialog |
 | `UpdateMeter` | the download bar in the update dialog — the only progress bar |
-| `Sheet` / `ProfileSheet` / `ProfileEditor` | the drawer |
+| `Sheet` / `ProfileSheet` / `ProfileEditor` | the profile drawer |
+| `Field` | one labelled input with its own undo stack; shared by both editors |
+| `SwitchBank` | the two power switches; one switch until a tunnel exists |
+| `CoreSetup` | fetching or importing the tunnel core, using the one meter |
+| `RuleList` | one routing list, validated per line |
+| `TunnelSheet` / `TunnelEditor` / `RoutingEditor` | the tunnel drawer, three pushed views |
 
 ### 4.1 The signal bar
 
@@ -419,6 +435,42 @@ one `push_back` in Rust: no IPC, no React render.
 
 ---
 
+### 4.9 The second reading on the instrument face
+
+The tunnel is optional, so with none configured the face is exactly what it
+was: one bar, one condition word, one clock. Once a tunnel exists the same
+panel grows a second reading rather than a second panel — the two stages are
+not independent, the tunnel dials the link, and two panels would say
+otherwise. A hairline separates them. One instrument, two readings.
+
+- **The tunnel's word is 20px against the link's 26px,** and the tunnel gets
+  a single lamp where the link gets the twenty-segment bar. The subordination
+  has to be visible in the weight, not only in the order. Giving the tunnel
+  its own bar was tried first and it read as two equal instruments — and,
+  measured, it did not fit the window.
+- **The lamp is a plain block, not a segment borrowed from the bar.** The
+  `starting` state animates a fill across the segments, so a lone segment
+  spends part of every cycle dark; the lamp sat grey beside an amber word. A
+  lamp that contradicts its own readout is worse than no lamp.
+- **`holding` borrows amber from `starting`,** because that is what it is:
+  waiting, in transition, not yet carrying traffic. See §1.1.
+- **The window is 660px tall once a tunnel exists,** which is §3's rule
+  ("sized to the content with the log closed") applied to content that grew,
+  not an exception to it. At 560 the channel selectors began below the fold.
+
+### 4.10 The switch bank
+
+One switch becomes two the moment a tunnel exists, side by side. A bank of
+switches is native to the language — real equipment has them — and it keeps
+both controls where the eye already is, in the fixed furniture that never
+scrolls.
+
+The tunnel switch carries the reason it is disabled in a line beneath the
+bank, whose height is reserved either way so the switches never move under
+the pointer. Teaching the dependency before the press is the point; the same
+refusal delivered as an error afterwards tells someone off for not knowing
+something they were never shown.
+
 ## 5. Accessibility
 
 - Every text colour except `--color-ghost` clears 4.5:1 on its surface, so
@@ -488,6 +540,41 @@ sharing not one value with the app behind it.
 ---
 
 ## 7. Decision log
+
+**2026-09-06 — The instrument face gained a second reading.** One panel, two
+rows, a hairline between them. Two panels would have said the two stages are
+independent, and they are not: the tunnel dials the link. See §4.9.
+
+**2026-09-06 — One switch became a bank of two.** The alternative was a small
+secondary control inside the channel row, which would have made stopping the
+tunnel a different *kind* of act from stopping the link. It is not. See §4.10.
+
+**2026-09-06 — `HOLD` is amber, not red.** Fail-closed is the design working,
+not the design failing. Red would train people to distrust the state that is
+protecting them. See §1.1.
+
+**2026-09-06 — The tunnel reading lost its own signal bar, and the window grew
+to 660.** Both came out of rendering the panel for the first time and
+measuring it. A second twenty-segment bar gave the subordinate reading the
+weight of the primary one, and the two-stage column came to 497px inside a
+560px window's 400px of scroller, so the channel selectors — the one row the
+panel exists to keep in reach — started 8px below the fold. Neither was
+visible from type-checking, the cross-target build, or a scan of every class
+against `theme.css`; all of those passed on the broken layout.
+
+**2026-09-06 — `box-shadow` is named as an animated property.** §2 had said
+only five properties animate since before `.switch` and the input focus ring
+existed, both of which animate `box-shadow`. The motion audit found the doc
+was describing an app that had not existed for some time. The rule was
+corrected rather than the code: the shadow swap *is* the tactile vocabulary,
+it runs on one control under the pointer, and doing it with `transform` would
+move the control instead of pressing it.
+
+**2026-09-06 — `.chip` still has no press state, deliberately for now.** The
+audit flagged it: a pressable element with no `:active` feedback. Not taken,
+because `.chip` is app-wide and changing it would alter every existing chip
+in a release whose subject is the tunnel. Recorded so it is a decision rather
+than an oversight.
 
 **2026-08-27 — Window is opaque and square-cornered.** It was
 `transparent: true` with CSS-rounded corners. On WebKitGTK under Wayland that

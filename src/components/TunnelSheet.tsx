@@ -4,6 +4,7 @@ import { Sheet } from "@/components/Sheet";
 import { TunnelEditor } from "@/components/TunnelEditor";
 import { RoutingEditor } from "@/components/RoutingEditor";
 import type { Routing, TunnelMode, TunnelProfile, TunnelStore } from "@/types";
+import { LIST_SPRING } from "@/lib/motion";
 
 /** A blank tunnel pre-filled with the values that are right most of the time. */
 function blankTunnel(): TunnelProfile {
@@ -26,12 +27,6 @@ type View =
   | { kind: "editor"; profile: TunnelProfile; isNew: boolean }
   | { kind: "routing" };
 
-/**
- * The same spring as `ProfileSheet`. Repeated as a constant rather than
- * imported because it is a value `DESIGN.md` owns, not a module boundary —
- * but if a third drawer appears, promote it.
- */
-const LIST_SPRING = { type: "spring", stiffness: 520, damping: 42, mass: 1 } as const;
 
 /**
  * The tunnel drawer. Three pushed views where the profile drawer has two:

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Sheet } from "@/components/Sheet";
 import { ProfileEditor } from "@/components/ProfileEditor";
 import { Profile, Store } from "@/types";
+import { LIST_SPRING } from "@/lib/motion";
 
 /** A blank profile pre-filled with the values that are right most of the time. */
 function blankProfile(): Profile {
@@ -19,13 +20,6 @@ function blankProfile(): Profile {
 
 type View = { kind: "list" } | { kind: "editor"; profile: Profile; isNew: boolean };
 
-/**
- * One spring for every layout move in the app, so a row entering, a row
- * leaving and the list closing a gap all move with the same physical
- * vocabulary. A spring rather than a curve because these get interrupted:
- * deleting two profiles quickly must not queue two 300ms tweens.
- */
-const LIST_SPRING = { type: "spring", stiffness: 520, damping: 42, mass: 1 } as const;
 
 /**
  * The drawer. Since switching profiles moved onto the rail, this is now

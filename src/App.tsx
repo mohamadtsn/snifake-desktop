@@ -131,8 +131,14 @@ export default function App() {
 
   // Room for the second row, and only ever more of it: a window the user
   // made bigger stays that size.
+  //
+  // 660, not the 560 this plan first guessed. DESIGN.md 3 sizes the window
+  // to its content with the log closed, and measured in a browser at the
+  // real width the two-stage column is 497px inside 160px of chrome. At 560
+  // the channel selectors started 8px below the fold, which is the one thing
+  // this row exists to keep in reach.
   useEffect(() => {
-    const target = (tunnels?.tunnels.length ?? 0) > 0 ? 560 : 504;
+    const target = (tunnels?.tunnels.length ?? 0) > 0 ? 660 : 504;
     void getCurrentWindow()
       .innerSize()
       .then((size) => {

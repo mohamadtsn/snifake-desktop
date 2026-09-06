@@ -7,7 +7,6 @@ import {
   TUNNEL_STATE_TEXT,
   TunnelState,
   formatUptime,
-  tunnelSignalState,
 } from "@/types";
 
 const SEGMENTS = 20;
@@ -89,17 +88,13 @@ export function StatusPanel({
                 readings, not two instruments stacked. */}
             <span className="bg-line h-px w-full" aria-hidden />
 
-            <div
-              className="signal"
-              data-state={tunnelSignalState(tunnel)}
-              role="img"
-              aria-label={TUNNEL_STATE_TEXT[tunnel]}
-            >
-              {Array.from({ length: SEGMENTS }, (_, i) => (
-                <span key={i} className="signal-seg" style={{ ["--i" as string]: i }} aria-hidden />
-              ))}
-            </div>
-
+            {/* No second twenty-segment bar. The bar is the instrument's
+                reading, and giving the tunnel an identical one says the two
+                stages are equals — which is exactly what the smaller type
+                is here to deny. Measured, it also cost 240px of overflow at
+                the window's own height, pushing the channel selectors below
+                the fold. One lit block carries the colour instead: the same
+                signal vocabulary, at the weight a subordinate line earns. */}
             <div className="flex items-end justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-2">
                 <span
@@ -112,12 +107,24 @@ export function StatusPanel({
                     reading and the tunnel is subordinate to it; equal sizes
                     would say otherwise. */}
                 <span
-                  className="truncate text-[20px] leading-none uppercase"
+                  className="flex min-w-0 items-center gap-2 truncate text-[20px] leading-none uppercase"
                   style={{
                     letterSpacing: "var(--track-label)",
                     color: TUNNEL_STATE_COLOR[tunnel],
                   }}
                 >
+                  {/* A lamp, not one segment borrowed from the bar. Reusing
+                      `.signal-seg` looked right until it was rendered: the
+                      starting state animates a fill across the segments, so
+                      a lone segment is dark for part of every cycle and the
+                      lamp disagreed with the word beside it. A lamp that
+                      contradicts its own readout is worse than no lamp.
+                      Sized to the cap height of the 20px word. */}
+                  <span
+                    className="shrink-0 rounded-[1px]"
+                    style={{ width: 8, height: 16, background: TUNNEL_STATE_COLOR[tunnel] }}
+                    aria-hidden
+                  />
                   {TUNNEL_STATE_TEXT[tunnel]}
                   {tunnelMode && tunnel === "active" && (
                     <span className="text-faint text-[11px]"> &middot; {tunnelMode}</span>

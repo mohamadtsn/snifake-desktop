@@ -57,3 +57,9 @@ pub fn install_sudoers_script_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     Ok(dir.join("install-sudoers.sh"))
 }
+
+/// Where downloaded or imported cores live. Under `app_dir()` rather than
+/// the resource dir, which is root-owned and read-only after install.
+pub fn cores_dir() -> PathBuf {
+    app_dir().join("cores")
+}

@@ -6,6 +6,7 @@ mod engine_host;
 mod logbuf;
 mod profiles;
 mod tray;
+mod tunnel;
 
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Listener, Manager};

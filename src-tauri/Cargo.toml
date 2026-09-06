@@ -35,6 +35,11 @@ snifake-engine = { path = "engine" }
 # pattern in the editor beats sing-box refusing the whole config at start,
 # when the user is three screens away from the line they typed.
 regex = "1"
+# Share links carry percent-encoded credentials and can carry a bracketed
+# IPv6 authority. Hand-rolling that split is how subtle bugs get into
+# credential handling.
+url = "2"
+percent-encoding = "2"
 
 # Desktop-only: in-app updates from GitHub Releases, and the relaunch that
 # follows one.

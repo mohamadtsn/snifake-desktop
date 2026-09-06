@@ -1,0 +1,49 @@
+{
+  "_comment": [
+    "The one table both rule-grammar implementations are checked against.",
+    "src/lib/rules.ts and src-tauri/src/tunnel/rules.rs are deliberate",
+    "duplicates - the editor needs the grammar per keystroke and the core",
+    "needs it at save - so this file is what stops them drifting apart in",
+    "silence. A line that parses in one and not the other is a line the",
+    "editor underlines green and the save then rejects, or worse.",
+    "",
+    "kind: the sing-box rule field the line maps to.",
+    "      \"none\" means the line is skipped (blank or a comment).",
+    "      null means the line must be REJECTED, with an error."
+  ],
+  "cases": [
+    { "line": "example.com",              "kind": "domain_suffix" },
+    { "line": "  example.com  ",          "kind": "domain_suffix" },
+    { "line": "10.0.0.0/8",               "kind": "ip_cidr" },
+    { "line": "1.1.1.1",                  "kind": "ip_cidr" },
+    { "line": "443",                      "kind": "port" },
+
+    { "line": "domain:example.com",       "kind": "domain" },
+    { "line": "suffix:example.com",       "kind": "domain_suffix" },
+    { "line": "keyword:google",           "kind": "domain_keyword" },
+    { "line": "regex:^ads\\..*",           "kind": "domain_regex" },
+    { "line": "ip:10.0.0.0/8",            "kind": "ip_cidr" },
+    { "line": "port:8080",                "kind": "port" },
+    { "line": "process:Telegram",         "kind": "process_name" },
+    { "line": "path:/usr/bin/curl",       "kind": "process_path" },
+    { "line": "ruleset:geosite-ir",       "kind": "rule_set" },
+    { "line": "ruleset:geoip-ir",         "kind": "rule_set" },
+    { "line": "network:tcp",              "kind": "network" },
+    { "line": "network:udp",              "kind": "network" },
+
+    { "line": "",                         "kind": "none" },
+    { "line": "   ",                      "kind": "none" },
+    { "line": "# a note",                 "kind": "none" },
+
+    { "line": "banana:x",                 "kind": null },
+    { "line": "domain:",                  "kind": null },
+    { "line": "process:   ",              "kind": null },
+    { "line": "port:0",                   "kind": null },
+    { "line": "port:70000",               "kind": null },
+    { "line": "ip:10.0.0.0/99",           "kind": null },
+    { "line": "ip:not-an-ip",             "kind": null },
+    { "line": "regex:[unclosed",          "kind": null },
+    { "line": "network:sctp",             "kind": null },
+    { "line": "ruleset:my-custom-set",    "kind": null }
+  ]
+}

@@ -24,8 +24,10 @@ pub enum RuleKind {
 }
 
 impl RuleKind {
-    /// The sing-box rule field this kind writes into.
-    fn field(self) -> &'static str {
+    /// The sing-box rule field this kind writes into. Also the name the
+    /// shared parity fixture uses, so the two grammars are compared on the
+    /// same vocabulary.
+    pub(crate) fn field(self) -> &'static str {
         match self {
             RuleKind::Domain => "domain",
             RuleKind::DomainSuffix => "domain_suffix",
@@ -416,4 +418,44 @@ mod tests {
         // We can only build a URL for the two official repositories.
         assert!(rule_set_source("my-custom-set").is_none());
     }
+
+    /// The other half of `src/lib/rules.test.ts`'s parity suite, reading the
+    /// same file. `src/lib/rules.ts` duplicates this grammar deliberately —
+    /// the editor needs a verdict per keystroke — and this test is the only
+    /// thing between that and two grammars that quietly disagree.
+    ///
+    /// A line the editor accepts and this rejects is a save that fails for
+    /// no visible reason. A line this accepts and the editor underlines is
+    /// a rule the user deletes because we told them it was wrong.
+    #[test]
+    fn both_grammars_agree_on_every_line_in_the_shared_fixture() {
+        let raw = include_str!("../../../src/lib/rules.fixtures.json");
+        let table: serde_json::Value = serde_json::from_str(raw).expect("fixture json");
+        let cases = table["cases"].as_array().expect("cases array");
+        assert!(
+            cases.len() > 20,
+            "a truncated fixture would pass as agreement"
+        );
+
+        for case in cases {
+            let line = case["line"].as_str().expect("line");
+            let expected = &case["kind"];
+            let got = parse_line(line);
+            if expected.is_null() {
+                assert!(got.is_err(), "{line:?} should be rejected, got {got:?}");
+            } else if expected == "none" {
+                assert_eq!(got.unwrap(), None, "{line:?} should be skipped");
+            } else {
+                let entry = got
+                    .unwrap_or_else(|e| panic!("{line:?} should parse: {e}"))
+                    .unwrap_or_else(|| panic!("{line:?} should not be skipped"));
+                assert_eq!(
+                    entry.kind.field(),
+                    expected.as_str().unwrap(),
+                    "{line:?}"
+                );
+            }
+        }
+    }
+
 }

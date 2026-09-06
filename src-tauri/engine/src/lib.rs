@@ -5,6 +5,7 @@
 //! actually runs as root.
 
 pub mod capture;
+pub mod corepin;
 pub mod forward;
 pub mod hello;
 pub mod netpkt;

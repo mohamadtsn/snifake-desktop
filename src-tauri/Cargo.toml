@@ -40,6 +40,9 @@ regex = "1"
 # credential handling.
 url = "2"
 percent-encoding = "2"
+# Core acquisition: the archive digest is checked before anything is
+# unpacked, and the extracted binary's digest before it is ever executed.
+sha2 = "0.10"
 
 # Desktop-only: in-app updates from GitHub Releases, and the relaunch that
 # follows one.
@@ -49,9 +52,12 @@ tauri-plugin-process = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+flate2 = "1"
+tar = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_UI_Shell",

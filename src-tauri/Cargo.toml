@@ -43,6 +43,11 @@ percent-encoding = "2"
 # Core acquisition: the archive digest is checked before anything is
 # unpacked, and the extracted binary's digest before it is ever executed.
 sha2 = "0.10"
+# rustls rather than the system TLS stack: this binary already ships a
+# pinned trust story, and a download that fails on one distribution's
+# OpenSSL is a download the audience cannot retry.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
 
 # Desktop-only: in-app updates from GitHub Releases, and the relaunch that
 # follows one.

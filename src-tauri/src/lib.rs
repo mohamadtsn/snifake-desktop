@@ -115,6 +115,24 @@ fn shutdown_engine(state: tauri::State<AppState>) {
     state.engine.lock().unwrap().shutdown();
 }
 
+#[tauri::command]
+fn core_status() -> tunnel::download::CoreStatus {
+    tunnel::download::status()
+}
+
+#[tauri::command]
+async fn download_core(app: tauri::AppHandle) -> Result<(), String> {
+    tunnel::download::download_core(app).await
+}
+
+/// The escape hatch for a user who cannot reach the download server —
+/// which, for this application's audience, is a substantial share of them.
+/// It goes through the same checksum verification as the download.
+#[tauri::command]
+fn import_core(path: String) -> Result<(), String> {
+    tunnel::core::install_from_archive(std::path::Path::new(&path)).map(|_| ())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let logs = Arc::new(LogBuffer::new());
@@ -159,6 +177,9 @@ pub fn run() {
             set_verbose,
             get_log_buffer,
             shutdown_engine,
+            core_status,
+            download_core,
+            import_core,
         ])
         .setup(move |app| {
             tray::setup_tray(app.handle(), &active_name)?;

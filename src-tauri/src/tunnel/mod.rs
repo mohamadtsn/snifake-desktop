@@ -4,6 +4,7 @@
 //! interprets it.
 
 pub mod core;
+pub mod download;
 pub mod generate;
 pub mod import;
 pub mod model;

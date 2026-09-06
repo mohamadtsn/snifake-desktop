@@ -4,3 +4,4 @@
 //! interprets it.
 
 pub mod model;
+pub mod rules;

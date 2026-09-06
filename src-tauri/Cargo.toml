@@ -31,6 +31,10 @@ dirs = "5"
 which = "6"
 image = { version = "0.25", default-features = false, features = ["png"] }
 snifake-engine = { path = "engine" }
+# Only to *validate* a `regex:` rule line at save time. Rejecting a bad
+# pattern in the editor beats sing-box refusing the whole config at start,
+# when the user is three screens away from the line they typed.
+regex = "1"
 
 # Desktop-only: in-app updates from GitHub Releases, and the relaunch that
 # follows one.

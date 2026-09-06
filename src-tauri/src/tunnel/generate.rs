@@ -596,6 +596,45 @@ mod tests {
         assert_golden("trojan-manual.json", &generate(&t, &TunnelStore::default(), &link()).unwrap());
     }
 
+    #[test]
+    fn a_config_using_every_feature_matches_its_golden_snapshot() {
+        // The two snapshots above are both `TunnelStore::default()`: empty
+        // lists, no rule sets, no raw block. Those are the paths a real user
+        // is *least* likely to run. This one exercises every branch the
+        // generator has, so that the `sing-box check` verification covers
+        // what people actually configure and not just the empty case.
+        let mut store = TunnelStore::default();
+        store.proxy_port = 3128;
+        store.routing.default_route = DefaultRoute::Direct;
+        store.routing.block_quic = false;
+        store.routing.allow_lan = false;
+        store.routing.block = vec![
+            "ads.example".into(),
+            "keyword:doubleclick".into(),
+            r"regex:^tracker[0-9]*\.".into(),
+            "ruleset:geosite-category-ads-all".into(),
+        ];
+        store.routing.bypass = vec![
+            "domain:intranet.example".into(),
+            "ip:10.0.0.0/8".into(),
+            "process:Telegram".into(),
+            "path:/usr/bin/curl".into(),
+            "ruleset:geoip-ir".into(),
+        ];
+        store.routing.proxy = vec![
+            "openai.com".into(),
+            "port:8080".into(),
+            "network:tcp".into(),
+        ];
+        store.routing.raw = Some(json!([
+            { "domain_suffix": ["hand-written.example"], "outbound": "direct" }
+        ]));
+        assert_golden(
+            "vless-everything.json",
+            &generate(&tunnel(), &store, &link()).unwrap(),
+        );
+    }
+
     /// Golden snapshots exist to make a sing-box schema change on a core
     /// upgrade fail loudly here rather than quietly at the user's machine.
     /// Regenerate deliberately with `UPDATE_GOLDEN=1`, then read the diff.

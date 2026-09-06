@@ -1,0 +1,210 @@
+{
+  "dns": {
+    "final": "remote",
+    "rules": [
+      {
+        "domain": [
+          "intranet.example"
+        ],
+        "server": "local"
+      },
+      {
+        "action": "reject",
+        "domain_keyword": [
+          "doubleclick"
+        ],
+        "domain_regex": [
+          "^tracker[0-9]*\\."
+        ],
+        "domain_suffix": [
+          "ads.example"
+        ]
+      }
+    ],
+    "servers": [
+      {
+        "detour": "proxy",
+        "domain_resolver": "local",
+        "server": "1.1.1.1",
+        "tag": "remote",
+        "type": "tls"
+      },
+      {
+        "tag": "local",
+        "type": "local"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 3128,
+      "tag": "mixed-in",
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "level": "warn",
+    "timestamp": false
+  },
+  "outbounds": [
+    {
+      "packet_encoding": "xudp",
+      "server": "127.0.0.1",
+      "server_port": 40443,
+      "tag": "proxy",
+      "tls": {
+        "alpn": [
+          "h3",
+          "h2",
+          "http/1.1"
+        ],
+        "enabled": true,
+        "insecure": false,
+        "server_name": "origin.cdn-domain.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "headers": {
+          "Host": "origin.cdn-domain.com"
+        },
+        "path": "/websocket",
+        "type": "ws"
+      },
+      "type": "vless",
+      "uuid": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local"
+    },
+    "final": "direct",
+    "rule_set": [
+      {
+        "download_detour": "proxy",
+        "format": "binary",
+        "tag": "geoip-ir",
+        "type": "remote",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ir.srs"
+      },
+      {
+        "download_detour": "proxy",
+        "format": "binary",
+        "tag": "geosite-category-ads-all",
+        "type": "remote",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "ip_cidr": [
+          "103.160.204.34/32"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "outbound": "direct",
+        "process_name": [
+          "snifake",
+          "snifake-engine",
+          "sing-box"
+        ]
+      },
+      {
+        "action": "reject",
+        "ip_version": 6
+      },
+      {
+        "domain_suffix": [
+          "hand-written.example"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "action": "reject",
+        "domain_suffix": [
+          "ads.example"
+        ]
+      },
+      {
+        "action": "reject",
+        "domain_keyword": [
+          "doubleclick"
+        ]
+      },
+      {
+        "action": "reject",
+        "domain_regex": [
+          "^tracker[0-9]*\\."
+        ]
+      },
+      {
+        "action": "reject",
+        "rule_set": [
+          "geosite-category-ads-all"
+        ]
+      },
+      {
+        "domain": [
+          "intranet.example"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "ip_cidr": [
+          "10.0.0.0/8"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "outbound": "direct",
+        "process_name": [
+          "Telegram"
+        ]
+      },
+      {
+        "outbound": "direct",
+        "process_path": [
+          "/usr/bin/curl"
+        ]
+      },
+      {
+        "outbound": "direct",
+        "rule_set": [
+          "geoip-ir"
+        ]
+      },
+      {
+        "domain_suffix": [
+          "openai.com"
+        ],
+        "outbound": "proxy"
+      },
+      {
+        "outbound": "proxy",
+        "port": [
+          8080
+        ]
+      },
+      {
+        "network": [
+          "tcp"
+        ],
+        "outbound": "proxy"
+      }
+    ]
+  }
+}

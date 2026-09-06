@@ -1,0 +1,109 @@
+{
+  "dns": {
+    "final": "remote",
+    "rules": [],
+    "servers": [
+      {
+        "detour": "proxy",
+        "domain_resolver": "local",
+        "server": "1.1.1.1",
+        "tag": "remote",
+        "type": "tls"
+      },
+      {
+        "tag": "local",
+        "type": "local"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "listen_port": 2080,
+      "tag": "mixed-in",
+      "type": "mixed"
+    }
+  ],
+  "log": {
+    "level": "warn",
+    "timestamp": false
+  },
+  "outbounds": [
+    {
+      "password": "secret-password-123",
+      "server": "127.0.0.1",
+      "server_port": 40443,
+      "tag": "proxy",
+      "tls": {
+        "alpn": [
+          "h3",
+          "h2",
+          "http/1.1"
+        ],
+        "enabled": true,
+        "insecure": false,
+        "server_name": "origin.cdn-domain.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "headers": {
+          "Host": "origin.cdn-domain.com"
+        },
+        "path": "/websocket",
+        "type": "ws"
+      },
+      "type": "trojan"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local"
+    },
+    "final": "proxy",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "ip_cidr": [
+          "103.160.204.34/32"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "outbound": "direct",
+        "process_name": [
+          "snifake",
+          "snifake-engine",
+          "sing-box"
+        ]
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "action": "reject",
+        "ip_version": 6
+      },
+      {
+        "action": "reject",
+        "network": [
+          "udp"
+        ],
+        "port": [
+          443
+        ]
+      }
+    ]
+  }
+}

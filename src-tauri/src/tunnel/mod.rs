@@ -3,6 +3,7 @@
 //! *unprivileged* half — the engine receives finished JSON and never
 //! interprets it.
 
+pub mod generate;
 pub mod import;
 pub mod model;
 pub mod rules;

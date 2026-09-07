@@ -300,7 +300,21 @@ export default function App() {
           {/* One rule over both rows: they are two of the same kind of
               thing, and two headings would be two rules where one belongs. */}
           <section className="flex shrink-0 flex-col gap-2.5">
-            <h2 className="engrave">Channels</h2>
+            {/* The heading carries the way in, because the tunnel row
+                below it only exists once a tunnel does — and without this
+                there would be no way to create the first one. A chip on the
+                engraved rule rather than an empty row: someone who never
+                wants a tunnel should not be given one to dismiss. */}
+            <div className="flex items-center gap-2">
+              <h2 className="engrave flex-1">Channels</h2>
+              <button
+                type="button"
+                onClick={() => setTunnelSheetOpen(true)}
+                className="chip h-6 shrink-0 px-2 text-[10px]"
+              >
+                {hasTunnels ? "Tunnels" : "+ Tunnel"}
+              </button>
+            </div>
             <ChannelSelect
               items={store.profiles}
               activeId={store.active_id}

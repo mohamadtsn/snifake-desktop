@@ -541,6 +541,14 @@ sharing not one value with the app behind it.
 
 ## 7. Decision log
 
+**2026-09-07 — The Channels heading carries the way into the tunnel drawer.**
+"With no tunnel configured none of this appears" was implemented literally, and
+literally it meant the tunnel row — the only route to the drawer — was itself
+behind "a tunnel exists". From a fresh install the feature was unreachable: no
+way to create the first one. A chip on the engraved rule rather than an empty
+channel row, because someone who never wants a tunnel should not be handed one
+to dismiss. Found by installing the build, not by any check that passed on it.
+
 **2026-09-06 — The instrument face gained a second reading.** One panel, two
 rows, a hairline between them. Two panels would have said the two stages are
 independent, and they are not: the tunnel dials the link. See §4.9.

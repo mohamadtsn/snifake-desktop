@@ -3,7 +3,7 @@ members = ["engine"]
 
 [package]
 name = "snifake"
-version = "2.0.7"
+version = "2.1.0"
 description = "Desktop app for the Snifake TLS SNI-spoofing engine"
 authors = ["Mohamad Tsn"]
 license = "MIT"

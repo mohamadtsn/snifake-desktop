@@ -43,6 +43,12 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  /** A pending Activate that needs the restart warning answered first. */
+  const [confirmActivate, setConfirmActivate] = useState<{
+    kind: "sni" | "tunnel";
+    id: string;
+    name: string;
+  } | null>(null);
   /** A failure to show, with what it was about. The title was guessed from
    *  a string prefix, so a failed clipboard write told the user the SNI link
    *  could not start. */
@@ -264,6 +270,51 @@ export default function App() {
     }
   }
 
+  /**
+   * Activating a tunnel while one is running switches the running one over,
+   * the same way `select` does for the link. Without this, pressing Activate
+   * on a tunnel during a session sets a flag and changes nothing a user can
+   * see - a control that does nothing, which is the class of defect this
+   * whole pass exists to remove.
+   */
+  async function selectTunnel(id: string) {
+    // Read the outgoing id before the store is changed under us.
+    const wasActive = tunnels?.active_id ?? null;
+    const next = await invoke<TunnelStore>("set_active_tunnel", { id });
+    setTunnels(next);
+    if (tunnelState === "active" && wasActive !== id) {
+      setTunnelSince(null);
+      await invoke("stop_tunnel");
+      await invoke("start_tunnel", { id });
+    }
+  }
+
+  /**
+   * The warning that used to sit at the foot of the profile list, moved to
+   * the moment of the action and shown only when it is true. A warning
+   * parked at the bottom of a column is not a warning; it is decoration that
+   * happens to be correct. With the stage down, activating costs nothing and
+   * nothing is asked.
+   */
+  function requestActivate(kind: "sni" | "tunnel", id: string) {
+    const live = kind === "sni" ? state === "running" : tunnelState === "active";
+    const name =
+      kind === "sni"
+        ? (store?.profiles.find((p) => p.id === id)?.name ?? "")
+        : (tunnels?.tunnels.find((t) => t.id === id)?.name ?? "");
+    if (live) {
+      setConfirmActivate({ kind, id, name });
+      return;
+    }
+    void activate(kind, id);
+  }
+
+  function activate(kind: "sni" | "tunnel", id: string) {
+    return kind === "sni"
+      ? select(id).catch(fail("The profile could not be activated"))
+      : selectTunnel(id).catch(fail("The tunnel could not be activated"));
+  }
+
   async function save(profile: Profile) {
     const withId = profile.id ? profile : { ...profile, id: `p${Date.now()}` };
     const next = await invoke<Store>("save_profile", { profile: withId });
@@ -370,10 +421,8 @@ export default function App() {
               else void stop();
             }}
             onTunnelToggle={(on) => (on ? void startTunnel() : void stopTunnel())}
-            onSelectProfile={(id) => void select(id)}
-            onSelectTunnel={(id) =>
-              void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
-            }
+            onSelectProfile={(id) => requestActivate("sni", id)}
+            onSelectTunnel={(id) => requestActivate("tunnel", id)}
             onModeChange={(mode) => {
               if (!tunnels) return;
               const plan = modeTransition(tunnels.mode, mode, tunnelState === "active");
@@ -427,7 +476,7 @@ export default function App() {
               void save(p).finally(() => setSavingProfile(false));
             }}
             onDeleteProfile={(id) => void remove(id)}
-            onSelectProfile={(id) => void select(id)}
+            onSelectProfile={(id) => requestActivate("sni", id)}
             onSaveTunnel={(t) => {
               setSavingProfile(true);
               void saveTunnel(t).finally(() => setSavingProfile(false));
@@ -437,9 +486,7 @@ export default function App() {
                 .then(setTunnels)
                 .catch(fail("The tunnel could not be deleted"))
             }
-            onSelectTunnel={(id) =>
-              void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
-            }
+            onSelectTunnel={(id) => requestActivate("tunnel", id)}
             onCopyTunnelLink={(id) =>
               void invoke<string>("export_tunnel_uri", { id })
                 .then((uri) => navigator.clipboard.writeText(uri))
@@ -574,6 +621,39 @@ export default function App() {
         onConfirm={() => {
           setConfirmStopLink(false);
           void stopBoth();
+        }}
+      />
+
+      {/* The warning the profile list used to carry at its foot, at the
+          moment of the action and only when it is true. */}
+      <ConfirmDialog
+        open={confirmActivate !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmActivate(null);
+        }}
+        tone="neutral"
+        icon="bolt"
+        title={
+          confirmActivate?.kind === "tunnel"
+            ? "Restart the tunnel on this profile?"
+            : "Restart the engine into this profile?"
+        }
+        description={
+          confirmActivate?.kind === "tunnel"
+            ? "The tunnel is running. Activating this one restarts it on that profile, and every connection through it drops."
+            : "The SNI link is running. Activating this one restarts it into that profile. There is no password prompt, but every connection through it drops."
+        }
+        details={
+          <p className="mono text-note text-t1">
+            {middleTruncate(confirmActivate?.name ?? "", 34)}
+          </p>
+        }
+        cancelLabel="Keep running"
+        confirmLabel="Activate and restart"
+        onConfirm={() => {
+          const pending = confirmActivate;
+          setConfirmActivate(null);
+          if (pending) void activate(pending.kind, pending.id);
         }}
       />
 

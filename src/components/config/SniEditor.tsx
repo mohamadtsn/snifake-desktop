@@ -109,17 +109,6 @@ export function SniEditor({
             SNI inbound link{profile ? ` · id ${profile.id}` : " · not saved yet"}
           </p>
         </div>
-        {profile ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-bad hover:bg-bad-soft hover:text-bad"
-            onClick={() => onDelete(profile.id)}
-          >
-            <Icon name="delete" size={14} />
-            Delete
-          </Button>
-        ) : null}
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-1 px-4 pt-3 pb-1">
@@ -199,7 +188,27 @@ export function SniEditor({
         </div>
       </div>
 
+      {/* The action bar. `Delete` used to be a `ghost` button in the header:
+          the lightest weight the design system has, for the one irreversible
+          action on the pane. It is `secondary` here, tinted destructive, at
+          the far left - away from `Save`, where a slip cannot reach it - and
+          it is the same shape the Sockets tab uses for "actions on this
+          pane". The sentence keeps the middle and yields width first, since
+          it is the only thing here that can be re-read at leisure. */}
       <footer className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+        {profile ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="shrink-0 border-bad-line text-bad hover:bg-bad-soft"
+            onClick={() => onDelete(profile.id)}
+          >
+            <Icon name="delete" size={13} />
+            Delete
+          </Button>
+        ) : (
+          <span />
+        )}
         <span className="flex min-w-0 items-center gap-2">
           <StatusDot tone={isRunning ? "ok" : "off"} size={6} />
           <span className="truncate text-note text-t2">

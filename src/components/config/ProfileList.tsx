@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { LIST_SPRING } from "@/lib/motion";
@@ -20,6 +21,20 @@ export interface ListItem {
  * The empty state names the button that fixes it. A blank panel is how the
  * old interface answered "you have no profiles", and the answer to that
  * question is a sentence and an arrow, not an absence.
+ *
+ * **Activate is a real button, always visible, in the row's foot.** It was a
+ * 10px uppercase text chip on the title line: styled as a label, so it read
+ * as one, which is why the author had to hunt for it in their own
+ * application. The foot is where it belongs because that line already
+ * carries the row's *state* - `Bound`, or the `active` badge - and the
+ * button is what changes that state.
+ *
+ * The row is a `motion.div` with `role="button"`, not a button element: a
+ * button inside a button is invalid HTML, and the browser's repair of it
+ * swallows the inner click. The keyboard treatment the chip used to carry
+ * moved onto the container with it, guarded on `e.target` so a key press
+ * that lands on Activate is not also a row selection, and the row carries an
+ * explicit `aria-label` so it is not announced as "... Activate".
  */
 export function ProfileList({
   kind,
@@ -79,15 +94,27 @@ export function ProfileList({
               const selected = item.id === selectedId;
               const active = item.id === activeId;
               return (
-                <motion.button
+                <motion.div
                   key={item.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   layout={reduce ? false : "position"}
                   initial={reduce ? false : { opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={reduce ? { opacity: 0 } : { opacity: 0, y: -6 }}
                   transition={LIST_SPRING}
                   onClick={() => onSelect(item.id)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    if (e.target !== e.currentTarget) return;
+                    e.preventDefault();
+                    onSelect(item.id);
+                  }}
+                  // Named explicitly: without it the row's accessible name is
+                  // its whole text content, which now ends in "Activate" -
+                  // so a screen reader would announce the row and the button
+                  // inside it as the same control.
+                  aria-label={`${item.name}, open for editing`}
                   aria-current={selected ? "true" : undefined}
                   className={`flex flex-col gap-2 rounded-lg border bg-card px-3 py-[11px] text-left shadow-specular transition-colors duration-(--dur-fast) ease-(--ease-out) ${
                     selected ? "border-accent-line" : "border-hairline hover:border-hairline-strong"
@@ -98,28 +125,6 @@ export function ProfileList({
                     <span className="min-w-0 flex-1 truncate text-row font-medium text-t1">
                       {middleTruncate(item.name, 26)}
                     </span>
-                    {active ? (
-                      <Badge tone="ok">active</Badge>
-                    ) : (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        title={`Make ${item.name} the active ${label}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onActivate(item.id);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key !== "Enter" && e.key !== " ") return;
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onActivate(item.id);
-                        }}
-                        className="shrink-0 rounded-xs border border-hairline px-[6px] py-[2px] text-micro tracking-[0.04em] text-t3 uppercase transition-colors duration-(--dur-press) ease-(--ease-out) hover:border-accent-line hover:bg-accent-soft hover:text-accent"
-                      >
-                        activate
-                      </span>
-                    )}
                   </span>
                   <span className="flex items-center gap-[6px] pl-[16px]">
                     <Icon name={kind === "sni" ? "dns" : "vpn_key"} size={12} className="text-t3" />
@@ -127,28 +132,36 @@ export function ProfileList({
                   </span>
                   <span className="flex items-center justify-between gap-2 border-t border-hairline pt-2">
                     <span className="mono min-w-0 truncate text-note text-t3">{item.foot}</span>
-                    {item.id === runningId ? (
-                      <span className="flex shrink-0 items-center gap-[5px]">
-                        <StatusDot tone="ok" size={6} glow />
-                        <span className="text-note text-ok">Bound</span>
-                      </span>
+                    {active ? (
+                      item.id === runningId ? (
+                        <span className="flex shrink-0 items-center gap-[5px]">
+                          <StatusDot tone="ok" size={6} glow />
+                          <span className="text-note text-ok">Bound</span>
+                        </span>
+                      ) : (
+                        <Badge tone="ok">active</Badge>
+                      )
                     ) : (
-                      <span className="shrink-0 text-note text-t3">Standby</span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        title={`Make ${item.name} the active ${label}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onActivate(item.id);
+                        }}
+                      >
+                        <Icon name="bolt" size={12} />
+                        Activate
+                      </Button>
                     )}
                   </span>
-                </motion.button>
+                </motion.div>
               );
             })}
           </AnimatePresence>
         </div>
       )}
-
-      <p className="mt-auto flex items-start gap-2 rounded-md border border-hairline bg-inset px-3 py-[10px] text-note leading-[16.5px] text-t2">
-        <Icon name="info" size={14} className="mt-[1px] shrink-0 text-t3" />
-        Selecting a row opens it for editing. <em className="not-italic text-t1">Activate</em>{" "}
-        makes it the one the engine runs, which while the engine is up restarts it into that
-        profile - with no password prompt, but it is a restart.
-      </p>
     </div>
   );
 }

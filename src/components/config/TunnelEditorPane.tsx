@@ -51,6 +51,23 @@ export function TunnelEditorPane({
   const [draft, setDraft] = useState(source);
   const [touched, setTouched] = useState<Set<keyof TunnelProfile>>(new Set());
   const [attempted, setAttempted] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    if (!tunnel) return;
+    onCopyLink(tunnel.id);
+    setCopied(true);
+  }
+
+  // A clipboard write produces no visible change anywhere, so without this a
+  // successful copy and a failed one look identical - which is exactly what
+  // the button did before. Two seconds is long enough to be read and short
+  // enough not to be stale.
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   useEffect(() => {
     setDraft(tunnel ?? blank());
@@ -98,25 +115,6 @@ export function TunnelEditorPane({
             Tunnel egress layer{tunnel ? ` · id ${tunnel.id}` : " · not saved yet"}
           </p>
         </div>
-        {tunnel ? (
-          <>
-            {/* Copy Link exists here and not on the SNI editor, because a
-                tunnel has a share-link format and an SNI profile does not. */}
-            <Button variant="ghost" size="sm" onClick={() => onCopyLink(tunnel.id)}>
-              <Icon name="link" size={14} />
-              Copy link
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-bad hover:bg-bad-soft hover:text-bad"
-              onClick={() => onDelete(tunnel.id)}
-            >
-              <Icon name="delete" size={14} />
-              Delete
-            </Button>
-          </>
-        ) : null}
       </header>
 
       <div className="tab-scroll flex min-h-0 flex-1 flex-col gap-1 px-4 pt-3 pb-1">
@@ -276,7 +274,27 @@ export function TunnelEditorPane({
         </div>
       </div>
 
+      {/* The action bar. `Delete` and `Copy link` used to be `ghost` buttons
+          in the header - the lightest weight the design system has, for two
+          of the three actions a user takes on a profile. Both are
+          `secondary` here, `Delete` tinted destructive and parked at the far
+          left where a slip cannot reach it from `Save`. The sentence keeps
+          the middle and yields width first, since it is the only thing here
+          that can be re-read at leisure. */}
       <footer className="flex items-center justify-between gap-3 border-t border-hairline px-4 py-3">
+        {tunnel ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="shrink-0 border-bad-line text-bad hover:bg-bad-soft"
+            onClick={() => onDelete(tunnel.id)}
+          >
+            <Icon name="delete" size={13} />
+            Delete
+          </Button>
+        ) : (
+          <span />
+        )}
         <span className="flex min-w-0 items-center gap-2">
           <StatusDot tone={isRunning ? "ok" : "off"} size={6} />
           <span className="truncate text-note text-t2">
@@ -286,6 +304,14 @@ export function TunnelEditorPane({
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-3">
+          {/* Copy link exists here and not on the SNI editor, because a
+              tunnel has a share-link format and an SNI profile does not. */}
+          {tunnel ? (
+            <Button variant="secondary" size="sm" onClick={copy}>
+              <Icon name={copied ? "check" : "link"} size={13} />
+              {copied ? "Copied" : "Copy link"}
+            </Button>
+          ) : null}
           <Button
             variant="secondary"
             disabled={!dirty || saving}

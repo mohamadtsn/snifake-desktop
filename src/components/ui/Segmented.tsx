@@ -31,7 +31,15 @@ export function Segmented<T extends string>({
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string; badge?: string | number; disabled?: boolean }[];
+  options: {
+    value: T;
+    label: string;
+    badge?: string | number;
+    /** Marks the badge, and only the badge: the segment still reads
+     *  normally, because the segment is not the thing that is wrong. */
+    badgeTone?: "bad" | "warn";
+    disabled?: boolean;
+  }[];
   size?: "sm" | "md";
   className?: string;
   label?: string;
@@ -80,7 +88,17 @@ export function Segmented<T extends string>({
           >
             {option.label}
             {option.badge !== undefined && option.badge !== "" ? (
-              <span className={`mono text-mini ${active ? "text-t3" : "text-t4"}`}>
+              <span
+                className={`mono text-mini ${
+                  option.badgeTone === "bad"
+                    ? "text-bad"
+                    : option.badgeTone === "warn"
+                      ? "text-warn"
+                      : active
+                        ? "text-t3"
+                        : "text-t4"
+                }`}
+              >
                 {option.badge}
               </span>
             ) : null}

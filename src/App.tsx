@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { SocketsTab } from "@/components/sockets/SocketsTab";
 import { TelemetryTab } from "@/components/telemetry/TelemetryTab";
 import { TitleBar } from "@/components/shell/TitleBar";
 import { StatusFooter } from "@/components/shell/StatusFooter";
@@ -71,6 +72,7 @@ export default function App() {
   const [tunnelSheetOpen, setTunnelSheetOpen] = useState(false);
   const [confirmStopLink, setConfirmStopLink] = useState(false);
   const [coreSetupOpen, setCoreSetupOpen] = useState(false);
+  const [savingRouting, setSavingRouting] = useState(false);
 
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
@@ -348,27 +350,17 @@ export default function App() {
         )}
 
         {tab === "sockets" && (
-          <div className="flex flex-col gap-4 px-5 py-5">
-            <Card>
-              <div className="flex items-start gap-3 p-4">
-                <Icon name="route" size={18} className="mt-[2px] text-accent" />
-                <div className="flex-1">
-                  <h2 className="text-row font-semibold text-t1">Interception and routing</h2>
-                  <p className="mt-1 text-body text-t2">
-                    How traffic reaches the tunnel, and which traffic is allowed to bypass
-                    it. Editing the rule lists still opens the tunnel drawer.
-                  </p>
-                  <Button
-                    className="mt-3"
-                    variant="secondary"
-                    onClick={() => setTunnelSheetOpen(true)}
-                  >
-                    Open routing rules
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
+          <SocketsTab
+            store={tunnels}
+            saving={savingRouting}
+            onSave={(patch) => {
+              setSavingRouting(true);
+              void invoke<TunnelStore>("save_routing", patch)
+                .then(setTunnels)
+                .catch((e) => setErrorDialog(String(e)))
+                .finally(() => setSavingRouting(false));
+            }}
+          />
         )}
 
         {tab === "config" && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -27,6 +27,7 @@ import {
 } from "@/types";
 import { canStartTunnel, nextTunnelState } from "@/lib/tunnelMachine";
 import { modeTransition, type Transition } from "@/lib/modeTransition";
+import { leaveDecision } from "@/lib/leaveGuard";
 import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
@@ -43,6 +44,12 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  /** Sockets owns the only unsaved draft in the window; the shell owns every
+   *  way out of it. `leaveGuard` holds the decision so the tab bar, the
+   *  close glyph and tray Exit cannot answer it three different ways. */
+  const [socketsDirty, setSocketsDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<Tab | null>(null);
+  const reportSocketsDirty = useCallback((d: boolean) => setSocketsDirty(d), []);
   /** A pending Activate that needs the restart warning answered first. */
   const [confirmActivate, setConfirmActivate] = useState<{
     kind: "sni" | "tunnel";
@@ -362,6 +369,14 @@ export default function App() {
    * because closing would otherwise stop an elevated proxy the user may not
    * realise is running.
    */
+  function requestTab(next: Tab) {
+    if (leaveDecision(socketsDirty, tab, next).kind === "go") {
+      setTab(next);
+      return;
+    }
+    setPendingTab(next);
+  }
+
   function closeWindow() {
     if (prefs.closeToTray) {
       void getCurrentWindow().hide();
@@ -391,7 +406,7 @@ export default function App() {
     <div className="flex h-screen flex-col overflow-hidden bg-surface">
       <TitleBar
         tab={tab}
-        onTabChange={setTab}
+        onTabChange={requestTab}
         state={state}
         onClose={closeWindow}
         onPreferences={() => setPrefsOpen(true)}
@@ -446,6 +461,7 @@ export default function App() {
           <SocketsTab
             store={tunnels}
             saving={savingRouting}
+            onDirtyChange={reportSocketsDirty}
             onSave={(patch) => {
               setSavingRouting(true);
               const plan = modeTransition(
@@ -573,10 +589,15 @@ export default function App() {
             <Badge tone="ok">link active</Badge>
           ) : undefined
         }
+        // The unsaved-rules warning rides on this dialog rather than
+        // stacking a second one in front of it: quitting and discarding are
+        // one decision, and two dialogs in a row is two chances to dismiss
+        // the wrong one.
         description={
-          state === "running" || tunnelRunning
+          (socketsDirty ? "The routing rules on Sockets have unsaved changes, and quitting discards them. " : "") +
+          (state === "running" || tunnelRunning
             ? "Quitting stops both stages and closes the elevated engine. Closing the window instead leaves everything running in the tray."
-            : "Nothing is running. Quitting closes the window and the tray icon."
+            : "Nothing is running. Quitting closes the window and the tray icon.")
         }
         details={
           <dl className="flex flex-col gap-[6px] text-note">
@@ -621,6 +642,27 @@ export default function App() {
         onConfirm={() => {
           setConfirmStopLink(false);
           void stopBoth();
+        }}
+      />
+
+      {/* Sockets is the only tab holding an unsaved draft, and this is the
+          only thing standing between a mis-aimed tab press and a lost set of
+          rules. Two answers, so "save and leave" is not offered: the user
+          can keep editing and press Save. */}
+      <ConfirmDialog
+        open={pendingTab !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingTab(null);
+        }}
+        tone="danger"
+        icon="warning"
+        title="Leave without saving?"
+        description="The routing rules on this tab have changes that have not been saved. Leaving discards them."
+        cancelLabel="Keep editing"
+        confirmLabel="Discard changes"
+        onConfirm={() => {
+          if (pendingTab) setTab(pendingTab);
+          setPendingTab(null);
         }}
       />
 

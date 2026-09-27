@@ -23,10 +23,14 @@ export function SocketsTab({
   store,
   onSave,
   saving,
+  onDirtyChange,
 }: {
   store: TunnelStore | null;
   onSave: (patch: { mode: TunnelMode; proxy_host: string; proxy_port: number; routing: Routing }) => void;
   saving: boolean;
+  /** Reported up so the shell can guard a tab change, the close glyph and
+   *  tray Exit with one decision. Must be a stable callback. */
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [list, setList] = useState<ListName>("block");
   const [mode, setMode] = useState<TunnelMode>(store?.mode ?? "manual");
@@ -66,7 +70,31 @@ export function SocketsTab({
     [text],
   );
 
-  if (!store || !routing) {
+  /** The draft as it would be saved. Computed above the loading return so
+   *  `dirty` can be reported from a hook, which must not sit behind a
+   *  conditional return. */
+  const next: Routing | null = routing && {
+    ...routing,
+    block: toList(text.block),
+    bypass: toList(text.bypass),
+    proxy: toList(text.proxy),
+    raw: rawParsed.value,
+  };
+
+  const dirty =
+    store !== null &&
+    next !== null &&
+    (mode !== store.mode || JSON.stringify(next) !== JSON.stringify(store.routing));
+
+  // Reported up so the shell can guard a tab change, the close glyph and
+  // tray Exit with one decision. `false` on unmount, so a tab that is torn
+  // down cannot leave the guard armed forever.
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
+
+  if (!store || !routing || !next) {
     return (
       <div className="px-5 py-5">
         <p className="text-body text-t2">Loading the routing configuration.</p>
@@ -80,16 +108,6 @@ export function SocketsTab({
     proxy: toList(text.proxy).length,
   };
 
-  const next: Routing = {
-    ...routing,
-    block: toList(text.block),
-    bypass: toList(text.bypass),
-    proxy: toList(text.proxy),
-    raw: rawParsed.value,
-  };
-
-  const dirty =
-    mode !== store.mode || JSON.stringify(next) !== JSON.stringify(store.routing);
   const blocked = badLines.length > 0 || rawParsed.error !== null;
 
   function discard() {

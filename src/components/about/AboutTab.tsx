@@ -83,13 +83,15 @@ export function AboutTab({
     <div className="flex flex-col gap-4 px-5 py-5">
       <Card className="relative overflow-hidden">
         {/* One soft wash, behind everything, so the identity block reads as
-            a plate with a light on it rather than a box with a gradient. */}
+            a plate with a light on it rather than a box with a gradient.
+            The colour is the mark's own bloom (`#4ed17f` in icon.svg), so
+            the light looks as if it comes from the icon. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(120% 90% at 50% -20%, rgba(0,122,255,0.10), transparent 60%)",
+              "radial-gradient(45% 75% at 50% 22%, rgba(78,209,127,0.16), transparent 70%)",
           }}
         />
         <div className="relative flex flex-col items-center gap-3 px-6 py-8">

@@ -43,9 +43,10 @@ const TEXT: Record<ProxyState, string> = {
  * The identity is the application icon rather than the word "Snifake",
  * imported from `src-tauri/icons/` - the directory the bundle's icons are
  * generated into - rather than kept as a copy under `public/`. A copy is how
- * the header went on showing the old globe after the mark was redrawn. 30px,
- * just under the 34px tab bar, so it reads as the window's identity rather
- * than as one more chip beside the version. The name is already on the
+ * the header went on showing the old globe after the mark was redrawn. 38px:
+ * the PNG carries its own transparent margin, so the plate that shows is
+ * about the height of the 34px tab bar, and it reads as the window's
+ * identity rather than as one more chip beside the version. The name is already on the
  * window and in the tray. The core pill that used to
  * sit on the right is gone: a missing core is stated by the tunnel actuator
  * that refuses to start, by `CoreSetupModal`, and by Preferences → Core with
@@ -84,7 +85,7 @@ export function TitleBar({
           alt=""
           aria-hidden
           data-tauri-drag-region
-          className="size-[30px] shrink-0"
+          className="size-[38px] shrink-0"
         />
         {version ? (
           <span className="mono shrink-0 rounded-xs border border-hairline bg-raised px-[6px] py-[2px] text-mini text-t2">

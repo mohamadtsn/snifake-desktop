@@ -5,6 +5,7 @@ mod elevate_windows;
 mod engine_host;
 mod logbuf;
 mod profiles;
+mod sysproxy;
 mod tray;
 mod tunnel;
 

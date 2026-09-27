@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ConfigTab } from "@/components/config/ConfigTab";
 import { CoreSetupModal } from "@/components/core/CoreSetupModal";
 import { SocketsTab } from "@/components/sockets/SocketsTab";
 import { TelemetryTab } from "@/components/telemetry/TelemetryTab";
@@ -72,6 +73,7 @@ export default function App() {
   const [confirmStopLink, setConfirmStopLink] = useState(false);
   const [coreSetupOpen, setCoreSetupOpen] = useState(false);
   const [savingRouting, setSavingRouting] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
@@ -290,7 +292,6 @@ export default function App() {
   const downloading =
     !progress || progress.total === null || progress.received < progress.total;
 
-  const hasTunnels = (tunnels?.tunnels.length ?? 0) > 0;
   const blockedReason = canStartTunnel(state, coreInstalled, tunnels?.active_id != null);
   const tunnelRunning = tunnelState !== "offline";
 
@@ -363,44 +364,29 @@ export default function App() {
         )}
 
         {tab === "config" && (
-          <div className="flex flex-col gap-4 px-5 py-5">
-            <Card>
-              <div className="flex items-start gap-3 p-4">
-                <Icon name="lan" size={18} className="mt-[2px] text-accent" />
-                <div className="flex-1">
-                  <h2 className="text-row font-semibold text-t1">SNI links</h2>
-                  <p className="mt-1 text-body text-t2">
-                    {store && store.profiles.length > 0
-                      ? `${store.profiles.length} configured.`
-                      : "None configured yet. The first one is where everything starts."}
-                  </p>
-                  <Button className="mt-3" variant="secondary" onClick={() => setSheetOpen(true)}>
-                    Manage SNI links
-                  </Button>
-                </div>
+          <ConfigTab
+            store={store}
+            tunnels={tunnels}
+            runningId={runningId}
+            tunnelRunningId={tunnelRunning ? (tunnels?.active_id ?? null) : null}
+            saving={savingProfile}
+            onSaveProfile={(p) => {
+              setSavingProfile(true);
+              void save(p).finally(() => setSavingProfile(false));
+            }}
+            onDeleteProfile={(id) => void remove(id)}
+            onSelectProfile={(id) => void select(id)}
+            onNewTunnel={() => setTunnelSheetOpen(true)}
+            onImport={() => setTunnelSheetOpen(true)}
+            // Task 12 replaces this with the real egress editor.
+            tunnelEditor={() => (
+              <div className="flex min-w-0 flex-1 items-start rounded-lg border border-hairline bg-card p-4 shadow-specular">
+                <Button variant="secondary" onClick={() => setTunnelSheetOpen(true)}>
+                  Open the tunnel editor
+                </Button>
               </div>
-            </Card>
-            <Card>
-              <div className="flex items-start gap-3 p-4">
-                <Icon name="vpn_lock" size={18} className="mt-[2px] text-accent" />
-                <div className="flex-1">
-                  <h2 className="text-row font-semibold text-t1">Tunnels</h2>
-                  <p className="mt-1 text-body text-t2">
-                    {hasTunnels
-                      ? `${tunnels?.tunnels.length} configured.`
-                      : "None configured. The tunnel is an optional second stage."}
-                  </p>
-                  <Button
-                    className="mt-3"
-                    variant="secondary"
-                    onClick={() => setTunnelSheetOpen(true)}
-                  >
-                    {hasTunnels ? "Manage tunnels" : "Add a tunnel"}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
+            )}
+          />
         )}
 
         {tab === "about" && (

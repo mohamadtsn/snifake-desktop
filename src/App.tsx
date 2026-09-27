@@ -376,16 +376,25 @@ export default function App() {
             }}
             onDeleteProfile={(id) => void remove(id)}
             onSelectProfile={(id) => void select(id)}
-            onNewTunnel={() => setTunnelSheetOpen(true)}
+            // Task 13 replaces this with the designed import sheet.
             onImport={() => setTunnelSheetOpen(true)}
-            // Task 12 replaces this with the real egress editor.
-            tunnelEditor={() => (
-              <div className="flex min-w-0 flex-1 items-start rounded-lg border border-hairline bg-card p-4 shadow-specular">
-                <Button variant="secondary" onClick={() => setTunnelSheetOpen(true)}>
-                  Open the tunnel editor
-                </Button>
-              </div>
-            )}
+            onSaveTunnel={(t) => {
+              setSavingProfile(true);
+              void saveTunnel(t).finally(() => setSavingProfile(false));
+            }}
+            onDeleteTunnel={(id) =>
+              void invoke<TunnelStore>("delete_tunnel", { id })
+                .then(setTunnels)
+                .catch((e) => setErrorDialog(String(e)))
+            }
+            onSelectTunnel={(id) =>
+              void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
+            }
+            onCopyTunnelLink={(id) =>
+              void invoke<string>("export_tunnel_uri", { id })
+                .then((uri) => navigator.clipboard.writeText(uri))
+                .catch((e) => setErrorDialog(String(e)))
+            }
           />
         )}
 

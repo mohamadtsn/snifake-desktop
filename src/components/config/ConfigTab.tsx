@@ -6,6 +6,7 @@ import { listenAddress, tunnelSignature } from "@/lib/readouts";
 import type { Profile, Store, TunnelProfile, TunnelStore } from "@/types";
 import { ProfileList, type ListItem } from "./ProfileList";
 import { SniEditor } from "./SniEditor";
+import { TunnelEditorPane } from "./TunnelEditorPane";
 
 export type ConfigKind = "sni" | "tunnel";
 
@@ -23,9 +24,11 @@ export function ConfigTab({
   onSaveProfile,
   onDeleteProfile,
   onSelectProfile,
-  onNewTunnel,
   onImport,
-  tunnelEditor,
+  onSaveTunnel,
+  onDeleteTunnel,
+  onSelectTunnel,
+  onCopyTunnelLink,
 }: {
   store: Store | null;
   tunnels: TunnelStore | null;
@@ -35,16 +38,17 @@ export function ConfigTab({
   onSaveProfile: (p: Profile) => void;
   onDeleteProfile: (id: string) => void;
   onSelectProfile: (id: string) => void;
-  onNewTunnel: () => void;
   onImport: () => void;
-  /** Task 12 supplies the tunnel side; it is a render prop so this file
-   *  does not have to know how a tunnel is edited. */
-  tunnelEditor: (selected: TunnelProfile | null, onSelect: (id: string | null) => void) => React.ReactNode;
+  onSaveTunnel: (t: TunnelProfile) => void;
+  onDeleteTunnel: (id: string) => void;
+  onSelectTunnel: (id: string) => void;
+  onCopyTunnelLink: (id: string) => void;
 }) {
   const [kind, setKind] = useState<ConfigKind>("sni");
   const [selectedSni, setSelectedSni] = useState<string | null>(null);
   const [selectedTunnel, setSelectedTunnel] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [creatingTunnel, setCreatingTunnel] = useState(false);
 
   // Default the selection to whatever is active, and follow the store when
   // the selected profile is deleted out from under the pane.
@@ -79,8 +83,10 @@ export function ConfigTab({
   const selectedProfile = creating
     ? null
     : ((store?.profiles ?? []).find((p) => p.id === selectedSni) ?? null);
-  const selectedTunnelProfile =
-    (tunnels?.tunnels ?? []).find((t) => t.id === selectedTunnel) ?? null;
+  const selectedTunnelProfile = creatingTunnel
+    ? null
+    : ((tunnels?.tunnels ?? []).find((t) => t.id === selectedTunnel) ?? null);
+  const activeSni = (store?.profiles ?? []).find((p) => p.id === store?.active_id);
 
   return (
     <div className="flex h-full flex-col gap-4 px-5 py-5">
@@ -96,6 +102,7 @@ export function ConfigTab({
             onChange={(k) => {
               setKind(k);
               setCreating(false);
+              setCreatingTunnel(false);
             }}
             size="sm"
             options={[
@@ -111,7 +118,8 @@ export function ConfigTab({
                 setCreating(true);
                 setSelectedSni(null);
               } else {
-                onNewTunnel();
+                setCreatingTunnel(true);
+                setSelectedTunnel(null);
               }
             }}
           >
@@ -172,10 +180,28 @@ export function ConfigTab({
               items={tunnelItems}
               activeId={tunnels?.active_id ?? null}
               runningId={tunnelRunningId}
-              selectedId={selectedTunnel}
-              onSelect={setSelectedTunnel}
+              selectedId={creatingTunnel ? null : selectedTunnel}
+              onSelect={(id) => {
+                setCreatingTunnel(false);
+                setSelectedTunnel(id);
+                onSelectTunnel(id);
+              }}
             />
-            {tunnelEditor(selectedTunnelProfile, setSelectedTunnel)}
+            <TunnelEditorPane
+              tunnel={selectedTunnelProfile}
+              sniProfile={activeSni}
+              isActive={selectedTunnelProfile?.id === tunnels?.active_id}
+              isRunning={
+                selectedTunnelProfile != null && selectedTunnelProfile.id === tunnelRunningId
+              }
+              saving={saving}
+              onSave={(t) => {
+                setCreatingTunnel(false);
+                onSaveTunnel(t);
+              }}
+              onDelete={onDeleteTunnel}
+              onCopyLink={onCopyTunnelLink}
+            />
           </>
         )}
       </div>

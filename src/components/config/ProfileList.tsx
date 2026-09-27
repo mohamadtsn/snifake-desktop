@@ -64,7 +64,12 @@ export function ProfileList({
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        /* Keyed by kind: switching between SNI links and tunnels replaces
+           the list outright, and letting AnimatePresence animate every row
+           out while every row of the other kind animates in cross-fades two
+           whole lists over each other. Adding or deleting *within* a kind is
+           what the presence animation is for. */
+        <div key={kind} className="flex flex-col gap-2">
           <AnimatePresence initial={false}>
             {items.map((item) => {
               const selected = item.id === selectedId;

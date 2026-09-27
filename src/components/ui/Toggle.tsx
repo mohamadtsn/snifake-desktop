@@ -14,9 +14,12 @@ const SIZES = {
  * `role="switch"`, `aria-checked`, Space/Enter, and the form integration, all
  * of which are the parts that are easy to get quietly wrong.
  *
- * On is the accent blue, not the green: green in this application means
- * *running*, and a preference being enabled is a selection, not a state. Both
- * the mockups and `DESIGN.md` 2.5 put selection on blue.
+ * Two tones, and the difference is not decoration. `accent` (blue) is a
+ * *choice* being recorded: a preference, a safeguard. `ok` (green) is a
+ * *stage that is running*, which is what green means everywhere else in this
+ * application (`DESIGN.md` 1.1). The mockups use both, and use them exactly
+ * this way: the dashboard's two stage switches are green, every switch in
+ * Preferences is blue.
  *
  * `aria-label` is required rather than optional because a pill switch has no
  * text of its own, and the row's title is not automatically its name.
@@ -26,12 +29,14 @@ export function Toggle({
   onChange,
   disabled = false,
   size = "md",
+  tone = "accent",
   "aria-label": ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   disabled?: boolean;
   size?: "sm" | "md";
+  tone?: "accent" | "ok";
   "aria-label": string;
 }) {
   const s = SIZES[size];
@@ -46,7 +51,11 @@ export function Toggle({
       style={{
         width: s.w,
         height: s.h,
-        background: checked ? "var(--color-accent)" : "rgba(255,255,255,0.15)",
+        background: checked
+          ? tone === "ok"
+            ? "var(--color-ok)"
+            : "var(--color-accent)"
+          : "rgba(255,255,255,0.15)",
       }}
     >
       <Switch.Thumb

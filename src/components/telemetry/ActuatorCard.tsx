@@ -1,0 +1,98 @@
+import type { ReactNode } from "react";
+import { Badge } from "@/components/ui/Badge";
+import { Icon } from "@/components/ui/Icon";
+import { Toggle } from "@/components/ui/Toggle";
+
+/**
+ * One stage's switch, and the two facts you need before pressing it.
+ *
+ * The toggle is the only control in the application that starts or stops a
+ * stage. The Console had a rocker for this; a pill switch is the same
+ * promise in the platform's own vocabulary, and unlike the rocker it can say
+ * "you cannot do this yet" by being disabled.
+ *
+ * `blocked` is a sentence, not a boolean: `canStartTunnel` returns the
+ * reason, and showing the reason where the control is refused is the whole
+ * difference between a disabled switch and a broken one.
+ */
+export function ActuatorCard({
+  icon,
+  title,
+  subject,
+  detail,
+  engaged,
+  onChange,
+  blocked,
+  status,
+  action,
+}: {
+  icon: string;
+  title: string;
+  /** What the switch turns on, in the user's words. */
+  subject: string;
+  /** The one real fact under it: an address, an SNI. */
+  detail: string;
+  engaged: boolean;
+  onChange: (on: boolean) => void;
+  /** Why it cannot be *started*. Never a reason it cannot be stopped. */
+  blocked?: string | null;
+  /** The word in the corner, and its tone. Follows the stage's real state,
+   *  not the switch's position: a tunnel that is up but holding is neither
+   *  "engaged" nor "unavailable". */
+  status: { label: string; tone: "ok" | "warn" | "bad" | "neutral" };
+  /** The way out of `blocked`, e.g. "Set up core". */
+  action?: ReactNode;
+}) {
+  // A running stage is always stoppable. Gating the switch on `blocked`
+  // would leave a holding tunnel switched on with no way to switch it off,
+  // because the reason it is holding is also the reason it may not start.
+  const disabled = !engaged && Boolean(blocked);
+  const showBlocked = Boolean(blocked) && !engaged;
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon
+            name={icon}
+            size={16}
+            className={
+              status.tone === "ok"
+                ? "text-ok"
+                : status.tone === "warn"
+                  ? "text-warn"
+                  : status.tone === "bad"
+                    ? "text-bad"
+                    : "text-t3"
+            }
+          />
+          <h3 className="truncate text-row font-semibold text-t1">{title}</h3>
+        </div>
+        <Badge tone={status.tone}>{status.label}</Badge>
+      </div>
+
+      {showBlocked ? (
+        <div className="flex items-center gap-3 rounded-md border border-warn-line bg-warn-soft px-3 py-[10px]">
+          <Icon name="warning" size={16} className="shrink-0 text-warn" />
+          <p className="min-w-0 flex-1 text-body text-t1">{blocked}</p>
+          {action}
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className={`truncate text-row ${disabled ? "text-t3" : "text-t1"}`}>{subject}</p>
+          <p className="mono mt-[2px] truncate text-note text-t3" dir="ltr">
+            {detail}
+          </p>
+        </div>
+        <Toggle
+          tone="ok"
+          checked={engaged}
+          onChange={onChange}
+          disabled={disabled}
+          aria-label={`${title}: ${engaged ? "on" : "off"}`}
+        />
+      </div>
+    </div>
+  );
+}

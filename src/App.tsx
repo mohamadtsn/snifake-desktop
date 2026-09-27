@@ -12,21 +12,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { TelemetryTab } from "@/components/telemetry/TelemetryTab";
 import { TitleBar } from "@/components/shell/TitleBar";
 import { StatusFooter } from "@/components/shell/StatusFooter";
 import { TabRegion, type Tab } from "@/components/shell/TabRegion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ModalSheet } from "@/components/ui/ModalSheet";
 import { Icon } from "@/components/ui/Icon";
 import { loadPrefs, type Prefs } from "@/lib/prefs";
 import type { CoreStatus } from "@/lib/readouts";
-import { StatusPanel } from "@/components/StatusPanel";
-import { SwitchBank } from "@/components/SwitchBank";
-import { RouteRows } from "@/components/RouteRows";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { TunnelSheet } from "@/components/TunnelSheet";
 import { CoreSetup } from "@/components/CoreSetup";
-import { ActivitySection } from "@/components/ActivitySection";
 import { AboutDialog } from "@/components/AboutDialog";
 import {
   Profile,
@@ -75,6 +73,7 @@ export default function App() {
   const [prefs] = useState<Prefs>(() => loadPrefs());
   const [tunnelSheetOpen, setTunnelSheetOpen] = useState(false);
   const [confirmStopLink, setConfirmStopLink] = useState(false);
+  const [coreSetupOpen, setCoreSetupOpen] = useState(false);
 
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
@@ -301,40 +300,43 @@ export default function App() {
 
       <TabRegion tab={tab}>
         {tab === "telemetry" && (
-          <div className="flex flex-col gap-4 px-5 py-5">
-            <StatusPanel
-              state={state}
-              since={since}
-              tunnel={hasTunnels ? tunnelState : undefined}
-              tunnelSince={tunnelSince}
-              tunnelMode={tunnels?.mode.replace("_", " ")}
-            />
-            {profile ? <RouteRows profile={profile} /> : null}
-
-            {/* Only once a tunnel exists. Asking someone to fetch a 24 MB
-                core before they have said they want the feature is a toll on
-                the way in. */}
-            {hasTunnels && !coreInstalled && (
-              <CoreSetup
-                onInstalled={() => void invoke<CoreStatus>("core_status").then(setCore)}
-              />
-            )}
-
-            <SwitchBank
-              link={state}
-              tunnel={tunnelState}
-              showTunnel={hasTunnels}
-              disabledReason={blockedReason}
-              onLinkStart={() => void start()}
-              // Stopping the link takes the tunnel with it, so it is a
-              // decision rather than a reflex once the tunnel is up.
-              onLinkStop={() => (tunnelRunning ? setConfirmStopLink(true) : void stop())}
-              onTunnelStart={() => void startTunnel()}
-              onTunnelStop={() => void stopTunnel()}
-            />
-
-            <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
-          </div>
+          <TelemetryTab
+            store={store}
+            tunnels={tunnels}
+            state={state}
+            since={since}
+            runningId={runningId}
+            tunnelState={tunnelState}
+            tunnelSince={tunnelSince}
+            coreInstalled={coreInstalled}
+            blockedReason={blockedReason}
+            activityOpen={activityOpen}
+            onActivityOpenChange={setActivityOpen}
+            onLinkToggle={(on) => {
+              if (on) return void start();
+              // Stopping the link takes the tunnel with it, so once the
+              // tunnel is up this is a decision rather than a reflex.
+              if (tunnelRunning) setConfirmStopLink(true);
+              else void stop();
+            }}
+            onTunnelToggle={(on) => (on ? void startTunnel() : void stopTunnel())}
+            onSelectProfile={(id) => void select(id)}
+            onSelectTunnel={(id) =>
+              void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
+            }
+            onModeChange={(mode) => {
+              if (!tunnels) return;
+              void invoke<TunnelStore>("save_routing", {
+                mode,
+                proxy_host: tunnels.proxy_host,
+                proxy_port: tunnels.proxy_port,
+                routing: tunnels.routing,
+              })
+                .then(setTunnels)
+                .catch((e) => setErrorDialog(String(e)));
+            }}
+            onSetupCore={() => setCoreSetupOpen(true)}
+          />
         )}
 
         {tab === "sockets" && (
@@ -423,6 +425,32 @@ export default function App() {
       </TabRegion>
 
       <StatusFooter store={store} closeToTray={prefs.closeToTray} />
+
+      {/* Interim: the Console's core installer, in the new modal frame.
+          Task 10 replaces the body with the designed two-column screen. */}
+      <ModalSheet
+        open={coreSetupOpen}
+        onOpenChange={setCoreSetupOpen}
+        icon="memory"
+        title="Set up the tunnel core"
+        subtitle={core?.version ? `sing-box v${core.version}` : undefined}
+        width={560}
+        footer={
+          <>
+            <span className="text-note text-t2">The core is never bundled: it is GPL-3.0.</span>
+            <Button variant="secondary" onClick={() => setCoreSetupOpen(false)}>
+              Close
+            </Button>
+          </>
+        }
+      >
+        <CoreSetup
+          onInstalled={() => {
+            setCoreSetupOpen(false);
+            void invoke<CoreStatus>("core_status").then(setCore);
+          }}
+        />
+      </ModalSheet>
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
 

@@ -12,7 +12,7 @@ import type { ProxyState, TunnelState } from "@/types";
 /**
  * `null` means a start is allowed; a string is the reason it is not, in
  * the words shown under the disabled switch. One reason at a time, and
- * always the one furthest upstream — telling someone to install a core
+ * always the one furthest upstream: telling someone to install a core
  * while the link is down sends them to fix the wrong thing.
  */
 export function canStartTunnel(
@@ -20,7 +20,7 @@ export function canStartTunnel(
   coreInstalled: boolean,
   hasTunnel: boolean,
 ): string | null {
-  if (link !== "running") return "Start LINK first — the tunnel connects through it.";
+  if (link !== "running") return "Start the SNI link first. The tunnel connects through it.";
   if (!coreInstalled) return "Download the tunnel core first.";
   if (!hasTunnel) return "Add a tunnel configuration first.";
   return null;

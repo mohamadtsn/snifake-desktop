@@ -27,6 +27,7 @@ export function Segmented<T extends string>({
   className,
   label,
   role = "radiogroup",
+  stretch = false,
 }: {
   value: T;
   onChange: (v: T) => void;
@@ -35,6 +36,9 @@ export function Segmented<T extends string>({
   className?: string;
   label?: string;
   role?: "radiogroup" | "tablist";
+  /** Fill the width, with every segment the same size. For a control that
+   *  owns its row: unequal segments there read as a ragged edge. */
+  stretch?: boolean;
 }) {
   const itemRole = role === "tablist" ? "tab" : "radio";
   return (
@@ -49,7 +53,9 @@ export function Segmented<T extends string>({
       }}
       role={role}
       aria-label={label}
-      className={`inline-flex shrink-0 items-center gap-[2px] rounded-md border border-hairline bg-inset p-[3px]${
+      className={`${
+        stretch ? "flex w-full" : "inline-flex shrink-0"
+      } items-center gap-[2px] rounded-md border border-hairline bg-inset p-[3px]${
         className ? ` ${className}` : ""
       }`}
     >
@@ -62,7 +68,9 @@ export function Segmented<T extends string>({
             disabled={option.disabled}
             role={itemRole}
             aria-selected={role === "tablist" ? active : undefined}
-            className={`inline-flex items-center justify-center gap-[6px] rounded-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-(--dur-fast) ease-(--ease-out) ${
+            className={`${
+              stretch ? "flex flex-1 basis-0" : "inline-flex"
+            } items-center justify-center gap-[6px] rounded-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-(--dur-fast) ease-(--ease-out) ${
               SIZES[size]
             } ${
               active

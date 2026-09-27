@@ -375,8 +375,39 @@ it injects an out-of-window fake ClientHello, and the row now says so in one
 non-interactive line) and *Strict Kill Switch* (not in the `Routing` model;
 `Default route through tunnel` on Sockets is the real control).
 
-A future phase may add real counters to the engine and refill these slots. That
-is privileged-process work and is not part of this redesign.
+### 6.1 The second pass (`2026-09-27-workbench-revision`)
+
+The `design/new/` mockups reintroduced four of the removed readouts. Three
+were rejected again; one became measurable for the first time, which is the
+phase the note below anticipated.
+
+| Reintroduced | Verdict |
+|---|---|
+| Throughput bar / `DATA USED` | **Kept, and now measured.** `forward.rs` counts the bytes it relays through a counting `Read` adapter, and the tunnel's outbound dials that same listener, so one counter pair covers both stages. `Event::Traffic` carries cumulative totals once a second; the rate is derived from two samples in `src/lib/traffic.ts`. |
+| `-58 dBm` + signal bars | Rejected again. There is no radio and nothing that resembles a signal strength. |
+| `12 ms` header pill | Rejected again. There is no probe. The pill it would have shared the bar with — `core v1.13.21` — was itself removed this pass. |
+| `TLS 1.3` in the protocol line | Rejected. The core negotiates the version and never reports it, so `VLESS · WS · TLS` is the whole of what is known. |
+| `BUS: 0x88F2 // 1,420 pkts/s` | Rejected again. The sniffer only sees handshake packets to the upstream, so a rate drawn from it would not count what it claims to count. |
+
+Three slots are now filled by a *measurement* rather than by a substitution:
+
+| Where | Reads | Absent case |
+|---|---|---|
+| Footer, right | `↑ 850.5 KB/s  ↓ 7.0 MB/s` | `—` on both |
+| Stage 1 tile | `RATE ↑ … ↓ …` | the line is not drawn |
+| Stage 2 tile | `SESSION ↓ 10.1 MB ↑ 1.3 MB` | the line is not drawn |
+
+`—`, never `0`: zero is a claim that nothing moved, and a dash is the absence
+of a reading. A stopped stage clears its samples, so a rate cannot survive
+the run that produced it.
+
+One readout was added that is neither a measurement nor a substitution:
+`STAGES n/2 SYNCHRONIZED`, derived from the two states. It is the one
+summary the new mockups added that this application can make honestly.
+
+And one clock changed meaning: a **faulted** stage freezes its uptime and
+shows `STOPPED AT hh:mm:ss` instead of resetting to zero. "It ran for two
+minutes and then died" is the useful fact; `00:00:00` is not.
 
 ---
 

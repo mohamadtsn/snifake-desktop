@@ -41,6 +41,11 @@ export default function App() {
   const [runningId, setRunningId] = useState<string | null>(null);
   /** When the engine came up, for the uptime readout. */
   const [since, setSince] = useState<number | null>(null);
+  /** How long the link had been up at the moment it faulted, in ms. The
+   *  clock stops rather than resetting: "it ran for two minutes and then
+   *  died" is the useful fact, and `00:00:00` is not. Cleared on the next
+   *  clean stop or start. */
+  const [frozenSince, setFrozenSince] = useState<number | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -82,6 +87,7 @@ export default function App() {
   // inside a state updater - work React is allowed to run twice.
   const previousSample = useRef<Sample | null>(null);
   const [rate, setRate] = useState<Rate>({ up: null, down: null });
+  const [total, setTotal] = useState<{ up: number; down: number } | null>(null);
   const coreInstalled = core?.installed ?? false;
   const [tab, setTab] = useState<Tab>("telemetry");
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
@@ -133,10 +139,17 @@ export default function App() {
       setState(e.payload);
       // The clock starts when the engine reports it is up, not when we asked
       // it to start: elevation prompts can sit for a minute.
-      if (e.payload === "running") setSince((prev) => prev ?? Date.now());
+      if (e.payload === "running") {
+        setSince((prev) => prev ?? Date.now());
+        setFrozenSince(null);
+      }
       if (e.payload === "stopped" || e.payload === "error") {
         setRunningId(null);
-        setSince(null);
+        // A fault keeps its elapsed time; a clean stop does not.
+        setSince((prev) => {
+          setFrozenSince(e.payload === "error" && prev !== null ? Date.now() - prev : null);
+          return null;
+        });
       }
     });
     const unlistenStart = listen("frontend-start-requested", () => void start());
@@ -174,6 +187,7 @@ export default function App() {
       const next: Sample = { up: e.payload[0], down: e.payload[1], at: Date.now() };
       setRate(rateBetween(previousSample.current, next));
       previousSample.current = next;
+      setTotal({ up: next.up, down: next.down });
     });
     return () => {
       void un.then((f) => f());
@@ -186,6 +200,7 @@ export default function App() {
     if (state === "running") return;
     previousSample.current = null;
     setRate({ up: null, down: null });
+    setTotal(null);
   }, [state]);
 
   // The coupling: the tunnel cannot outlive the link it dials. Encoded once,
@@ -422,6 +437,9 @@ export default function App() {
             runningId={runningId}
             tunnelState={tunnelState}
             tunnelSince={tunnelSince}
+            rate={rate}
+            total={total}
+            frozenSince={frozenSince}
             coreInstalled={coreInstalled}
             blockedReason={blockedReason}
             activityOpen={activityOpen}

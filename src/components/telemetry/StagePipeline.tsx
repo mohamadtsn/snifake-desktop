@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { formatRate, formatTotal, type Rate } from "@/lib/traffic";
 import { formatUptime } from "@/types";
 import type { ProxyState, TunnelState } from "@/types";
 
@@ -20,8 +21,13 @@ const TEXT_TONE: Record<Tone, string> = {
  *
  * The mockup's right-hand slots were a `-58 dBm` signal meter and an RTT
  * sparkline. There is no radio and there is no probe, so the slots carry
- * what the application actually knows: where the stage is listening, and how
- * long it has been up.
+ * what the application actually knows: where the stage is listening, how
+ * long it has been up, and - new in this pass, and the first number here
+ * that is *measured* - what is going through it.
+ *
+ * `frozen` is the uptime of a stage that faulted. The clock stops rather
+ * than resetting, because "it ran for two minutes and then died" is the
+ * useful fact and `00:00:00` is not.
  */
 function StageTile({
   index,
@@ -30,6 +36,10 @@ function StageTile({
   name,
   detail,
   since,
+  frozen,
+  meter,
+  meterLabel,
+  meterTitle,
   badge,
 }: {
   index: 1 | 2;
@@ -38,6 +48,12 @@ function StageTile({
   name: string;
   detail: string;
   since: number | null;
+  /** The uptime at the moment the stage faulted; the clock is stopped. */
+  frozen?: number | null;
+  /** The measured line. `—` when there is no reading; never `0`. */
+  meter?: string;
+  meterLabel?: string;
+  meterTitle?: string;
   badge?: string;
 }) {
   return (
@@ -58,6 +74,20 @@ function StageTile({
             <span className="mono text-note font-medium text-t1">
               {formatUptime(Date.now() - since)}
             </span>
+          </p>
+        ) : frozen != null ? (
+          <p className="mt-[2px] flex items-baseline justify-end gap-[6px]">
+            <span className="text-micro tracking-[0.04em] text-t3 uppercase">stopped at</span>
+            <span className="mono text-note font-medium text-bad">{formatUptime(frozen)}</span>
+          </p>
+        ) : null}
+        {meter ? (
+          <p
+            className="mt-[2px] flex items-baseline justify-end gap-[6px]"
+            title={meterTitle}
+          >
+            <span className="text-micro tracking-[0.04em] text-t3 uppercase">{meterLabel}</span>
+            <span className="mono text-note font-medium text-t1 tabular-nums">{meter}</span>
           </p>
         ) : null}
       </div>
@@ -80,6 +110,9 @@ export function StagePipeline({
   tunnelState,
   tunnelSince,
   signature,
+  rate,
+  total,
+  frozenSince,
 }: {
   state: ProxyState;
   since: number | null;
@@ -89,6 +122,12 @@ export function StagePipeline({
   tunnelState: TunnelState;
   tunnelSince: number | null;
   signature: string;
+  /** Live bytes per second, from `forward.rs`. `null` where unmeasurable. */
+  rate: Rate;
+  /** Cumulative bytes for this run, from the same counters. */
+  total: { up: number; down: number } | null;
+  /** How long the link had been up when it faulted, in ms. */
+  frozenSince: number | null;
 }) {
   const linkTone: Tone =
     state === "running" ? "ok" : state === "starting" ? "warn" : state === "error" ? "bad" : "off";
@@ -108,7 +147,7 @@ export function StagePipeline({
           : "off";
 
   const up = (state === "running" ? 1 : 0) + (tunnelState === "active" ? 1 : 0);
-  const total = hasTunnel ? 2 : 1;
+  const stages = hasTunnel ? 2 : 1;
 
   return (
     <Card>
@@ -120,9 +159,10 @@ export function StagePipeline({
           </div>
           <div className="flex items-center gap-2">
             <span className="mono text-note tracking-[0.04em] text-t3 uppercase">
-              stages {up}/{total}
+              stages {up}/{stages}
+              {up === stages && up > 0 ? " synchronized" : ""}
             </span>
-            <StatusDot tone={up === total ? "ok" : up === 0 ? "off" : "warn"} size={6} />
+            <StatusDot tone={up === stages ? "ok" : up === 0 ? "off" : "warn"} size={6} />
           </div>
         </div>
 
@@ -142,6 +182,10 @@ export function StagePipeline({
             name="SNI dispatcher link"
             detail={listen}
             since={state === "running" ? since : null}
+            frozen={state === "error" && frozenSince !== null ? frozenSince : null}
+            meterLabel="rate"
+            meter={state === "running" ? `↑ ${formatRate(rate.up)}  ↓ ${formatRate(rate.down)}` : undefined}
+            meterTitle="Bytes per second through the SNI forwarder, measured in forward.rs."
           />
           <StageTile
             index={2}
@@ -162,6 +206,17 @@ export function StagePipeline({
             name="Upstream tunnel layer"
             detail={signature}
             since={tunnelState === "active" ? tunnelSince : null}
+            meterLabel="session"
+            meter={
+              tunnelState === "active"
+                ? `↓ ${formatTotal(total?.down ?? null)}  ↑ ${formatTotal(total?.up ?? null)}`
+                : undefined
+            }
+            // One counter pair covers both stages: the tunnel's outbound
+            // dials the SNI listener, so everything it carries passes
+            // through that forwarder. A second counter inside the core
+            // would be a second source that can disagree with this one.
+            meterTitle="Total bytes relayed since the SNI link started. The tunnel dials that listener, so its traffic is counted here."
             badge={!hasTunnel ? "no tunnel" : !coreInstalled ? "core required" : undefined}
           />
         </div>

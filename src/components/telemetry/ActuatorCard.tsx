@@ -1,15 +1,18 @@
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
-import { Toggle } from "@/components/ui/Toggle";
+import { PowerButton } from "./PowerButton";
 
 /**
- * One stage's switch, and the two facts you need before pressing it.
+ * One stage's control, and the two facts you need before pressing it.
  *
- * The toggle is the only control in the application that starts or stops a
- * stage. The Console had a rocker for this; a pill switch is the same
- * promise in the platform's own vocabulary, and unlike the rocker it can say
- * "you cannot do this yet" by being disabled.
+ * `PowerButton` is the only control in the application that starts or stops a
+ * stage, and it is drawn at the weight of that decision. It was a pill
+ * switch in the card's corner, which is the same size this design system
+ * gives a preference - the one action the screen exists for cannot be the
+ * same weight as "colorize the tray icon". Like the switch it replaced, it
+ * can say "you cannot do this yet" by being disabled, and its halo takes the
+ * status badge's colour so the two cannot disagree.
  *
  * `blocked` is a sentence, not a boolean: `canStartTunnel` returns the
  * reason, and showing the reason where the control is refused is the whole
@@ -85,12 +88,13 @@ export function ActuatorCard({
             {detail}
           </p>
         </div>
-        <Toggle
-          tone="ok"
-          checked={engaged}
-          onChange={onChange}
+        <PowerButton
+          engaged={engaged}
+          tone={status.tone === "neutral" ? "off" : status.tone}
           disabled={disabled}
-          aria-label={`${title}: ${engaged ? "on" : "off"}`}
+          title={disabled ? (blocked ?? undefined) : undefined}
+          label={`${title}: ${engaged ? "on" : "off"}`}
+          onClick={() => onChange(!engaged)}
         />
       </div>
     </div>

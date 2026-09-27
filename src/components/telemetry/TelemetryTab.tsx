@@ -3,6 +3,7 @@ import { ActivitySection } from "@/components/ActivitySection";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { listenAddress, tunnelSignature, tunnelSni } from "@/lib/readouts";
+import type { Rate } from "@/lib/traffic";
 import { activeTunnel, type ProxyState, type Store, type TunnelMode, type TunnelState, type TunnelStore } from "@/types";
 import { activeProfile } from "@/types";
 import { ActuatorCard } from "./ActuatorCard";
@@ -65,6 +66,9 @@ export function TelemetryTab({
   runningId,
   tunnelState,
   tunnelSince,
+  rate,
+  total,
+  frozenSince,
   coreInstalled,
   blockedReason,
   activityOpen,
@@ -85,6 +89,9 @@ export function TelemetryTab({
   runningId: string | null;
   tunnelState: TunnelState;
   tunnelSince: number | null;
+  rate: Rate;
+  total: { up: number; down: number } | null;
+  frozenSince: number | null;
   coreInstalled: boolean;
   /** `canStartTunnel`'s sentence, or null when the tunnel may start. */
   blockedReason: string | null;
@@ -129,6 +136,9 @@ export function TelemetryTab({
         tunnelState={tunnelState}
         tunnelSince={tunnelSince}
         signature={tunnelSignature(tunnel)}
+        rate={rate}
+        total={total}
+        frozenSince={frozenSince}
       />
 
       <Card>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,11 +12,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { TitleBar } from "@/components/TitleBar";
+import { TitleBar } from "@/components/shell/TitleBar";
+import { StatusFooter } from "@/components/shell/StatusFooter";
+import { TabRegion, type Tab } from "@/components/shell/TabRegion";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Icon } from "@/components/ui/Icon";
+import { loadPrefs, type Prefs } from "@/lib/prefs";
+import type { CoreStatus } from "@/lib/readouts";
 import { StatusPanel } from "@/components/StatusPanel";
 import { SwitchBank } from "@/components/SwitchBank";
 import { RouteRows } from "@/components/RouteRows";
-import { ChannelSelect } from "@/components/ChannelSelect";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { TunnelSheet } from "@/components/TunnelSheet";
 import { CoreSetup } from "@/components/CoreSetup";
@@ -60,7 +66,13 @@ export default function App() {
   const [tunnels, setTunnels] = useState<TunnelStore | null>(null);
   const [tunnelState, setTunnelState] = useState<TunnelState>("offline");
   const [tunnelSince, setTunnelSince] = useState<number | null>(null);
-  const [coreInstalled, setCoreInstalled] = useState(false);
+  const [core, setCore] = useState<CoreStatus | null>(null);
+  const coreInstalled = core?.installed ?? false;
+  const [tab, setTab] = useState<Tab>("telemetry");
+  // Read once, on mount. `setPrefs` gets its consumer when the Preferences
+  // sheet lands; until then a stored preference is still honoured, it just
+  // cannot be changed from inside the window.
+  const [prefs] = useState<Prefs>(() => loadPrefs());
   const [tunnelSheetOpen, setTunnelSheetOpen] = useState(false);
   const [confirmStopLink, setConfirmStopLink] = useState(false);
 
@@ -74,12 +86,30 @@ export default function App() {
   useEffect(() => {
     void invoke<Store>("list_profiles").then(setStore);
     void invoke<TunnelStore>("list_tunnels").then(setTunnels);
-    void invoke<{ installed: boolean }>("core_status").then((s) => setCoreInstalled(s.installed));
+    void invoke<CoreStatus>("core_status").then(setCore);
   }, []);
 
-  // One check per launch. Silent when we are current or the check fails.
+  // Two of the five preferences live in the privileged half as well as in
+  // browser storage, so a stored choice has to be pushed back on launch -
+  // otherwise it only holds for the session in which it was made.
   useEffect(() => {
+    void invoke("set_tray_colorize", { on: prefs.colorizeTray });
+    void invoke("set_verbose", { on: prefs.verbose });
+    // Mount only: every later change goes through Preferences, which calls
+    // these itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // One check per launch, and only if the user has left it on. Silent when
+  // we are current or the check fails: this application's users are
+  // plausibly behind something that blocks github.com, and an update is a
+  // convenience that must never surface as a failure.
+  useEffect(() => {
+    if (!prefs.silentUpdateChecks) return;
     void findUpdate().then(setUpdate);
+    // Deliberately on mount only. Turning the preference on mid-session
+    // should not fire a check the user did not ask for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -128,24 +158,6 @@ export default function App() {
   useEffect(() => {
     setTunnelState((current) => nextTunnelState(current, state));
   }, [state]);
-
-  // Room for the second row, and only ever more of it: a window the user
-  // made bigger stays that size.
-  //
-  // 660, not the 560 this plan first guessed. DESIGN.md 3 sizes the window
-  // to its content with the log closed, and measured in a browser at the
-  // real width the two-stage column is 497px inside 160px of chrome. At 560
-  // the channel selectors started 8px below the fold, which is the one thing
-  // this row exists to keep in reach.
-  useEffect(() => {
-    const target = (tunnels?.tunnels.length ?? 0) > 0 ? 660 : 504;
-    void getCurrentWindow()
-      .innerSize()
-      .then((size) => {
-        if (size.height >= target) return;
-        return getCurrentWindow().setSize(new LogicalSize(420, target));
-      });
-  }, [tunnels]);
 
   async function startTunnel() {
     const id = tunnels?.active_id;
@@ -244,15 +256,27 @@ export default function App() {
     }
   }
 
+  /**
+   * The close glyph. With "Close Window Minimizes to Menu Bar" on it hides
+   * to the tray, which is what the tray exists for; with it off it asks,
+   * because closing would otherwise stop an elevated proxy the user may not
+   * realise is running.
+   */
+  function closeWindow() {
+    if (prefs.closeToTray) {
+      void getCurrentWindow().hide();
+    } else {
+      setExitDialogOpen(true);
+    }
+  }
+
   async function confirmExit() {
     await invoke("stop_proxy");
     await invoke("shutdown_engine");
     await getCurrentWindow().destroy();
   }
 
-  if (!store) return null;
-  const profile = activeProfile(store);
-  if (!profile) return null;
+  const profile = store ? activeProfile(store) : undefined;
 
   // Two phases, one flow. `Finished` reports total === received, so the
   // download is over exactly when they meet; before the first event there is
@@ -265,106 +289,144 @@ export default function App() {
   const tunnelRunning = tunnelState !== "offline";
 
   return (
-    <div className="shell relative flex h-screen flex-col overflow-hidden">
-      {/* The bezel sits outside the sheet host on purpose: the drawer stops
-          below it, so quit and minimise stay reachable while a sheet is
-          open. Inside the host it would be dimmed and inert, and the only
-          way out of the profile drawer would be the drawer itself. */}
-      <TitleBar state={state} onAbout={() => setAboutOpen(true)} />
+    <div className="flex h-screen flex-col overflow-hidden bg-surface">
+      <TitleBar
+        tab={tab}
+        onTabChange={setTab}
+        state={state}
+        core={core}
+        onClose={closeWindow}
+        onPreferences={() => setAboutOpen(true)}
+      />
 
-      <div
-        className="sheet-host flex min-h-0 flex-1 flex-col"
-        data-pushed={sheetOpen ? "" : undefined}
-        inert={sheetOpen}
-      >
-        {/* One column, four blocks, one rhythm. The blocks are separated by
-            engraved rules rather than cards: a console is a single panel
-            with sections silkscreened onto it. */}
-        <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pt-4 pb-3">
-          <StatusPanel
-            state={state}
-            since={since}
-            tunnel={hasTunnels ? tunnelState : undefined}
-            tunnelSince={tunnelSince}
-            tunnelMode={tunnels?.mode.replace("_", " ")}
-          />
-          <RouteRows profile={profile} />
-
-          {/* Only once a tunnel exists. Asking someone to fetch a 24 MB core
-              before they have said they want the feature is a toll on the
-              way in. */}
-          {hasTunnels && !coreInstalled && (
-            <CoreSetup onInstalled={() => setCoreInstalled(true)} />
-          )}
-
-          {/* One rule over both rows: they are two of the same kind of
-              thing, and two headings would be two rules where one belongs. */}
-          <section className="flex shrink-0 flex-col gap-2.5">
-            {/* The heading carries the way in, because the tunnel row
-                below it only exists once a tunnel does — and without this
-                there would be no way to create the first one. A chip on the
-                engraved rule rather than an empty row: someone who never
-                wants a tunnel should not be given one to dismiss. */}
-            <div className="flex items-center gap-2">
-              <h2 className="engrave flex-1">Channels</h2>
-              <button
-                type="button"
-                onClick={() => setTunnelSheetOpen(true)}
-                className="chip h-6 shrink-0 px-2 text-[10px]"
-              >
-                {hasTunnels ? "Tunnels" : "+ Tunnel"}
-              </button>
-            </div>
-            <ChannelSelect
-              items={store.profiles}
-              activeId={store.active_id}
-              runningId={runningId}
-              manageLabel="Manage profiles"
-              subtitle={(p) =>
-                `${p.LISTEN_HOST}:${p.LISTEN_PORT} \u2192 ${p.CONNECT_IP}:${p.CONNECT_PORT}`
-              }
-              onSelect={(id) => void select(id)}
-              onManage={() => setSheetOpen(true)}
+      <TabRegion tab={tab}>
+        {tab === "telemetry" && (
+          <div className="flex flex-col gap-4 px-5 py-5">
+            <StatusPanel
+              state={state}
+              since={since}
+              tunnel={hasTunnels ? tunnelState : undefined}
+              tunnelSince={tunnelSince}
+              tunnelMode={tunnels?.mode.replace("_", " ")}
             />
-            {hasTunnels && tunnels && (
-              <ChannelSelect
-                items={tunnels.tunnels}
-                activeId={tunnels.active_id}
-                runningId={tunnelRunning ? tunnels.active_id : null}
-                manageLabel="Manage tunnels"
-                subtitle={(t) => `${t.protocol} \u00b7 ${t.remote_host}${t.path}`}
-                onSelect={(id) =>
-                  void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
-                }
-                onManage={() => setTunnelSheetOpen(true)}
+            {profile ? <RouteRows profile={profile} /> : null}
+
+            {/* Only once a tunnel exists. Asking someone to fetch a 24 MB
+                core before they have said they want the feature is a toll on
+                the way in. */}
+            {hasTunnels && !coreInstalled && (
+              <CoreSetup
+                onInstalled={() => void invoke<CoreStatus>("core_status").then(setCore)}
               />
             )}
-          </section>
-        </main>
 
-        {/* Outside the scroller: the switch and the log rule are fixed
-            furniture. The primary control must never scroll off. */}
-        <div className="border-line shrink-0 border-t px-4 pt-3 pb-3">
-          <SwitchBank
-            link={state}
-            tunnel={tunnelState}
-            showTunnel={hasTunnels}
-            disabledReason={blockedReason}
-            onLinkStart={() => void start()}
-            // Stopping the link takes the tunnel with it, so it is a
-            // decision rather than a reflex once the tunnel is up.
-            onLinkStop={() => (tunnelRunning ? setConfirmStopLink(true) : void stop())}
-            onTunnelStart={() => void startTunnel()}
-            onTunnelStop={() => void stopTunnel()}
-          />
-          <div className="mt-2">
+            <SwitchBank
+              link={state}
+              tunnel={tunnelState}
+              showTunnel={hasTunnels}
+              disabledReason={blockedReason}
+              onLinkStart={() => void start()}
+              // Stopping the link takes the tunnel with it, so it is a
+              // decision rather than a reflex once the tunnel is up.
+              onLinkStop={() => (tunnelRunning ? setConfirmStopLink(true) : void stop())}
+              onTunnelStart={() => void startTunnel()}
+              onTunnelStop={() => void stopTunnel()}
+            />
+
             <ActivitySection open={activityOpen} onOpenChange={setActivityOpen} />
           </div>
-        </div>
-      </div>
+        )}
+
+        {tab === "sockets" && (
+          <div className="flex flex-col gap-4 px-5 py-5">
+            <Card>
+              <div className="flex items-start gap-3 p-4">
+                <Icon name="route" size={18} className="mt-[2px] text-accent" />
+                <div className="flex-1">
+                  <h2 className="text-row font-semibold text-t1">Interception and routing</h2>
+                  <p className="mt-1 text-body text-t2">
+                    How traffic reaches the tunnel, and which traffic is allowed to bypass
+                    it. Editing the rule lists still opens the tunnel drawer.
+                  </p>
+                  <Button
+                    className="mt-3"
+                    variant="secondary"
+                    onClick={() => setTunnelSheetOpen(true)}
+                  >
+                    Open routing rules
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab === "config" && (
+          <div className="flex flex-col gap-4 px-5 py-5">
+            <Card>
+              <div className="flex items-start gap-3 p-4">
+                <Icon name="lan" size={18} className="mt-[2px] text-accent" />
+                <div className="flex-1">
+                  <h2 className="text-row font-semibold text-t1">SNI links</h2>
+                  <p className="mt-1 text-body text-t2">
+                    {store && store.profiles.length > 0
+                      ? `${store.profiles.length} configured.`
+                      : "None configured yet. The first one is where everything starts."}
+                  </p>
+                  <Button className="mt-3" variant="secondary" onClick={() => setSheetOpen(true)}>
+                    Manage SNI links
+                  </Button>
+                </div>
+              </div>
+            </Card>
+            <Card>
+              <div className="flex items-start gap-3 p-4">
+                <Icon name="vpn_lock" size={18} className="mt-[2px] text-accent" />
+                <div className="flex-1">
+                  <h2 className="text-row font-semibold text-t1">Tunnels</h2>
+                  <p className="mt-1 text-body text-t2">
+                    {hasTunnels
+                      ? `${tunnels?.tunnels.length} configured.`
+                      : "None configured. The tunnel is an optional second stage."}
+                  </p>
+                  <Button
+                    className="mt-3"
+                    variant="secondary"
+                    onClick={() => setTunnelSheetOpen(true)}
+                  >
+                    {hasTunnels ? "Manage tunnels" : "Add a tunnel"}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {tab === "about" && (
+          <div className="flex flex-col gap-4 px-5 py-5">
+            <Card>
+              <div className="flex items-start gap-3 p-4">
+                <Icon name="info" size={18} className="mt-[2px] text-accent" />
+                <div className="flex-1">
+                  <h2 className="text-row font-semibold text-t1">Snifake</h2>
+                  <p className="mt-1 text-body text-t2">
+                    Identity, licence and updates.
+                  </p>
+                  <Button className="mt-3" variant="secondary" onClick={() => setAboutOpen(true)}>
+                    Open About
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+      </TabRegion>
+
+      <StatusFooter store={store} closeToTray={prefs.closeToTray} />
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
 
+      {store && (
       <ProfileSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
@@ -374,8 +436,9 @@ export default function App() {
         onSave={(p) => void save(p)}
         onDelete={(id) => void remove(id)}
       />
+      )}
 
-      {tunnels && (
+      {tunnels && profile && (
         <TunnelSheet
           open={tunnelSheetOpen}
           onOpenChange={setTunnelSheetOpen}

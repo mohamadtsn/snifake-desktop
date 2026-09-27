@@ -214,9 +214,13 @@ AppShell (850×760, opaque, square)
 └─ StatusFooter 36px left: active route · right: tray hint
 ```
 
-The tab bar is centred and must stay centred, so the left and right clusters
-reserve a fixed width regardless of what is in them. That is also why every
-readout in the title bar and the footer goes through a formatter in
+The left and right clusters each reserve the window-control cluster's width
+whether or not the controls are on that side, so the tab bar sits at exactly
+the same x on macOS as on Linux and a screenshot of one is a screenshot of the
+other. It is not centred on the window: at 850px the right cluster is wider
+than the left, and forcing a window-centred tab bar would either overlap it or
+cost the core readout. The mockups are built the same way, with `justify-
+between`. That is also why every readout in the title bar and the footer goes through a formatter in
 `src/lib/readouts.ts` that truncates with a middle ellipsis: a 60-character
 profile name is a value the user chose, and it must not be able to push the
 tab bar off centre.

@@ -21,6 +21,7 @@
         "minHeight": 620,
         "resizable": true,
         "decorations": false,
+        "dragDropEnabled": false,
         "center": true
       }
     ],

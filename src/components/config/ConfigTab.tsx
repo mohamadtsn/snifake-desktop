@@ -6,6 +6,7 @@ import { listenAddress, tunnelSignature } from "@/lib/readouts";
 import type { Profile, Store, TunnelProfile, TunnelStore } from "@/types";
 import { ProfileList, type ListItem } from "./ProfileList";
 import { SniEditor } from "./SniEditor";
+import { ImportSheet } from "./ImportSheet";
 import { TunnelEditorPane } from "./TunnelEditorPane";
 
 export type ConfigKind = "sni" | "tunnel";
@@ -24,7 +25,6 @@ export function ConfigTab({
   onSaveProfile,
   onDeleteProfile,
   onSelectProfile,
-  onImport,
   onSaveTunnel,
   onDeleteTunnel,
   onSelectTunnel,
@@ -38,7 +38,6 @@ export function ConfigTab({
   onSaveProfile: (p: Profile) => void;
   onDeleteProfile: (id: string) => void;
   onSelectProfile: (id: string) => void;
-  onImport: () => void;
   onSaveTunnel: (t: TunnelProfile) => void;
   onDeleteTunnel: (id: string) => void;
   onSelectTunnel: (id: string) => void;
@@ -49,6 +48,7 @@ export function ConfigTab({
   const [selectedTunnel, setSelectedTunnel] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [creatingTunnel, setCreatingTunnel] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // Default the selection to whatever is active, and follow the store when
   // the selected profile is deleted out from under the pane.
@@ -132,7 +132,7 @@ export function ConfigTab({
           <Button
             variant="secondary"
             size="sm"
-            onClick={onImport}
+            onClick={() => setImporting(true)}
             disabled={kind !== "tunnel"}
             title={
               kind === "tunnel"
@@ -205,6 +205,16 @@ export function ConfigTab({
           </>
         )}
       </div>
+
+      <ImportSheet
+        open={importing}
+        onOpenChange={setImporting}
+        onImported={(t) => {
+          setKind("tunnel");
+          setCreatingTunnel(false);
+          onSaveTunnel(t);
+        }}
+      />
     </div>
   );
 }

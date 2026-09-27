@@ -376,8 +376,6 @@ export default function App() {
             }}
             onDeleteProfile={(id) => void remove(id)}
             onSelectProfile={(id) => void select(id)}
-            // Task 13 replaces this with the designed import sheet.
-            onImport={() => setTunnelSheetOpen(true)}
             onSaveTunnel={(t) => {
               setSavingProfile(true);
               void saveTunnel(t).finally(() => setSavingProfile(false));

@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ModalSheet } from "@/components/ui/ModalSheet";
 import { Icon } from "@/components/ui/Icon";
-import { loadPrefs, type Prefs } from "@/lib/prefs";
+import { loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 import type { CoreStatus } from "@/lib/readouts";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { TunnelSheet } from "@/components/TunnelSheet";
@@ -67,10 +67,7 @@ export default function App() {
   const [core, setCore] = useState<CoreStatus | null>(null);
   const coreInstalled = core?.installed ?? false;
   const [tab, setTab] = useState<Tab>("telemetry");
-  // Read once, on mount. `setPrefs` gets its consumer when the Preferences
-  // sheet lands; until then a stored preference is still honoured, it just
-  // cannot be changed from inside the window.
-  const [prefs] = useState<Prefs>(() => loadPrefs());
+  const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const [tunnelSheetOpen, setTunnelSheetOpen] = useState(false);
   const [confirmStopLink, setConfirmStopLink] = useState(false);
   const [coreSetupOpen, setCoreSetupOpen] = useState(false);
@@ -88,12 +85,13 @@ export default function App() {
     void invoke<CoreStatus>("core_status").then(setCore);
   }, []);
 
-  // Two of the five preferences live in the privileged half as well as in
-  // browser storage, so a stored choice has to be pushed back on launch -
-  // otherwise it only holds for the session in which it was made.
+  // The tray badge lives in the privileged half as well as in browser
+  // storage, so a stored choice has to be pushed back on launch - otherwise
+  // it only holds for the session in which it was made. `verbose` is not
+  // pushed here: ActivitySection gates it on the log section being open, so
+  // that per-packet logging never runs with nothing reading it.
   useEffect(() => {
     void invoke("set_tray_colorize", { on: prefs.colorizeTray });
-    void invoke("set_verbose", { on: prefs.verbose });
     // Mount only: every later change goes through Preferences, which calls
     // these itself.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -255,6 +253,14 @@ export default function App() {
     }
   }
 
+  /** Every preference change goes through here, so nothing can be changed
+   *  in the interface without also being written down. */
+  function updatePrefs(patch: Partial<Prefs>) {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    savePrefs(next);
+  }
+
   /**
    * The close glyph. With "Close Window Minimizes to Menu Bar" on it hides
    * to the tray, which is what the tray exists for; with it off it asks,
@@ -312,6 +318,8 @@ export default function App() {
             blockedReason={blockedReason}
             activityOpen={activityOpen}
             onActivityOpenChange={setActivityOpen}
+            verbose={prefs.verbose}
+            onVerboseChange={(on) => updatePrefs({ verbose: on })}
             onLinkToggle={(on) => {
               if (on) return void start();
               // Stopping the link takes the tunnel with it, so once the

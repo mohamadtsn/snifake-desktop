@@ -68,6 +68,8 @@ export function TelemetryTab({
   blockedReason,
   activityOpen,
   onActivityOpenChange,
+  verbose,
+  onVerboseChange,
   onLinkToggle,
   onTunnelToggle,
   onSelectProfile,
@@ -87,6 +89,8 @@ export function TelemetryTab({
   blockedReason: string | null;
   activityOpen: boolean;
   onActivityOpenChange: (open: boolean) => void;
+  verbose: boolean;
+  onVerboseChange: (on: boolean) => void;
   onLinkToggle: (on: boolean) => void;
   onTunnelToggle: (on: boolean) => void;
   onSelectProfile: (id: string) => void;
@@ -184,7 +188,12 @@ export function TelemetryTab({
         onModeChange={onModeChange}
       />
 
-      <ActivitySection open={activityOpen} onOpenChange={onActivityOpenChange} />
+      <ActivitySection
+        open={activityOpen}
+        onOpenChange={onActivityOpenChange}
+        verbose={verbose}
+        onVerboseChange={onVerboseChange}
+      />
     </div>
   );
 }

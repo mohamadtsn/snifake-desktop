@@ -13,6 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AboutTab } from "@/components/about/AboutTab";
+import { PreferencesSheet } from "@/components/prefs/PreferencesSheet";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ConfigTab } from "@/components/config/ConfigTab";
@@ -74,6 +75,7 @@ export default function App() {
   const [coreSetupOpen, setCoreSetupOpen] = useState(false);
   const [savingRouting, setSavingRouting] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
 
   // The tray listeners are registered once on mount, so the handlers they
   // close over must read live state through refs, not stale captures.
@@ -303,7 +305,7 @@ export default function App() {
         state={state}
         core={core}
         onClose={closeWindow}
-        onPreferences={() => setAboutOpen(true)}
+        onPreferences={() => setPrefsOpen(true)}
       />
 
       <TabRegion tab={tab}>
@@ -420,6 +422,30 @@ export default function App() {
       </TabRegion>
 
       <StatusFooter store={store} closeToTray={prefs.closeToTray} />
+
+      <PreferencesSheet
+        open={prefsOpen}
+        onOpenChange={setPrefsOpen}
+        prefs={prefs}
+        onPrefsChange={updatePrefs}
+        core={core}
+        onCoreChanged={() => void invoke<CoreStatus>("core_status").then(setCore)}
+        tunnels={tunnels}
+        savingNetwork={savingRouting}
+        onSaveNetwork={(patch) => {
+          if (!tunnels) return;
+          setSavingRouting(true);
+          void invoke<TunnelStore>("save_routing", {
+            mode: tunnels.mode,
+            proxy_host: patch.proxy_host,
+            proxy_port: patch.proxy_port,
+            routing: tunnels.routing,
+          })
+            .then(setTunnels)
+            .catch((e) => setErrorDialog(String(e)))
+            .finally(() => setSavingRouting(false));
+        }}
+      />
 
       <CoreSetupModal
         open={coreSetupOpen}

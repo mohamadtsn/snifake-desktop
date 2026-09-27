@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { Icon } from "./Icon";
 
@@ -41,16 +41,20 @@ export function ModalSheet({
   children: ReactNode;
   width?: number;
 }) {
+  const popupRef = useRef<HTMLDivElement>(null);
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[14px] transition-opacity duration-(--dur-panel) ease-(--ease-out) data-ending-style:opacity-0 data-starting-style:opacity-0" />
         <Dialog.Popup
-          // Focus the sheet itself, not its first tab. Base UI otherwise
-          // lands on whatever is focusable first, which puts a focus ring on
-          // a segment nobody asked to change and reads as "you are about to
-          // switch tabs" the moment the sheet opens.
-          initialFocus
+          ref={popupRef}
+          // Focus the sheet itself, not the first control in it. Base UI
+          // otherwise lands on whatever is focusable first, which puts a
+          // ring on the close button or on a tab nobody asked to change,
+          // and reads as "you are about to press this" the moment the sheet
+          // opens. Screen readers still get the title, because the popup is
+          // labelled by it.
+          initialFocus={popupRef}
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-88px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-hairline-strong bg-surface shadow-modal outline-none transition-[opacity,transform,translate] duration-(--dur-panel) ease-(--ease-out) data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0"
           style={{ width }}
         >

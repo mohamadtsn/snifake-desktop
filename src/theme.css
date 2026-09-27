@@ -266,3 +266,31 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* The indeterminate progress band. A transform-only loop, and the only
+   animation in the application that repeats - because the thing it stands
+   for, a download with no content-length, also has no end in sight. */
+@keyframes meter-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.meter-sweep {
+  animation: meter-sweep 1.15s var(--ease-in-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Not "slower": stationary. A band that slides is the one thing reduced
+     motion is asking not to see, so it becomes a dim full-width fill that
+     still says "working". */
+  .meter-sweep {
+    animation: none;
+    inset-inline: 0;
+    width: 100%;
+    opacity: 0.35;
+  }
+}

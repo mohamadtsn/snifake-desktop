@@ -1,13 +1,13 @@
 import { type Progress } from "@/lib/updater";
 
 /**
- * Real bytes, never a fake sweep to fill the wait — except when the server
+ * Real bytes, never a fake sweep to fill the wait - except when the server
  * sends no content-length, and then the bar says exactly that by refusing to
- * claim a position.
+ * claim a position it does not have.
  *
- * The one progress bar in the application (`DESIGN.md §4.6`). It lives here
- * rather than inside `App.tsx` because the core download needs it too, and a
- * second bar would be a second visual language for the same idea.
+ * The one progress bar in the application (`DESIGN.md` 4.6). It is shared by
+ * the updater and by the core download, because a second bar would be a
+ * second visual language for the same idea.
  */
 export function UpdateMeter({ progress }: { progress: Progress | null }) {
   const total = progress?.total ?? null;
@@ -15,25 +15,28 @@ export function UpdateMeter({ progress }: { progress: Progress | null }) {
   const fraction = total ? Math.min(received / total, 1) : 0;
 
   return (
-    <div className="mt-3">
+    <div className="w-full">
       <div
-        className="meter"
-        data-indeterminate={total === null ? "" : undefined}
+        className="relative h-[6px] w-full overflow-hidden rounded-full bg-inset shadow-sunken"
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={total ?? undefined}
         aria-valuenow={total ? received : undefined}
       >
-        {/* No inline transform while indeterminate: it would win over the
-            sweep's own scaleX and leave a bar of zero width. */}
-        <div
-          className="meter-fill"
-          style={total ? { transform: `scaleX(${fraction})` } : undefined}
-        />
+        {total === null ? (
+          /* Indeterminate: a band that travels, so the wait is visibly
+             alive without the bar claiming a position. */
+          <div className="meter-sweep absolute inset-y-0 w-1/3 rounded-full bg-accent" />
+        ) : (
+          <div
+            className="h-full origin-left rounded-full bg-accent transition-transform duration-(--dur-fast) ease-(--ease-out)"
+            style={{ transform: `scaleX(${fraction})` }}
+          />
+        )}
       </div>
-      <p className="value-face text-dim pick mt-1.5 text-[10.5px] leading-none" dir="ltr">
+      <p className="mono pick mt-[6px] text-note leading-none text-t2" dir="ltr">
         {total === null
-          ? `${mib(received)} MB`
+          ? `${mib(received)} MB, size unknown`
           : `${mib(received)} / ${mib(total)} MB · ${Math.round(fraction * 100)}%`}
       </p>
     </div>

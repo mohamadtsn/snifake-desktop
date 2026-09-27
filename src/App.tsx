@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { CoreSetupModal } from "@/components/core/CoreSetupModal";
 import { SocketsTab } from "@/components/sockets/SocketsTab";
 import { TelemetryTab } from "@/components/telemetry/TelemetryTab";
 import { TitleBar } from "@/components/shell/TitleBar";
@@ -19,13 +20,11 @@ import { StatusFooter } from "@/components/shell/StatusFooter";
 import { TabRegion, type Tab } from "@/components/shell/TabRegion";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { ModalSheet } from "@/components/ui/ModalSheet";
 import { Icon } from "@/components/ui/Icon";
 import { loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 import type { CoreStatus } from "@/lib/readouts";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { TunnelSheet } from "@/components/TunnelSheet";
-import { CoreSetup } from "@/components/CoreSetup";
 import { AboutDialog } from "@/components/AboutDialog";
 import {
   Profile,
@@ -426,31 +425,11 @@ export default function App() {
 
       <StatusFooter store={store} closeToTray={prefs.closeToTray} />
 
-      {/* Interim: the Console's core installer, in the new modal frame.
-          Task 10 replaces the body with the designed two-column screen. */}
-      <ModalSheet
+      <CoreSetupModal
         open={coreSetupOpen}
         onOpenChange={setCoreSetupOpen}
-        icon="memory"
-        title="Set up the tunnel core"
-        subtitle={core?.version ? `sing-box v${core.version}` : undefined}
-        width={560}
-        footer={
-          <>
-            <span className="text-note text-t2">The core is never bundled: it is GPL-3.0.</span>
-            <Button variant="secondary" onClick={() => setCoreSetupOpen(false)}>
-              Close
-            </Button>
-          </>
-        }
-      >
-        <CoreSetup
-          onInstalled={() => {
-            setCoreSetupOpen(false);
-            void invoke<CoreStatus>("core_status").then(setCore);
-          }}
-        />
-      </ModalSheet>
+        onInstalled={() => void invoke<CoreStatus>("core_status").then(setCore)}
+      />
 
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
 

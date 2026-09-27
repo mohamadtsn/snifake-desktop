@@ -262,7 +262,8 @@ business, not `theme.css`'s.
 | `GroupedList` | the inset list with hairline rows, and `GroupedList.Row` |
 | `Badge` | mono uppercase tag in the state colours |
 | `StatusDot` | 6/8px pip, with its glow |
-| `FieldRow` | label + input + right-aligned hint: the editors' unit |
+| `FieldRow` / `TextField` | label + input + right-aligned hint, and the undo stack the editors need |
+| `Button` | primary, secondary, ghost, danger; the press state is a 1% scale |
 | `ModalSheet` | Base UI `Dialog` in this language |
 | `ConfirmDialog` | Base UI `AlertDialog` in this language |
 
@@ -388,6 +389,23 @@ the reason is in the row.
 ---
 
 ## 8. Decision log
+
+**2026-09-26 — The segmented control has a thumb that moves.** It had a
+background that appeared on one segment and disappeared from another, which
+is a different thing: a segmented control's whole point is that the
+selection has a *position*, and you can see it change. One `layoutId` per
+instance, on the `THUMB_SPRING`.
+
+**2026-09-26 — The modal scale never animated, for the whole redesign.**
+Tailwind v4 emits `scale-[0.98]` as the CSS `scale` property, not as part of
+`transform`, and the popups' transition list named `opacity, transform,
+translate`. Every sheet and dialog faded in at full size and the scale
+snapped. Found by grepping the built stylesheet during the motion audit,
+which is the only place the two halves of that bug are visible at once.
+
+**2026-09-26 — A tab change cross-fades the incoming panel only.** Waiting
+for the outgoing one to leave first would double the latency of the most
+pressed control in the window. 140ms, opacity only.
 
 **2026-09-26 — Console → Workbench.** The shipped interface was one 420×504
 column: dense, with the tunnel's second stage behind a selector and no panel

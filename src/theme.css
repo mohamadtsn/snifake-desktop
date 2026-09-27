@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./theme-legacy.css";
 
 /* Inter, JetBrains Mono and Material Symbols are imported from
    `main.tsx`, not here: see the comment there. */
@@ -125,12 +124,6 @@
   --dur-panel: 240ms;
 }
 
-/* Unlayered, and deliberately so. `theme-legacy.css` sets `body` to the
-   Console's mono face in an unlayered rule of its own, and unlayered CSS
-   outranks anything in `@layer base` no matter what order it is written in.
-   Declared here, after that import, it is the later of two equals and wins.
-   The visible cost until Task 17 removes the legacy file is that the
-   components still being migrated render in Inter rather than Geist Mono. */
 html,
 body,
 #root {
@@ -139,12 +132,12 @@ body,
 
 body {
   margin: 0;
+  letter-spacing: normal;
   background: var(--color-canvas);
   color: var(--color-t1);
   font-family: var(--font-ui);
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
-  letter-spacing: normal;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   /* Every readout in this interface is a number or an address. */

@@ -31,7 +31,19 @@ export const THUMB_SPRING = {
 } as const;
 
 /**
- * Tab changes and the modal sheet's arrival. A tween, not a spring: these
+ * A tab change. Opacity only, and short: this is the most-pressed control in
+ * the window, and anything a user hits a hundred times a day must not make
+ * them wait for it. The outgoing panel is not animated out at all - waiting
+ * for an exit before the entrance would double the latency of every press.
+ */
+export const TAB_TWEEN = {
+  type: "tween",
+  duration: 0.14,
+  ease: [0.16, 1, 0.3, 1],
+} as const;
+
+/**
+ * The modal sheet's arrival. A tween, not a spring: these
  * are cross-fades with a small scale, and a spring's overshoot on opacity
  * reads as a flicker.
  */

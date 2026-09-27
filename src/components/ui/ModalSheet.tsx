@@ -55,7 +55,7 @@ export function ModalSheet({
           // opens. Screen readers still get the title, because the popup is
           // labelled by it.
           initialFocus={popupRef}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-88px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-hairline-strong bg-surface shadow-modal outline-none transition-[opacity,transform,translate] duration-(--dur-panel) ease-(--ease-out) data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0"
+          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-88px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-hairline-strong bg-surface shadow-modal outline-none transition-[opacity,scale] duration-(--dur-panel) ease-(--ease-out) data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0"
           style={{ width }}
         >
           <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline bg-raised-dim/70 px-5 pt-3 pb-[13px]">

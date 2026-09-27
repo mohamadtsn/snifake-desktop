@@ -51,7 +51,7 @@ export function ConfirmDialog({
     <AlertDialog.Root open={open} onOpenChange={onOpenChange}>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[14px] transition-opacity duration-(--dur-panel) ease-(--ease-out) data-ending-style:opacity-0 data-starting-style:opacity-0" />
-        <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 flex w-[420px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-hairline-strong bg-card shadow-modal outline-none transition-[opacity,transform,translate] duration-(--dur-panel) ease-(--ease-out) data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+        <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 flex w-[420px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-hairline-strong bg-card shadow-modal outline-none transition-[opacity,scale] duration-(--dur-panel) ease-(--ease-out) data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
           <div className="flex flex-col gap-3 px-6 pt-5 pb-4">
             <div className="flex items-center gap-3">
               <span

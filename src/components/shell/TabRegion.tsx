@@ -1,4 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import { TAB_TWEEN } from "@/lib/motion";
 
 export type Tab = "telemetry" | "sockets" | "config" | "about";
 
@@ -26,6 +28,7 @@ export function TabRegion({ tab, children }: { tab: Tab; children: ReactNode }) 
   const ref = useRef<HTMLElement>(null);
   const tops = useRef<Partial<Record<Tab, number>>>({});
   const previous = useRef<Tab>(tab);
+  const reduce = useReducedMotion();
 
   useEffect(() => {
     const node = ref.current;
@@ -38,14 +41,18 @@ export function TabRegion({ tab, children }: { tab: Tab; children: ReactNode }) 
   }, [tab]);
 
   return (
-    <main
-      ref={ref}
-      // Keyed on the tab so React replaces the subtree rather than trying to
-      // reconcile four unrelated panels into each other.
-      key={tab}
-      className="tab-scroll min-h-0 flex-1"
-    >
-      {children}
+    <main ref={ref} className="tab-scroll min-h-0 flex-1">
+      {/* Keyed on the tab so React replaces the subtree rather than trying
+          to reconcile four unrelated panels into each other - and so the
+          entrance runs on every change. */}
+      <motion.div
+        key={tab}
+        initial={reduce ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={TAB_TWEEN}
+      >
+        {children}
+      </motion.div>
     </main>
   );
 }

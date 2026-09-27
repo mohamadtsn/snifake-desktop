@@ -14,16 +14,11 @@ import { TitleBar } from "@/components/shell/TitleBar";
 import { StatusFooter } from "@/components/shell/StatusFooter";
 import { TabRegion, type Tab } from "@/components/shell/TabRegion";
 import { loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
-import { ProfileSheet } from "@/components/ProfileSheet";
-import { TunnelSheet } from "@/components/TunnelSheet";
-import { AboutDialog } from "@/components/AboutDialog";
 import {
   Profile,
   ProxyState,
   Store,
   activeProfile,
-  type Routing,
-  type TunnelMode,
   type TunnelProfile,
   type TunnelState,
   type TunnelStore,
@@ -42,9 +37,7 @@ export default function App() {
   const [runningId, setRunningId] = useState<string | null>(null);
   /** When the engine came up, for the uptime readout. */
   const [since, setSince] = useState<number | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  const [aboutOpen, setAboutOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [errorDialog, setErrorDialog] = useState<string | null>(null);
@@ -61,7 +54,6 @@ export default function App() {
   const coreInstalled = core?.installed ?? false;
   const [tab, setTab] = useState<Tab>("telemetry");
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
-  const [tunnelSheetOpen, setTunnelSheetOpen] = useState(false);
   const [confirmStopLink, setConfirmStopLink] = useState(false);
   const [coreSetupOpen, setCoreSetupOpen] = useState(false);
   const [savingRouting, setSavingRouting] = useState(false);
@@ -443,52 +435,6 @@ export default function App() {
         onOpenChange={setCoreSetupOpen}
         onInstalled={() => void invoke<CoreStatus>("core_status").then(setCore)}
       />
-
-      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} onUpdateFound={setUpdate} />
-
-      {store && (
-      <ProfileSheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        store={store}
-        runningId={runningId}
-        onSelect={(id) => void select(id)}
-        onSave={(p) => void save(p)}
-        onDelete={(id) => void remove(id)}
-      />
-      )}
-
-      {tunnels && profile && (
-        <TunnelSheet
-          open={tunnelSheetOpen}
-          onOpenChange={setTunnelSheetOpen}
-          store={tunnels}
-          listen={{ host: profile.LISTEN_HOST, port: profile.LISTEN_PORT }}
-          connectIp={profile.CONNECT_IP}
-          runningId={tunnelRunning ? tunnels.active_id : null}
-          saving={false}
-          onSelect={(id) =>
-            void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
-          }
-          onSave={(t) => void saveTunnel(t)}
-          onDelete={(id) =>
-            void invoke<TunnelStore>("delete_tunnel", { id }).then(setTunnels)
-          }
-          onSaveRouting={(patch: {
-            mode: TunnelMode;
-            proxy_host: string;
-            proxy_port: number;
-            routing: Routing;
-          }) =>
-            void invoke<TunnelStore>("save_routing", patch)
-              .then(setTunnels)
-              .catch((e) => setErrorDialog(String(e)))
-          }
-          onAdoptAddress={(ip, port) =>
-            void save({ ...profile, CONNECT_IP: ip, CONNECT_PORT: port })
-          }
-        />
-      )}
 
       {/* One inset fact table, and every row in it is something the
           application already knows. The mockup's "2 Active Links" counter is

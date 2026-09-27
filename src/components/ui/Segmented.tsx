@@ -1,5 +1,8 @@
+import { useId } from "react";
 import { Toggle as BaseToggle } from "@base-ui/react/toggle";
 import { ToggleGroup } from "@base-ui/react/toggle-group";
+import { motion, useReducedMotion } from "motion/react";
+import { THUMB_SPRING } from "@/lib/motion";
 
 const SIZES = {
   md: "h-[26px] px-[12px] text-body",
@@ -49,6 +52,10 @@ export function Segmented<T extends string>({
   stretch?: boolean;
 }) {
   const itemRole = role === "tablist" ? "tab" : "radio";
+  const reduce = useReducedMotion();
+  // One id per instance: several segmented controls are on screen at once,
+  // and a shared layoutId would make a thumb fly between two of them.
+  const thumbId = useId();
   return (
     <ToggleGroup
       value={[value]}
@@ -78,18 +85,29 @@ export function Segmented<T extends string>({
             aria-selected={role === "tablist" ? active : undefined}
             className={`${
               stretch ? "flex flex-1 basis-0" : "inline-flex"
-            } items-center justify-center gap-[6px] rounded-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-(--dur-fast) ease-(--ease-out) ${
+            } relative items-center justify-center gap-[6px] rounded-sm font-medium whitespace-nowrap transition-colors duration-(--dur-fast) ease-(--ease-out) ${
               SIZES[size]
-            } ${
-              active
-                ? "bg-raised text-t1 shadow-lift shadow-specular-strong"
-                : "text-t2 hover:text-t1"
-            } disabled:cursor-default disabled:text-t4 disabled:hover:text-t4`}
+            } ${active ? "text-t1" : "text-t2 hover:text-t1"} disabled:cursor-default disabled:text-t4 disabled:hover:text-t4`}
           >
-            {option.label}
+            {/* The thumb is one element that moves between segments rather
+                than a background that appears on one and disappears from
+                another. It is the whole point of a segmented control: the
+                selection has a position, and you can see it change. */}
+            {active ? (
+              <motion.span
+                aria-hidden
+                layoutId={reduce ? undefined : thumbId}
+                transition={THUMB_SPRING}
+                // Not `-z-10`: the button has no background of its own, so a
+                // negative index puts the thumb behind the track and it
+                // disappears. The label is lifted instead.
+                className="absolute inset-0 rounded-sm bg-raised shadow-lift shadow-specular-strong"
+              />
+            ) : null}
+            <span className="relative">{option.label}</span>
             {option.badge !== undefined && option.badge !== "" ? (
               <span
-                className={`mono text-mini ${
+                className={`relative mono text-mini ${
                   option.badgeTone === "bad"
                     ? "text-bad"
                     : option.badgeTone === "warn"

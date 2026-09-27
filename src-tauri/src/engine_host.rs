@@ -99,6 +99,8 @@ impl EngineProcess {
 #[derive(Debug, PartialEq)]
 pub enum Applied {
     Nothing,
+    /// Cumulative bytes, up then down.
+    Traffic(u64, u64),
     Link(String),
     Tunnel(String, Option<String>),
 }
@@ -130,11 +132,10 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
             }
             Applied::Tunnel(state.clone(), detail.clone())
         }
-        // Task 6 gives this its own `Applied` arm and a Tauri event. Until
-        // then it is accepted and dropped: traffic is not a log line, and
-        // pushing it into the buffer would be the log-per-byte cost
-        // CLAUDE.md records.
-        Event::Traffic { .. } => Applied::Nothing,
+        // Deliberately not pushed to the log buffer: the ring is 500 lines
+        // and one line a second would evict the user's whole log in eight
+        // minutes. This is instrument data, not a log.
+        Event::Traffic { up, down } => Applied::Traffic(*up, *down),
     }
 }
 
@@ -375,6 +376,9 @@ impl EngineHost {
                             // tray in this phase: the badge means the SNI
                             // stage, and two meanings on one dot is worse
                             // than one meaning.
+                            Applied::Traffic(up, down) => {
+                                let _ = handle.emit("traffic", (up, down));
+                            }
                             Applied::Tunnel(state, detail) => {
                                 if state == "fault" {
                                     // The tunnel is gone; the proxy pointing
@@ -550,4 +554,14 @@ mod tests {
         assert_eq!(logs.snapshot(), vec!["hello".to_string()]);
     }
 
+    #[test]
+    fn a_traffic_event_is_reported_without_touching_the_log_buffer() {
+        // The log ring is 500 lines. One traffic line a second would evict a
+        // user's whole log in eight minutes, which is the opposite of what the
+        // Activity panel is for.
+        let logs = Arc::new(LogBuffer::new());
+        let ev = Event::Traffic { up: 10, down: 20 };
+        assert_eq!(apply_event(&ev, &logs), Applied::Traffic(10, 20));
+        assert_eq!(logs.snapshot().len(), 0, "traffic must not enter the log ring");
+    }
 }

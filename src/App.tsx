@@ -2,16 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { AboutTab } from "@/components/about/AboutTab";
 import { PreferencesSheet } from "@/components/prefs/PreferencesSheet";
 import { Badge } from "@/components/ui/Badge";
@@ -24,7 +14,6 @@ import { TitleBar } from "@/components/shell/TitleBar";
 import { StatusFooter } from "@/components/shell/StatusFooter";
 import { TabRegion, type Tab } from "@/components/shell/TabRegion";
 import { loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
-import type { CoreStatus } from "@/lib/readouts";
 import { ProfileSheet } from "@/components/ProfileSheet";
 import { TunnelSheet } from "@/components/TunnelSheet";
 import { AboutDialog } from "@/components/AboutDialog";
@@ -38,9 +27,11 @@ import {
   type TunnelProfile,
   type TunnelState,
   type TunnelStore,
+  TUNNEL_STATE_TEXT,
 } from "@/types";
 import { canStartTunnel, nextTunnelState } from "@/lib/tunnelMachine";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
+import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
 import { UpdateMeter } from "@/components/UpdateMeter";
 import type { Update } from "@tauri-apps/plugin-updater";
 
@@ -499,55 +490,92 @@ export default function App() {
         />
       )}
 
-      <AlertDialog open={exitDialogOpen} onOpenChange={setExitDialogOpen}>
-        <AlertDialogContent className="prose-face">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Quit Snifake?</AlertDialogTitle>
-            <AlertDialogDescription>The proxy will be stopped.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmExit}>Quit</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* One inset fact table, and every row in it is something the
+          application already knows. The mockup's "2 Active Links" counter is
+          not: there is no connection count anywhere in the engine. */}
+      <ConfirmDialog
+        open={exitDialogOpen}
+        onOpenChange={setExitDialogOpen}
+        tone="danger"
+        icon="power_settings_new"
+        title="Quit Snifake?"
+        badge={
+          tunnelRunning ? (
+            <Badge tone="warn">tunnel active</Badge>
+          ) : state === "running" ? (
+            <Badge tone="ok">link active</Badge>
+          ) : undefined
+        }
+        description={
+          state === "running" || tunnelRunning
+            ? "Quitting stops both stages and closes the elevated engine. Closing the window instead leaves everything running in the tray."
+            : "Nothing is running. Quitting closes the window and the tray icon."
+        }
+        details={
+          <dl className="flex flex-col gap-[6px] text-note">
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-t3">SNI link</dt>
+              <dd className="mono min-w-0 truncate text-t1">
+                {profile ? `${middleTruncate(profile.name, 22)} · ${listenAddress(profile)}` : "none"}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-t3">Tunnel</dt>
+              <dd className="mono min-w-0 truncate text-t1">
+                {TUNNEL_STATE_TEXT[tunnelState]}
+                {tunnels ? ` · ${tunnels.mode.replace("_", " ")}` : ""}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3 border-t border-hairline pt-[6px]">
+              <dt className="text-t3">Traffic impact</dt>
+              <dd className="text-bad">
+                {state === "running" || tunnelRunning
+                  ? "Live sockets are terminated"
+                  : "Nothing is carrying traffic"}
+              </dd>
+            </div>
+          </dl>
+        }
+        cancelLabel="Cancel"
+        confirmLabel="Quit Snifake"
+        onConfirm={() => void confirmExit()}
+      />
 
-      <AlertDialog open={confirmStopLink} onOpenChange={() => setConfirmStopLink(false)}>
-        <AlertDialogContent className="prose-face">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Stop the link?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The tunnel runs through it and will stop too.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmStopLink(false);
-                void stopBoth();
-              }}
-            >
-              Stop both
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmStopLink}
+        onOpenChange={() => setConfirmStopLink(false)}
+        tone="neutral"
+        icon="link_off"
+        title="Stop the SNI link?"
+        badge={<Badge tone="warn">tunnel runs through it</Badge>}
+        description="The tunnel dials this link's listener, so stopping stage one takes stage two down with it. Both will stop."
+        cancelLabel="Keep running"
+        confirmLabel="Stop both"
+        onConfirm={() => {
+          setConfirmStopLink(false);
+          void stopBoth();
+        }}
+      />
 
-      <AlertDialog open={confirmDelete !== null} onOpenChange={() => setConfirmDelete(null)}>
-        <AlertDialogContent className="prose-face">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete the running profile?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The proxy will be stopped before the profile is removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmRemove}>Stop and delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={confirmDelete !== null}
+        onOpenChange={() => setConfirmDelete(null)}
+        tone="danger"
+        icon="delete"
+        title="Delete the profile that is running?"
+        description="The engine is carrying traffic on this profile. It will be stopped before the profile is removed."
+        details={
+          <p className="mono text-note text-t1">
+            {(() => {
+              const target = store?.profiles.find((p) => p.id === confirmDelete);
+              return target ? `${middleTruncate(target.name, 26)} · ${listenAddress(target)}` : "";
+            })()}
+          </p>
+        }
+        cancelLabel="Cancel"
+        confirmLabel="Stop and delete"
+        onConfirm={() => void confirmRemove()}
+      />
 
       {/* The update offer. One badge, reading `Signed`, and it is the only
           claim made about the file: the plugin verifies a minisign signature
@@ -611,21 +639,30 @@ export default function App() {
         }}
       />
 
-      <AlertDialog open={errorDialog !== null} onOpenChange={() => setErrorDialog(null)}>
-        <AlertDialogContent className="prose-face">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {errorDialog?.startsWith("Update:") ? "Update failed" : "Could not start the proxy"}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="pick font-mono text-[11px] break-all">
-              {errorDialog}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setErrorDialog(null)}>OK</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* A dialog with one answer. `ConfirmDialog` gives it the same frame
+          as the three that ask a question, and `Esc` dismisses it, which is
+          what a message you have finished reading deserves. */}
+      <ConfirmDialog
+        open={errorDialog !== null}
+        onOpenChange={() => setErrorDialog(null)}
+        tone="danger"
+        icon="error"
+        title={
+          errorDialog?.startsWith("Update:")
+            ? "The update could not be applied"
+            : errorDialog?.startsWith("Tunnel:")
+              ? "The tunnel stopped"
+              : "The SNI link could not start"
+        }
+        description="This is what the engine reported."
+        details={
+          <p className="mono pick text-note leading-[16.5px] break-all text-t1">{errorDialog}</p>
+        }
+        cancelLabel={null}
+        confirmLabel="Close"
+        onConfirm={() => setErrorDialog(null)}
+      />
+
     </div>
   );
 }

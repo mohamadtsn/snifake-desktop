@@ -39,7 +39,10 @@ export function ConfirmDialog({
   badge?: ReactNode;
   description: ReactNode;
   details?: ReactNode;
-  cancelLabel: string;
+  /** `null` for a message with one answer - an error the user can only
+   *  acknowledge. Two buttons that do the same thing is a question that is
+   *  not being asked. */
+  cancelLabel: string | null;
   confirmLabel: string;
   onConfirm: () => void;
 }) {
@@ -83,7 +86,9 @@ export function ConfirmDialog({
             {/* Cancel first in the DOM, so it is the first thing Tab reaches
                 and the first thing a screen reader reads. The destructive
                 answer is never the easy one. */}
-            <AlertDialog.Close render={<Button variant="secondary">{cancelLabel}</Button>} />
+            {cancelLabel === null ? null : (
+              <AlertDialog.Close render={<Button variant="secondary">{cancelLabel}</Button>} />
+            )}
             <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
               {confirmLabel}
             </Button>

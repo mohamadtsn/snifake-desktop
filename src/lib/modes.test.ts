@@ -36,4 +36,22 @@ describe("interception modes", () => {
     expect(MODES.manual.guarantee).toMatch(/none/i);
     expect(MODES.system_proxy.guarantee).toMatch(/none/i);
   });
+
+  it("says that system proxy actually sets the OS setting", () => {
+    // It did not, for the whole of the previous release: `inbounds()`
+    // produced the same config as Manual and nothing was ever written.
+    expect(MODES.system_proxy.does).toMatch(/sets it as the system proxy/i);
+  });
+
+  it("still refuses to promise that anything honours it", () => {
+    // Setting the OS proxy compels nothing. That is the fact the card has
+    // always been for, and making the mode work does not change it. The
+    // copy says "None."; the pattern accepts either word, because this
+    // pins the promise, not the wording.
+    expect(MODES.system_proxy.guarantee).toMatch(/none|nothing/i);
+  });
+
+  it("says that manual sets nothing", () => {
+    expect(MODES.manual.does).toMatch(/nothing/i);
+  });
 });

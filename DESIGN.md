@@ -443,6 +443,26 @@ Reconciliation, per surface:
 - **`--color-bad` `#ff453a`** is the one value not literally present in those
   three frames, because none of them draws a destructive control. It is iOS
   dark `systemRed`, the completion of the set the other three come from.
+
+### 7.1 A fourth family: `design/new/` (2026-09-27)
+
+Three more frames arrived after the redesign shipped, showing only the parts
+that change. **No token moved.** They are a fourth palette family, and the
+reconciliation above already settled that question; what they contributed was
+*structure*, and one measurement.
+
+| What the frames proposed | What was taken |
+|---|---|
+| Round power button with a coloured halo | **Adopted.** The stage actuator was a pill switch in the card's corner — the same weight this system gives a preference, for the one action the screen exists for. The halo takes the status badge's colour, so the two cannot disagree. |
+| Throughput bar / `DATA USED` | **Adopted, and now measured** — see §6.1. The first readout on this screen that is not a substitution. |
+| `STAGES: 2/2 SYNCHRONIZED` | **Adopted.** Derived from the two states; the one summary the new frames added that this application can make honestly. |
+| Inset separators in the safeguard list | **Adopted**, and generalised to `GroupedList` (§4.1). |
+| Rounded window frame | **Adopted**, with no outer shadow — see §8. |
+| `-58 dBm`, `12 ms`, `TLS 1.3`, `BUS: … pkts/s` | **Rejected a second time**, each for the reason in §6.1. |
+| Their palette | **Ignored**, as §7 already decided for the third family. A fourth set of greys is still noise. |
+
+Blank areas in those three frames are **not deletions**: they show only what
+changes. `StatusStrip` and `ChannelRow` were untouched by this round.
 - **text** — the plan's four alpha steps. Sockets' `#e2e2ea` / `#c1c6d7` /
   `#8b90a0` / `#414755` are white at .89 / .78 / .56 / .27: the same four-step
   ladder, independently drawn, which is the strongest evidence the ladder is

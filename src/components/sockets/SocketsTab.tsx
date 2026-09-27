@@ -24,6 +24,7 @@ export function SocketsTab({
   onSave,
   saving,
   onDirtyChange,
+  systemProxyBlocked,
 }: {
   store: TunnelStore | null;
   onSave: (patch: { mode: TunnelMode; proxy_host: string; proxy_port: number; routing: Routing }) => void;
@@ -31,6 +32,8 @@ export function SocketsTab({
   /** Reported up so the shell can guard a tab change, the close glyph and
    *  tray Exit with one decision. Must be a stable callback. */
   onDirtyChange: (dirty: boolean) => void;
+  /** `sysproxy_support()`: `null` when this desktop can be written to. */
+  systemProxyBlocked: string | null;
 }) {
   const [list, setList] = useState<ListName>("block");
   const [mode, setMode] = useState<TunnelMode>(store?.mode ?? "manual");
@@ -137,7 +140,12 @@ export function SocketsTab({
         </span>
       </header>
 
-      <ModeCards mode={mode} bound={`port ${store.proxy_port}`} onChange={setMode} />
+      <ModeCards
+        mode={mode}
+        bound={`port ${store.proxy_port}`}
+        onChange={setMode}
+        systemProxyBlocked={systemProxyBlocked}
+      />
 
       <SafeguardList
         routing={routing}

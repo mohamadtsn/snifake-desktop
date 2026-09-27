@@ -77,6 +77,9 @@ export default function App() {
   const [tunnelState, setTunnelState] = useState<TunnelState>("offline");
   const [tunnelSince, setTunnelSince] = useState<number | null>(null);
   const [core, setCore] = useState<CoreStatus | null>(null);
+  /** `sysproxy::support()`'s reason, or `null` when this desktop can have
+   *  its proxy written. Asked once: it reports what is installed. */
+  const [systemProxyBlocked, setSystemProxyBlocked] = useState<string | null>(null);
 
   // Live throughput. The engine sends cumulative totals once a second; the
   // rate is derived from two of them, and every case where it cannot be
@@ -180,6 +183,10 @@ export default function App() {
     return () => {
       void un.then((f) => f());
     };
+  }, []);
+
+  useEffect(() => {
+    void invoke<string | null>("sysproxy_support").then(setSystemProxyBlocked).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -480,6 +487,7 @@ export default function App() {
             store={tunnels}
             saving={savingRouting}
             onDirtyChange={reportSocketsDirty}
+            systemProxyBlocked={systemProxyBlocked}
             onSave={(patch) => {
               setSavingRouting(true);
               const plan = modeTransition(

@@ -15,16 +15,25 @@ import type { TunnelMode } from "@/types";
  * before the choice, is the difference between a setting and a trap.
  *
  * The guarantee lines are the mockup's own, kept verbatim.
+ *
+ * `systemProxyBlocked` is `sysproxy::support()`'s reason, in words. A
+ * desktop with neither `gsettings` nor `kwriteconfig` cannot have its proxy
+ * written, and a mode that silently does nothing is the exact failure this
+ * round of feedback reported - so it is refused on the card's face, in the
+ * same shape TUN already uses.
  */
 export function ModeCards({
   mode,
   bound,
   onChange,
+  systemProxyBlocked,
 }: {
   mode: TunnelMode;
   /** `proxy_host:proxy_port`, the address the first two modes are about. */
   bound: string;
   onChange: (mode: TunnelMode) => void;
+  /** `sysproxy_support()`: `null` when this desktop can be written to. */
+  systemProxyBlocked?: string | null;
 }) {
   return (
     <section>
@@ -45,7 +54,8 @@ export function ModeCards({
         {MODE_ORDER.map((key) => {
           const m = MODES[key];
           const selected = m.value === mode;
-          const blocked = m.blocked;
+          const blocked =
+            m.value === "system_proxy" ? (systemProxyBlocked ?? null) : m.blocked;
           return (
             <Card
               key={m.value}
@@ -65,7 +75,7 @@ export function ModeCards({
                   <span className="flex items-center justify-between gap-2">
                     <Icon name={m.icon} size={16} className={selected ? "text-ok" : "text-t3"} />
                     {blocked ? (
-                      <Badge tone="warn">not yet</Badge>
+                      <Badge tone="warn">{m.value === "tun" ? "not yet" : "unsupported"}</Badge>
                     ) : selected ? (
                       <span className="flex items-center gap-[5px]">
                         <StatusDot tone="ok" size={6} glow />

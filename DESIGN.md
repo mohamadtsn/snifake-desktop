@@ -241,9 +241,17 @@ refuses to start, by `CoreSetupModal`, and by Preferences → Core with the
 real path and the real digest. `coreLabel()` went with it; the pill was its
 only consumer.
 
-**The wordmark is gone too**, replaced by the application icon from
-`public/icon.png` — the same asset that feeds the favicon. The name is
-already on the window, in the tray, and on About.
+**The wordmark is gone too**, replaced by the application icon at 30px — just
+under the 34px tab bar, so it reads as the window's identity rather than as a
+chip the size of the version label beside it. The name is already on the
+window, in the tray, and on About.
+
+The header, About and the favicon import the mark from `src-tauri/icons/`,
+the directory the bundle's icons are generated into from `icon.svg`. There is
+no copy under `public/`: there was one, the redraw in 58be5fb regenerated
+`src-tauri/icons/` and not it, and the interface went on showing the retired
+globe beside a green window icon. About shows the mark at 88px on its own
+plate, without the inset box the globe used to sit in.
 
 Each tab is its own scroll container. Sockets and both Config tabs overflow at
 760px **by design** — the mockups are clipped there and the clipped content is

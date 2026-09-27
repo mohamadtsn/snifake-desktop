@@ -7,6 +7,7 @@ import { isMac } from "@/lib/platform";
 import { STATE_TEXT, type ProxyState } from "@/types";
 import { TABS, type Tab } from "./TabRegion";
 import { WindowControls } from "./WindowControls";
+import appIcon from "../../../src-tauri/icons/128x128@2x.png";
 
 const TONE: Record<ProxyState, "off" | "ok" | "warn" | "bad"> = {
   stopped: "off",
@@ -39,9 +40,13 @@ const TEXT: Record<ProxyState, string> = {
  * problem instead of balancing it, and the side clusters get a max-width so
  * they can never reach the tabs.
  *
- * The identity is the application icon rather than the word "Snifake", from
- * the same `public/icon.png` that feeds the favicon - one asset, and the
- * name is already on the window and in the tray. The core pill that used to
+ * The identity is the application icon rather than the word "Snifake",
+ * imported from `src-tauri/icons/` - the directory the bundle's icons are
+ * generated into - rather than kept as a copy under `public/`. A copy is how
+ * the header went on showing the old globe after the mark was redrawn. 30px,
+ * just under the 34px tab bar, so it reads as the window's identity rather
+ * than as one more chip beside the version. The name is already on the
+ * window and in the tray. The core pill that used to
  * sit on the right is gone: a missing core is stated by the tunnel actuator
  * that refuses to start, by `CoreSetupModal`, and by Preferences → Core with
  * the real path and digest. A pill that says `core v1.13.21` when everything
@@ -75,11 +80,11 @@ export function TitleBar({
       <div data-tauri-drag-region className="flex min-w-0 max-w-[31%] items-center gap-2">
         {mac ? <WindowControls mac onClose={onClose} /> : null}
         <img
-          src="/icon.png"
+          src={appIcon}
           alt=""
           aria-hidden
           data-tauri-drag-region
-          className="size-[18px] shrink-0 rounded-[4px]"
+          className="size-[30px] shrink-0"
         />
         {version ? (
           <span className="mono shrink-0 rounded-xs border border-hairline bg-raised px-[6px] py-[2px] text-mini text-t2">

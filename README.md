@@ -80,9 +80,12 @@ Three modes, and their guarantees are stated plainly because they differ:
 | System proxy | applications that read the OS proxy setting | none — an application that ignores the setting goes direct |
 | TUN | all system traffic | full: a firewall kill switch, failing closed |
 
-Manual is available today. System proxy and TUN arrive in later releases;
-until then TUN is shown greyed rather than hidden, so the list does not change
-shape under you at upgrade time.
+Manual and System proxy are available today. System proxy sets the operating
+system's proxy while the tunnel runs (GNOME and KDE on Linux, macOS, Windows)
+and puts your previous setting back when it stops — including on the next
+launch after a crash. TUN arrives in a later release; until then it is shown
+greyed rather than hidden, so the list does not change shape under you at
+upgrade time.
 
 Routing is three lists — block, bypass, proxy — one rule per line, with typed
 prefixes (`domain:`, `suffix:`, `keyword:`, `regex:`, `ip:`, `port:`,

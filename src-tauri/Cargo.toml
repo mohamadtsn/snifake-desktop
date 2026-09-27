@@ -77,5 +77,8 @@ windows-sys = { version = "0.59", features = [
   # SHELLEXECUTEINFOW carries an HKEY, so windows-sys gates it on Registry.
   "Win32_System_Registry",
   "Win32_System_Threading",
+  # InternetSetOptionW, which is what makes a written proxy value take
+  # effect in applications that are already running.
+  "Win32_Networking_WinInet",
 ] }
 

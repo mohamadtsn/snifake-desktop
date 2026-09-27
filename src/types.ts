@@ -38,10 +38,10 @@ export const STATE_ACTION: Record<ProxyState, string> = {
 };
 
 export const STATE_COLOR: Record<ProxyState, string> = {
-  stopped: "var(--color-st-stopped)",
-  starting: "var(--color-st-starting)",
-  running: "var(--color-st-running)",
-  error: "var(--color-st-error)",
+  stopped: "var(--color-t4)",
+  starting: "var(--color-warn)",
+  running: "var(--color-ok)",
+  error: "var(--color-bad)",
 };
 
 export function activeProfile(store: Store): Profile | undefined {
@@ -127,11 +127,11 @@ export const TUNNEL_STATE_ACTION: Record<TunnelState, string> = {
  * for `active`. See DESIGN.md §1.1.
  */
 export const TUNNEL_STATE_COLOR: Record<TunnelState, string> = {
-  offline: "var(--color-st-stopped)",
-  starting: "var(--color-st-starting)",
-  active: "var(--color-st-running)",
-  holding: "var(--color-st-starting)",
-  fault: "var(--color-st-error)",
+  offline: "var(--color-t4)",
+  starting: "var(--color-warn)",
+  active: "var(--color-ok)",
+  holding: "var(--color-warn)",
+  fault: "var(--color-bad)",
 };
 
 export function activeTunnel(store: TunnelStore): TunnelProfile | undefined {

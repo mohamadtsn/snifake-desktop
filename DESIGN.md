@@ -1,545 +1,442 @@
-# DESIGN.md — Console
+# DESIGN.md — Workbench
 
-The design system of record. `src/theme.css` implements it; this file decides
-it. If the two disagree, this file is wrong and should be fixed in the same
-commit as the code.
+The design system of record. Every value in `src/theme.css` is here, with the
+reason it is that value. When a design decision changes, this file changes in
+the same commit; when the two disagree, this file is wrong and gets fixed.
+
+Source material: `design/` (14 rendered screens) and the Figma file
+`FonwwOWwiOA6bzum07z2oT`. Figma is the authority for numbers; the PNGs are the
+authority for what a screen is supposed to feel like.
 
 ---
 
 ## 1. What the thing is
 
-A piece of network equipment rendered in software. Not an app with a hero
-button — an instrument with a face, a set of readouts and one switch.
+An 850×760 desktop workbench with four tabs and a modal preferences sheet.
 
-Everything below follows from that. The reason a decision like "amber means
-caution" or "corners are 4px" is not arbitrary is that a console has a house
-style, and we are inside it.
+The previous language — **Console**, a 420×504 single column with a signal bar,
+a rocker switch and two drag-dismissed drawers — was dense and opaque: it hid
+the tunnel's second stage behind a selector, and nothing on it told you what a
+control would do before you pressed it. It is documented in §8 for the
+decisions worth keeping; its CSS survives only in `src/theme-legacy.css` until
+the last component that needs it is gone.
 
-**Three laws.**
+The workbench is a dark machined panel. A near-black canvas, a graphite window
+sitting on it, inset cards a step darker still, and a 1px white hairline with a
+specular top edge wherever one surface meets another. Nothing glows that is not
+reporting a state.
 
-1. **Three signal colours, three meanings, no overlap.** Green is live and
-   healthy, amber is in transition, red is fault, grey is the absence of
-   signal. Nothing else in the app is coloured at all.
-2. **Corners are tight.** 3px, 4px, 6px. A console is machined, not moulded.
-3. **Rules and engraved labels do the work cards and shadows used to.** There
-   is one elevated surface in the whole app and it is the drawer.
+**The one rule that outranks every other rule in this file** is carried over
+from Console unchanged:
 
-### 1.1 Why phosphor green, and why amber is not "good"
+> **The interface never shows a reading it does not have.**
 
-`running` was amber for one revision, on the argument that green-for-running
-is a reflex every VPN client and status page already reaches for. That
-argument was about differentiation only, and it lost to a stronger one about
-meaning:
+A bar that moves without data behind it is a lie the user cannot detect. The
+mockups were drawn by a designer with no access to the engine, so they are full
+of readings nothing produces: `-58 dBm`, an RTT sparkline, `1,420 pkts/s`,
+`BUFFER: 1.4 MB / 16 MB`, `ENC: AES-128-GCM`. Every one of them was removed and
+its layout slot refilled with something real — see §6 and the 2026-09-26
+decision-log entry. The screens still compose the way they were drawn, because
+only the content changed, never the slot.
 
-**On real equipment, an amber lamp means caution.** A router's amber link LED
-is a degraded link. ISA-101 and every traffic light in the world use amber for
-"attention, something is changing". A panel lit entirely amber while
-everything is fine says the opposite of what it means, and a user glancing at
-it reads a problem that is not there.
+### 1.1 Why green means running and amber means wait
 
-So green won the semantics — but not the generic green. `--color-live` is a
-**CRT phosphor green**: desaturated enough to sit inside the graphite family,
-and the archetypal colour of a terminal, which is what this app is dressed as.
-It is not the mint (`#22c55e`) that ships as a framework default.
+Green is `active`. Amber is `starting`, `holding` and caution. Red is `fault`
+and destructive. Blue acts and selects.
 
-Amber kept the job it is actually right for: `starting`, and the unread-log
-badge. Both mean "in transition, or worth a look".
+This is not the default reflex, and it was argued out once already (2026-08-27,
+§8). On real equipment amber means *caution*: an all-amber healthy panel reads
+as a fault that is not there. And the tunnel's `holding` state — fail-closed,
+refusing to relay because the SNI stage is down — is the design **working**.
+Red there would train people to distrust the state protecting them.
 
-The three-colour set is legible **because** it is learned. Reaching for an
-unconventional colour to avoid a convention is a cost paid by the user.
+The consequence for code: `types.ts`'s `STATE_COLOR` and `TUNNEL_STATE_COLOR`
+map `holding` and `starting` onto the same amber, deliberately.
 
 ---
 
 ## 2. Tokens
 
-Every value the app uses is in `@theme` in `src/theme.css`. Nothing outside
-that block invents a colour, a duration or a radius.
+### 2.1 Surfaces — four solid fills, never an alpha stack
 
-### 2.1 Surfaces — one cool-graphite family
-
-| Token | Value | Used for |
+| Token | Value | What sits on it |
 |---|---|---|
-| `--color-bg` | `#0d0e10` | the window |
-| `--color-panel` | `#131518` | the status face, the selector, the drawer, menus |
-| `--color-inset` | `#0a0b0c` | inputs, the log scroller |
-| `--color-hover` | `#191c20` | hover fill, the switch's unlit top stop |
+| `--color-canvas` | `#0b0c10` | behind the window; visible only as the 1px frame edge |
+| `--color-surface` | `#15161a` | the window itself, the title bar, the footer |
+| `--color-card` | `#1d2027` | cards, grouped lists, editor panes, modal bodies |
+| `--color-inset` | `#0c0e14` | pressed into a card: segmented tracks, log wells, rule gutters |
+| `--color-raised` | `#33353e` | lifted off a card: the selected segment thumb |
+| `--color-raised-dim` | `#282a32` | secondary buttons, which share the thumb's weight |
 
-Each step is a **real lightness step**, not a translucent white overlay.
-WebKitGTK composites a flat fill for free and re-blends an alpha layer on
-every repaint of anything beneath it, so translucency here would cost frames
-during log streaming for no visual gain.
+**Every surface is a solid fill.** The mockups stack white and black alphas, so
+a card inside a card inside a sheet lands on a different colour on every
+screen — which is exactly why the three mockup families drifted apart (§7).
+Solids cannot drift. They are also cheaper: WebKitGTK re-blends an alpha layer
+on every repaint of anything underneath it.
 
-### 2.2 Rules — three, with distinct jobs
+### 2.2 Hairlines and the specular edge
+
+| Token | Value |
+|---|---|
+| `--color-hairline` | `rgba(255,255,255,0.08)` |
+| `--color-hairline-strong` | `rgba(255,255,255,0.14)` |
+| `--shadow-specular` | `inset 0 1px 0 rgba(255,255,255,0.06)` |
+| `--shadow-specular-strong` | `inset 0 1px 0 rgba(255,255,255,0.12)` |
+
+One hairline value everywhere. The specular edge is what makes a surface read
+as a machined plate rather than a rectangle of a slightly different grey: it
+catches light on the top 1px only, so the eye reads a bevel where there is a
+single declaration. Strong is for the two surfaces that have to look lifted —
+the segment thumb and a primary button.
+
+### 2.3 Depth — three shadows, and no more
+
+| Token | Value | Meaning |
+|---|---|---|
+| `--shadow-sunken` | `inset 0 2px 4px rgba(0,0,0,0.05)` | pressed into its track (toggle track, segmented track) |
+| `--shadow-lift` | `0 1px 1px rgba(0,0,0,0.05)` | sitting on a card (buttons, segment thumb) |
+| `--shadow-modal` | `0 24px 70px rgba(0,0,0,0.85)` | the one modal layer |
+
+There is exactly one modal elevation. Two would mean a sheet over a sheet, and
+nothing in this application needs that.
+
+### 2.4 Text — four alpha steps
 
 | Token | Value | Job |
 |---|---|---|
-| `--color-line` | `#23262b` | **structural.** Separates regions. Nearly invisible by design. |
-| `--color-edge` | `#2d3137` | **decorative.** Defines a control's boundary, draws engraved rules. |
-| `--color-beam` | `#3b4048` | **lit.** Hover borders, the drag handle, the selected marker. |
+| `--color-t1` | `rgba(255,255,255,0.92)` | titles, values, the thing you came to read |
+| `--color-t2` | `rgba(255,255,255,0.60)` | labels, secondary readouts, subtitles |
+| `--color-t3` | `rgba(255,255,255,0.40)` | units, hints, placeholder-adjacent text |
+| `--color-t4` | `rgba(255,255,255,0.22)` | disabled, and the `•` between footer readouts |
 
-A 1px `--color-line` disappears against `--color-panel`; that is deliberate
-for separators and wrong for anything meant to be seen. Engraved rules use
-`--color-edge` for exactly this reason.
+Alphas rather than greys so one ladder works unchanged on all four surfaces.
+Contrast against `--color-card`: t1 ≈ 13.5:1, t2 ≈ 6.9:1, t3 ≈ 3.9:1. t3 is
+therefore only ever used at 13px or larger, or for non-text, and t4 is never
+used for text a sighted user has to read — it marks a control as unavailable,
+and the control's `disabled` attribute is what actually says so.
 
-### 2.3 Text — four steps
+### 2.5 Accents
 
-| Token | Value | Contrast on `--color-bg` | Job |
-|---|---|---|---|
-| `--color-text` | `#e9ebee` | 15.6:1 | values, the thing you came to read |
-| `--color-dim` | `#969ba2` | 7.2:1 | secondary values, menu rows |
-| `--color-faint` | `#6a6f76` | 4.6:1 | engraved labels |
-| `--color-ghost` | `#2a2d32` | — | **never carries text.** Unlit bar segments, placeholders, em-dashes. |
-
-`--color-ghost` failing contrast is not an oversight. It is defined as the
-colour of *absence*, and anything it is applied to must also be conveyed
-another way (the bar's `aria-label`, an input's real `<label>`).
-
-### 2.4 Signal
-
-| Token | Value | Notes |
+| Token | Value | Meaning |
 |---|---|---|
-| `--color-live` | `#4ed17f` | 10.0:1 on `--color-bg`. The accent: lit segments, `running`, focus rings, commit buttons. |
-| `--color-live-deep` | `#2ea863` | the bottom stop of the lit switch |
-| `--color-live-ink` | `#04150c` | the only dark-on-light pairing in the app |
-| `--color-amber` | `#ffb224` | 10.9:1. `starting` and the unread-log badge — transition, not health. |
-| `--color-amber-deep` | `#d98a00` | the `starting` wipe |
-| `--color-st-error` | `#ff5c4d` | 6.5:1. Fault. |
+| `--color-accent` | `#007aff` | primary action, selection |
+| `--color-ok` | `#34c759` | `running` / `active` |
+| `--color-warn` | `#ff9500` | `starting` / `holding` / caution |
+| `--color-bad` | `#ff453a` | `fault`, destructive |
 
-State map (`src/types.ts`): `stopped → --color-st-stopped` (grey),
-`starting → --color-amber`, `running → --color-live`,
-`error → --color-st-error`.
+Each has a `-soft` (15% wash, for the surface of a tinted badge or a selected
+card) and a `-line` (30%, for its border), so a tinted surface is never mixed
+by hand at a call site.
 
-`starting` and `running` differ in **both** hue and motion — amber with a
-filling wipe, green with a steady scan — so the transition is legible from
-either channel alone. That redundancy is what makes the moment the engine
-comes up readable at a glance across the room.
+These are the iOS dark system colours. That is not decoration: it is the one
+internally consistent family among the three the mockups used, and it is the
+family the main dashboard and all three Preferences screens already use. See
+§7 for what was discarded.
 
-### 2.5 Type
+### 2.6 Type
 
-One face does almost everything: **Geist Mono Variable**, with
-`font-variant-numeric: tabular-nums` set on `body`.
+Inter for the interface, JetBrains Mono for anything that is a number, an
+address, a path, a digest or a rule line. Both ship in the bundle — this
+application's users are frequently unable to reach Google Fonts, so a font that
+does not ship is a font the interface does not have. `tabular-nums` is on at
+`body`, so a changing port does not shuffle the characters after it.
 
-This is not decoration. Every value in this app is an address, a port or a
-clock; in a proportional face the port column shifts as digits change, and
-`1`/`l` and `0`/`O` stop being distinguishable in a hostname. The mono face
-is a correctness feature that happens to also carry the console identity.
-
-The sans (**Geist Variable**) is reserved for prose, via `.prose-face` on the
-`AlertDialog`s. A paragraph set in mono is a ransom note.
-
-**Tracking is size-specific.** One letter-spacing value is wrong somewhere.
-
-| Token | Value | Applies to |
+| Token | Size / leading | Where |
 |---|---|---|
-| `--track-engrave` | `0.14em` | uppercase labels ≤10px |
-| `--track-label` | `0.06em` | uppercase 11–26px (the condition word) |
-| `--track-value` | `0.005em` | mono values |
-| `--track-body` | `-0.008em` | prose in dialogs |
+| `--text-micro` | 9 / 9 | badge text (`TRAY MODE`, `CORE REQUIRED`) |
+| `--text-mini` | 10 / 15 | version chips, the smallest mono readouts |
+| `--text-note` | 11 / 16.5 | secondary text, footer readouts, section labels |
+| `--text-body` | 12 / 18 | buttons, tabs, card body — the document default |
+| `--text-row` | 13 / 19.5 | a preferences row, a field label, the title bar |
+| `--text-title` | 17 / 25.5 | a tab's page title |
 
-### 2.6 Shape
+Six sizes, each with the leading it is drawn with, named rather than scaled:
+this is one fixed-size window, not a responsive page, so `text-row` **is** what
+a preferences row is, at 13px, always. Section labels are 11px semibold
+uppercase at `+0.55px` tracking; 13px titles carry `-0.325px`, because Inter
+needs negative tracking above 12px and positive tracking in small caps.
 
-`--radius-chip: 3px`, `--radius-control: 4px`, `--radius-panel: 6px`. Plus
-`1px` on bar segments. That is the complete list.
+### 2.7 Shape
 
-### 2.7 Motion
+`--radius-xs` 4 · `--radius-sm` 6 · `--radius-md` 8 · `--radius-lg` 12 ·
+`--radius-xl` 16, plus the pill.
 
-| Token | Value | Job |
-|---|---|---|
-| `--ease-out` | `cubic-bezier(0.2, 0.9, 0.25, 1)` | everything that latches |
-| `--ease-in-out` | `cubic-bezier(0.65, 0, 0.35, 1)` | the power glyph morph |
-| `--ease-sheet` | `cubic-bezier(0.32, 0.72, 0, 1)` | the drawer only |
-| `--dur-press` | 90ms | press feedback |
-| `--dur-fast` | 150ms | colour and border changes |
-| `--dur-panel` | 220ms | disclosure, menu |
-| `--dur-sheet` | 380ms | the drawer |
+Concentric, and that is the whole rule: a 12px group holds 8px rows holds 6px
+controls, and the step between them is the padding between them. xs is badges,
+sm is buttons and segments, md is rows and tracks, lg is cards and groups, xl
+is a modal. Anything round is fully round — a toggle, a status pip, a close
+button — never a large radius pretending to be.
 
-Console motion is **short and mechanical**. Things latch; they do not float.
-There is no overshoot curve in the file: overshoot without a velocity term
-reads as elastic rather than physical, so anything that genuinely needs it
-uses a `motion/react` spring, which has one.
+The window itself is square. The mockups draw a 22px radius with an outer
+shadow, which needs `transparent: true`; on Linux that depends on a compositor
+and degrades into a black box, and on WebKitGTK under Wayland it has already
+cost this project every pointer event in the window once (2026-08-27, §8).
 
-Only `transform`, `opacity`, `color`, `background-color`, `border-color` and
-`box-shadow` animate. Two exceptions, both deliberate:
+### 2.8 Motion
 
-- **`box-shadow`** is not composited, and it is here anyway. It is the whole
-  tactile vocabulary: the switch swaps its outer shadow for an inner one to
-  read as pressed, and every input trades its inset for a focus ring. Doing
-  that with `transform` would move the control; doing it without a transition
-  would make it snap. It animates on single controls under the pointer, never
-  on a list, so the paint cost is one element.
-- **The disclosure panel's height**, which is why it carries `contain: paint`.
+| Token | Value |
+|---|---|
+| `--ease-out` | `cubic-bezier(0.16, 1, 0.3, 1)` |
+| `--ease-in-out` | `cubic-bezier(0.4, 0, 0.2, 1)` |
+| `--dur-press` | 90ms |
+| `--dur-fast` | 160ms |
+| `--dur-panel` | 240ms |
 
-*(This list said five properties until 2026-09-06. It had said that since
-before `.switch` and the input focus ring existed, both of which animate
-`box-shadow`; the audit that found it is recorded in the decision log.)*
+The policy, unchanged from Console:
+
+1. **Only `transform`, `opacity` and colour animate.** Anything else means
+   layout, and layout at 60fps on WebKitGTK means dropped frames.
+2. **Every animation has a `prefers-reduced-motion: reduce` opt-out.** The
+   CSS-driven half is covered by the blanket rule at the foot of `theme.css`;
+   components animating through `motion/react` read `useReducedMotion()`
+   themselves.
+3. **Springs live in `src/lib/motion.ts`.** One curve, one definition, so two
+   drawers cannot hold two copies of it.
+4. **Motion has to be motivated.** Tab changes cross-fade because the content
+   is replaced; a sheet scales from 0.98 because it arrives from in front; list
+   rows animate because they reorder. Nothing loops, and nothing moves to show
+   that it can.
+
+### 2.9 Shell geometry
+
+`--h-titlebar` 52px · `--h-footer` 36px. Both fixed; the tab region is
+whatever is left and is the only thing that scrolls. Window: 850×760, min
+780×620, `resizable: true`, `decorations: false`, opaque.
 
 ---
 
 ## 3. Layout
 
 ```
-┌─────────────────────────────────────┐
-│ bezel  ·  name │ condition │ ⌄ ─ ✕  │  36px, fixed, outside the sheet host
-├─────────────────────────────────────┤
-│ STATUS ───────────────────────────  │  ┐
-│ ┌─────────────────────────────────┐ │  │
-│ │ ▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮            │ │  │ the instrument face
-│ │ CONDITION            UPTIME     │ │  │ (the one block allowed to
-│ │ ACTIVE              00:14:07    │ │  │  take space)
-│ └─────────────────────────────────┘ │  │
-│ ROUTE ────────────────────────────  │  │ scrolls
-│ LISTEN    127.0.0.1        :40443   │  │
-│ UPSTREAM  104.18.4.130       :443   │  │
-│ SNI       security.vercel.com   —   │  │
-│ PROFILE ──────────────────────────  │  │
-│ [ cloudflare            ▾ ]  [ ✎ ]  │  ┘
-├─────────────────────────────────────┤
-│ ┌─────────────────────────────────┐ │  fixed furniture:
-│ │           ⏻  STOP               │ │  never scrolls off
-│ └─────────────────────────────────┘ │
-│ ▸ LOG ───────────────────────── 12  │
-└─────────────────────────────────────┘
+AppShell (850×760, opaque, square)
+├─ TitleBar   52px   window controls · wordmark+version · tab bar · status · gear
+├─ TabRegion  flex   the only scroll container: Telemetry | Sockets | Config | About
+└─ StatusFooter 36px left: active route · right: tray hint
 ```
 
-**Window: 420×504, min 380×440.** Sized to the content with the log closed.
+The tab bar is centred and must stay centred, so the left and right clusters
+reserve a fixed width regardless of what is in them. That is also why every
+readout in the title bar and the footer goes through a formatter in
+`src/lib/readouts.ts` that truncates with a middle ellipsis: a 60-character
+profile name is a value the user chose, and it must not be able to push the
+tab bar off centre.
 
-**Two regions.** Everything above the bottom rule scrolls; the switch and the
-log trigger do not. The primary control must never be scrolled off, and the
-log has to be reachable without hunting for it.
+Each tab is its own scroll container. Sockets and both Config tabs overflow at
+760px **by design** — the mockups are clipped there and the clipped content is
+real content. Telemetry does not overflow with the log closed.
 
-**The bezel is outside the sheet host.** When the drawer is open the console
-is dimmed and `inert`; the bezel is not, so quit and minimise stay reachable.
-The drawer and its scrim both start 36px down for the same reason.
+### 3.1 Window controls
 
-**Sections are separated by engraved rules, not cards.** A console is one
-panel with its sections silkscreened onto it. The single exception is the
-status face, which gets a `.panel` fill because it is the readout the window
-exists to provide.
+The mockups draw macOS traffic lights. The application ships on three platforms
+with `decorations: false`, so instead of three coloured discs it renders one
+neutral cluster of 28×28 ghost glyph buttons, matching the gear button already
+in the header: *hide to tray*, *minimize*, *maximize/restore*.
+
+The cluster sits **left of the wordmark on macOS** and **right of the gear on
+Windows and Linux**, which is where each platform's user looks for it. Both
+sides reserve a fixed width so the centred tab bar does not shift between
+platforms.
+
+Quit is reachable from the tray, and from the close glyph when *Close Window
+Minimizes to Menu Bar* is off.
 
 ---
 
-## 4. Components
+## 4. Component inventory
 
-| Component | What it is |
+### 4.1 Primitives (`src/components/ui/`)
+
+One concern each. A class used by exactly one component is that component's
+business, not `theme.css`'s.
+
+| Component | Role |
 |---|---|
-| `TitleBar` | the bezel: name, condition readout, two window glyphs (× hides to tray) |
-| `StatusPanel` | the instrument face: 20-segment bar, condition, uptime |
-| `PowerSwitch` | the only control that starts or stops the engine |
-| `RouteRows` | the route as a three-column grid |
-| `ChannelSelect` | one channel row: the selector plus the way into its drawer. Generic, so the profile row and the tunnel row are the same component |
-| `Disclosure` | an engraved header made pressable |
-| `ActivitySection` | owns all log state; drives `set_log_streaming` |
-| `AboutDialog` | identity, metadata and the manual update check |
-| `UpdateMeter` | real download bytes, in `App.tsx` beside the update dialog |
-| `UpdateMeter` | the download bar in the update dialog — the only progress bar |
-| `Sheet` / `ProfileSheet` / `ProfileEditor` | the profile drawer |
-| `Field` | one labelled input with its own undo stack; shared by both editors |
-| `SwitchBank` | the two power switches; one switch until a tunnel exists |
-| `CoreSetup` | fetching or importing the tunnel core, using the one meter |
-| `RuleList` | one routing list, validated per line |
-| `TunnelSheet` / `TunnelEditor` / `RoutingEditor` | the tunnel drawer, three pushed views |
+| `Icon` | every Material Symbols glyph, with one weight/fill/`opsz` policy |
+| `Segmented` | the tab bar, the rule-list switcher, verbosity, import tabs |
+| `Toggle` | the pill switch, 36×20 and 30×17 |
+| `Card` | inset panel with the specular top edge, in three tones |
+| `GroupedList` | the inset list with hairline rows, and `GroupedList.Row` |
+| `Badge` | mono uppercase tag in the state colours |
+| `StatusDot` | 6/8px pip, with its glow |
+| `FieldRow` | label + input + right-aligned hint: the editors' unit |
+| `ModalSheet` | Base UI `Dialog` in this language |
+| `ConfirmDialog` | Base UI `AlertDialog` in this language |
 
-### 4.1 The signal bar
+`ModalSheet` and `ConfirmDialog` are both Base UI rather than hand-rolled
+because focus trapping, `Esc`, scroll lock and the `aria` wiring are the part
+that is easy to get quietly wrong. The split between them is semantic: a sheet
+is a place you go, and `Esc`/backdrop dismissing it is correct; a dialog asks a
+question, and its two answers are buttons.
 
-Twenty segments, driven entirely from CSS off `data-state`. A running console
-costs **zero React renders** for the animation.
+### 4.2 Primitives in `theme.css`
 
-It encodes state and **only** state. There is deliberately no throughput
-meter: the engine does not report bytes, and a bar that moves without data
-behind it is a lie the user has no way to detect.
+Only what Tailwind cannot express as a utility: `.mono`, `.pick` (opting a
+copyable value back into text selection, against the window-wide
+`user-select: none`), `.material-symbols-outlined`'s variation settings,
+`.tab-scroll`, and `.log-lines`.
 
-The update download bar is the one exception, and it is not one: the updater
-reports the size of every chunk it receives, so that bar is backed by counted
-bytes. Where the server sends no `Content-Length` it refuses to claim a
-position and sweeps instead — an admission, not a guess.
+`.log-lines` does not wrap. Log lines scroll sideways, because wrapping splits
+an IPv4 address mid-octet, and a log you cannot scan by column is not a log.
 
-- `stopped` — dark
-- `starting` — a filling wipe, per-segment delay
-- `running` — every segment lit, one opacity keyframe with a per-segment
-  delay so a scan sweeps left to right. A per-segment delay rather than a
-  moving gradient overlay, so nothing composites above the bar.
-- `error` — the whole bar in muted red
+### 4.3 The two subsystems that are restyled and never rewritten
 
-Unlit segments carry `inset 0 1px 0 rgba(255,255,255,0.05)`. Without it the
-bar reads as a printed graphic; with it, as a row of lamps catching light
-from above. Every inset border in the file assumes that same single light
-source directly above.
+**`ActivitySection`** owns the log. It drives `set_log_streaming`, backfills
+through `get_log_buffer`, renders `log-batch` payloads behind an `openRef`
+guard, and polls the buffer length once a second while closed to drive its
+badge. That gate is the reason this application does not peg the CPU while
+minimized: WebKitGTK keeps running JS and layout for hidden windows, so one
+Tauri event per stdout line was measurably expensive. Only its markup changes.
 
-### 4.2 The power switch
-
-A latching rocker, not a round button. Width is what says "primary", and a
-rectangle can carry a word.
-
-- Press drops it 1px into the panel and swaps the outer shadow for an inner
-  one — the complete feedback vocabulary of a physical switch.
-- `running` lights it: solid green carrying `--color-live-ink`. This is the
-  only dark-on-light pairing in the app and it is reserved for the single
-  most important control.
-- `error` shakes it **once**. A loop nags; once reports.
-- The label names the **action**, never the state: Start / Abort / Stop /
-  Retry.
-- Stop stays reachable while `starting`: an elevation prompt that never
-  returns must not leave the only exit greyed out.
-- It is **not keyed on `state`** — a remount would drop keyboard focus at
-  precisely the moment the user is watching the panel change.
-
-### 4.3 The profile selector
-
-Replaced a rail of chips. Two reasons, both real:
-
-1. **Safety.** Switching profiles while the engine is up restarts it. A chip
-   rail put that one stray click away on the main panel. A selector costs two
-   deliberate actions — open, then choose — and cannot be hit by accident.
-2. **Layout stability.** A chip rail grows with the profile list, so the
-   panel's shape depended on how many profiles you happened to have. The
-   selector is one row forever.
-
-The trigger shows the **route as well as the name**, because a name does not
-tell you where traffic goes.
-
-Inside the menu, the *selected* row is marked with a neutral `✓` and the
-*running* row with a green rule down its side. These are different facts —
-selecting while stopped only changes what Start will run — and green is
-reserved for "carrying traffic".
-
-### 4.4 The drawer
-
-Base UI `Dialog` supplies focus trapping, `Esc` and scroll lock. The visual
-layer and the drag are hand-rolled on Pointer Events, writing `transform`
-straight onto the node: a drag has to track 1:1 and stay interruptible, and a
-transition during a drag is what makes a sheet feel like it is on a rubber
-leash.
-
-- Portals into `.shell`, not `<body>`, so `inset` resolves against the
-  console and the drawer stays inside the bezel.
-- Grabbing a *closing* drawer resumes from its presentation transform.
-- The drag physics live in `src/lib/gesture.ts` and are the one part of the
-  frontend that is genuinely tested (`gesture.test.ts`), because they are the
-  numbers that decide how it feels.
-- Since switching moved to the selector, this is purely a management surface.
-
-### 4.5 About
-
-Reached from an `ⓘ` on the bezel, opening a **dialog**. It was an accordion
-at the foot of the operating panel, which is a place nobody looks for version
-metadata and which cost the console height it needed for controls.
-
-The bezel is where every desktop already puts this — GNOME's header-bar menu,
-Windows' Help menu, macOS' app menu — so it costs no discovery. The `ⓘ` sits
-with the window controls but behind a hairline: it acts on the *app*, the
-other two act on the *window*.
-
-A `Dialog`, not the `AlertDialog` everything else uses. About asks nothing
-and decides nothing, so Esc, the backdrop and Close must all dismiss it
-without reading as "cancel".
-
-**Typography inside it** is where the app's type scale gets used properly:
-
-- The name is the bezel's engraved uppercase wordmark two steps up the scale
-  (21px, `--track-label`). One product, one lockup — not a different
-  treatment per surface. The hairline between name and version is the same
-  separator the bezel puts between name and condition.
-- The version is the second-most-read fact in an About box, so it sits on the
-  name's baseline rather than buried as a table row.
-- The description is the only prose here and therefore the only thing in the
-  sans face, with `text-wrap: balance` so it never orphans a word.
-- Metadata rows reuse the Route block's label-column geometry, so the two
-  read as the same kind of object.
-- Values are `leading-[1.4]`, not `leading-none`: a *stack* of rows needs
-  vertical rhythm that a single row set solid does not have.
-- Values carry `.pick` — the one place the app's global `user-select: none`
-  is lifted, because these get pasted into bug reports.
-- `Source` shows `owner/repo`, not the full URL. The URL wrapped and orphaned
-  "desktop" onto its own line, and `owner/repo` is how GitHub is read anyway.
-- Neither button is accented. Green is the signal colour and the accent for
-  *commit* actions; checking for updates commits nothing, and an About box
-  has no primary action worth accenting.
-
-**Authorship** closes the dialog, above the buttons, as a maker's plate — the
-engraved label with a rule running to the edge, the same `.engrave` object the
-app's section headers use, followed by the name at the `--color-text` step and
-the handle after the header's hairline. Real equipment carries a plate; adding a
-`Developer` row to the metadata list instead would have filed the person who
-built the thing alongside its licence identifier. The name is not a link:
-opening a URL needs a plugin and a capability this app does not otherwise
-carry, and §4.5 already decided that `Source` reads better as `owner/repo`
-than as a URL.
-
-### 4.6 The update meter
-
-Real bytes, never a fake sweep to fill the wait — the same law that keeps a
-throughput meter off the status face (§4.1). When the download server sends
-no `content-length` the bar says exactly that by refusing to claim a
-position, and sweeps instead.
-
-- **Radius is 1px**, the same as a signal-bar segment. §2.6 lists 3/4/6px
-  plus that 1px and the list is closed; a pill is the one shape this app
-  does not make. It also rhymes the meter with the other horizontal readout
-  on screen.
-- **The sweep is `linear`.** An easing curve lingers at both extremes, which
-  are precisely where the bar sits outside the track, and easing implies
-  phases an indeterminate sweep does not have.
-- **The sweep travels -35% → 105%.** The fill is `scaleX(0.3)` about its left
-  edge, so those are one bar-width off each end. Percentages resolve against
-  the *unscaled* box, which is easy to get wrong: an earlier -110% → 440%
-  put the bar off-screen for three quarters of every cycle.
-- **The readout is in the value face**, not the dialog's prose face. Bytes
-  are a value (§2.5). Geist Variable happens to ship equal-width digits so
-  nothing visibly jitters today, but a fallback to Cantarell has no such
-  guarantee and this is a number the user watches change.
-- **The readout is `--color-dim`, not `--color-faint`.** Faint clears 4.5:1
-  on `--color-bg`; on the dialog's lighter `--color-panel` it does not.
-- Fill and sweep are `transform`/`translate` only, so the whole thing is
-  composited. Under `prefers-reduced-motion` the indeterminate bar goes
-  static and dims rather than disappearing.
-
-**Copy follows the phase.** Download and install are two phases of one flow,
-and the title, description and button all name the same one at the same
-time. The button said "Installing…" while the description said "Downloading",
-which is exactly the inconsistency §"writing" warns about.
-
-### 4.7 Undo in text fields
-
-The browser already keeps an undo stack, and in Chrome it works through a
-controlled React input (verified: typing over a value and pressing Ctrl+Z
-restores it). Under WebKitGTK, which is what this app ships on, it does not.
-
-Rather than chase an engine difference that cannot be reproduced without a
-Linux webview, each field owns its history (`src/lib/undo.ts`). That behaves
-identically on every platform and adds redo, which a controlled input tends
-to lose from the native stack anyway.
-
-- Keystrokes within 500ms collapse into one step, the way a native stack
-  chunks by word. Undoing five times to remove "hello" is not undo.
-- A new edit discards the redo branch — the rule every text editor uses.
-- Ctrl/Cmd+Shift+Z **and** Ctrl+Y both redo, because this app ships on all
-  three platforms.
-- When our stack is empty the event is left alone, so whatever the platform
-  would have done still happens.
-- It is all refs: undo state is never rendered, so changing it costs no
-  render. That also makes it testable without a DOM (`undo.test.ts`).
-
-### 4.8 The log
-
-The one surface that repaints continuously while the engine streams: flat
-fill, no blur, no shadow, `contain: content`.
-
-Lines **do not wrap** — they scroll sideways. Wrapping breaks an address
-across two lines mid-octet, and checking addresses is the entire reason to
-open this pane.
-
-The disclosure panel **unmounts when closed**, which is what keeps 500 log
-lines out of the DOM, and `ActivitySection` tells the backend to stop
-streaming entirely. With the log closed the whole cost of a proxy log line is
-one `push_back` in Rust: no IPC, no React render.
+**The rule editor** validates per keystroke against `src/lib/rules.ts`, which
+duplicates `tunnel/rules.rs` on purpose and is tested against the same fixture
+table so the duplication cannot drift in silence. Rust re-validates on save and
+remains the authority.
 
 ---
-
-### 4.9 The second reading on the instrument face
-
-The tunnel is optional, so with none configured the face is exactly what it
-was: one bar, one condition word, one clock. Once a tunnel exists the same
-panel grows a second reading rather than a second panel — the two stages are
-not independent, the tunnel dials the link, and two panels would say
-otherwise. A hairline separates them. One instrument, two readings.
-
-- **The tunnel's word is 20px against the link's 26px,** and the tunnel gets
-  a single lamp where the link gets the twenty-segment bar. The subordination
-  has to be visible in the weight, not only in the order. Giving the tunnel
-  its own bar was tried first and it read as two equal instruments — and,
-  measured, it did not fit the window.
-- **The lamp is a plain block, not a segment borrowed from the bar.** The
-  `starting` state animates a fill across the segments, so a lone segment
-  spends part of every cycle dark; the lamp sat grey beside an amber word. A
-  lamp that contradicts its own readout is worse than no lamp.
-- **`holding` borrows amber from `starting`,** because that is what it is:
-  waiting, in transition, not yet carrying traffic. See §1.1.
-- **The window is 660px tall once a tunnel exists,** which is §3's rule
-  ("sized to the content with the log closed") applied to content that grew,
-  not an exception to it. At 560 the channel selectors began below the fold.
-
-### 4.10 The switch bank
-
-One switch becomes two the moment a tunnel exists, side by side. A bank of
-switches is native to the language — real equipment has them — and it keeps
-both controls where the eye already is, in the fixed furniture that never
-scrolls.
-
-The tunnel switch carries the reason it is disabled in a line beneath the
-bank, whose height is reserved either way so the switches never move under
-the pointer. Teaching the dependency before the press is the point; the same
-refusal delivered as an error afterwards tells someone off for not knowing
-something they were never shown.
 
 ## 5. Accessibility
 
-- Every text colour except `--color-ghost` clears 4.5:1 on its surface, so
-  there is no size floor to remember. `--color-ghost` never carries text.
-- The signal bar is `role="img"` with the condition as its `aria-label`; it
-  is never the only channel for state, which is also spelled out in words
-  twice (bezel and status face). This matters most for the green/red pair,
-  which is the classic red-green colour-blindness confusion: the words, and
-  the bar's motion, carry the state without it.
-- Focus is visible on every control: an amber border, never a removed
-  outline.
-- Every enabled control shows a pointer cursor, and disabled ones keep the
-  arrow. Tailwind v4's preflight sets `cursor: default` on buttons, which is
-  the HTML default and wrong for an app where every control is one; a single
-  rule in `@layer base` fixes it for all of them, so a control is pointable
-  because it is a control rather than because someone remembered a class.
-  The bezel's drag region is explicitly excluded — a pointer there promises
-  a click that does nothing.
-- Text fields support Ctrl/Cmd+Z and both redo conventions. See §4.8.
-- Inputs keep a real `<label>`. A placeholder is an example, not a label.
-- Addresses are `dir="ltr"` and left-read regardless of UI language.
-- `prefers-reduced-motion` is **gentler, not absent**: movement goes, colour
-  and opacity stay. The bar keeps its lit/unlit colours and loses only the
-  scan. Transitions drop to `1ms`, not `0`, so `transitionend` handlers still
-  fire and Base UI still has an exit animation to wait on.
+- One focus ring for the application, `:focus-visible` only: a ring that
+  appears on mouse-down makes every click look like an error.
+- Pointer cursors are set once at the root, for every control, because a
+  control is pointable because it is a control — not because someone remembered
+  a utility class. Disabled controls keep the arrow, which is the distinction.
+- Every toggle takes a required `aria-label`; a pill switch has no text.
+- Every glyph is `aria-hidden`. The control around it carries the name.
+- Colour never carries a state alone. Every state that has a colour also has a
+  word (`ACTIVE`, `STANDBY`, `HOLD`, `FAULT`) and, where it is a pip, a shape.
+- Error text sits below its field and reserves its height, so a message
+  appearing shifts nothing.
 
 ---
 
-## 6. The mark
+## 6. The honesty pass over the mockups
 
-`src-tauri/icons/icon.svg` is the source; everything else in that directory is
-generated from it with `npx tauri icon`. Edit the SVG, regenerate, commit both.
+Twelve invented readouts were removed and their slots refilled from real state.
+The full table lives in the spec
+(`docs/superpowers/specs/2026-09-26-console-to-workbench-redesign-design.md`
+§4.1); the shape of it is:
 
-**The letter S, traced as a route.** Three runs, four right-angle turns, and a
-node wherever the path terminates or changes direction. The subject is the
-product's own: a connection that reaches its destination by way of something
-else. It is drawn in the console's vocabulary rather than illustrated — the
-icon it replaced was a stock globe with a red swap badge, in blue and red,
-sharing not one value with the app behind it.
+| Mockup showed | Slot now shows |
+|---|---|
+| `-58 dBm` + 4-bar signal | the active profile's `LISTEN_HOST:PORT` |
+| RTT sparkline, `RTT 42 ms` | the tunnel's `protocol · transport · security` |
+| `12ms` header pill | the core version, or `no core` |
+| `BUS: 0x88F2 // 1,420 pkts/s` | `<profile> → <connect ip>:<port>` |
+| `ENC: AES-128-GCM` | `SNI: <tunnel sni>` |
+| `BUFFER: 1.4 MB / 16 MB` | the log buffer's real line count |
+| `ENGINE V4.2 CORE` | the pinned sing-box version from `core_status()` |
+| `xray-core-darwin-arm64` | `core::asset_name()` |
+| `Verified SHA-256` / `Notarized` | one `Signed` badge, the plugin's own check |
+| `2 Active Links` / `1,420 pkts/s` | the two stages, by name and state |
 
-- **The plate is the app's own surface.** Graphite gradient from the §2.1
-  family, lit from directly above, with the bevel every raised edge in the
-  system has: light at the top, dark at the bottom. §2.1's law that surfaces
-  are real lightness steps holds here too — no translucency.
-- **The trace is `--color-live`**, the phosphor green of a lit segment, with
-  a bloom behind it. The bloom is the spill a real display leaves on its own
-  faceplate, which is why it is soft and low-opacity rather than an outline
-  glow.
-- **The nodes are chamfered, not round and not square.** A circular node read
-  as *soft* against mitred turns, and a plain square merged into them. The cut
-  corner is what a machined part actually has, and it is the one shape that
-  lets the pads and the path read as a single system.
-- **In the tray, the trace itself carries the state.** `tray.rs` relights it
-  in the state colour — grey stopped, amber starting, green running, red
-  fault, the same four values as §2.4 — by swapping the hue of every pixel
-  with chroma while keeping its saturation and brightness, which is what
-  preserves the gradient, the antialiased edge and the bloom. It replaced a
-  status dot painted over the corner: at the 22px a tray actually renders,
-  that dot was a few pixels of colour, and the whole lamp changing is legible
-  without looking for it. The window icon stays green — it is the product's
-  mark, not a readout.
-- **Two earlier attempts are recorded in the file's own comments.** A
-  five-segment display glyph dissolved into stripes at 32px; folding the
-  stroke into right angles without nodes read as the digit 5, which is the
-  same glyph on a segment display.
+Seven invented **controls** were removed outright, the two with the most
+teaching value being *TLS Packet Fragmentation* (the engine does not fragment;
+it injects an out-of-window fake ClientHello, and the row now says so in one
+non-interactive line) and *Strict Kill Switch* (not in the `Routing` model;
+`Default route through tunnel` on Sockets is the real control).
+
+A future phase may add real counters to the engine and refill these slots. That
+is privileged-process work and is not part of this redesign.
 
 ---
 
-## 7. Decision log
+## 7. Where the numbers came from
+
+The 14 mockups were generated in three batches, and each batch used a different
+palette family. This is not intent; it is noise, and treating it as intent is
+how a design system ends up with fourteen greys.
+
+| | Main dashboard `6:2958` | Preferences `9:3941` | Sockets `6:2188` |
+|---|---|---|---|
+| family | white alphas over graphite, iOS accents | solid Apple greys | **Material 3 dark tonal** |
+| card | `rgba(255,255,255,.04)` | `#1d2027` | `#1d1f25` |
+| inset | `rgba(0,0,0,.25)` | `#0c0e14` | `rgba(12,14,20,.3)` |
+| `ok` | `#34c759` | `#34c759` | `#53e16f` |
+| accent | `#007aff` | `#007aff` | `#adc6ff` |
+
+Reconciliation, per surface:
+
+- **canvas, surface** — the dashboard's, which is also the only screen that
+  draws the canvas at all.
+- **card, inset** — the dashboard's alphas, flattened over their own parents,
+  land on `#1e1f23` and `#101114`; Preferences states `#1d2027` and `#0c0e14`
+  as solids. They are the same colours within 4/255, so the solid spelling was
+  taken: it is what a token needs, because it cannot compound.
+- **raised** — Preferences' `#33353e`. The dashboard's `rgba(255,255,255,.08)`
+  flattens to `#28292c`, which does not separate from `--color-card` at all,
+  and Preferences is the only family that actually draws a selected segment
+  thumb.
+- **accents** — the iOS family the dashboard and Preferences share. Sockets'
+  Material 3 accents were discarded wholesale rather than blended: half a
+  tonal palette is not a palette.
+- **`--color-bad` `#ff453a`** is the one value not literally present in those
+  three frames, because none of them draws a destructive control. It is iOS
+  dark `systemRed`, the completion of the set the other three come from.
+- **text** — the plan's four alpha steps. Sockets' `#e2e2ea` / `#c1c6d7` /
+  `#8b90a0` / `#414755` are white at .89 / .78 / .56 / .27: the same four-step
+  ladder, independently drawn, which is the strongest evidence the ladder is
+  right.
+
+Nothing here averages two mockups. Where they disagreed, one was chosen and
+the reason is in the row.
+
+---
+
+## 8. Decision log
+
+**2026-09-26 — Console → Workbench.** The shipped interface was one 420×504
+column: dense, with the tunnel's second stage behind a selector and no panel
+explaining its own guarantee. Replaced by an 850×760 four-tab workbench in
+which every panel states in words what it does *and does not* capture — which
+is the single biggest usability gain in the change, larger than anything
+visual. Spec:
+`docs/superpowers/specs/2026-09-26-console-to-workbench-redesign-design.md`.
+
+**2026-09-26 — Twelve mockup readouts were removed, and their slots kept.**
+The designer had no access to the engine, so the screens report data nothing
+produces. Each slot was refilled with a real value rather than deleted, so the
+compositions survive; where nothing real existed, the control went. §6, and
+§4.1 of the spec for the full table. The alternative — adding counters to the
+engine so the mockup could be honest — is real work worth doing and is not
+this change.
+
+**2026-09-26 — One token set, normalized from three drifting mockup
+families.** Recorded in §7 with the losing value in every row, so the next
+change argues with a document instead of with a screenshot.
+
+**2026-09-26 — Neutral window controls instead of macOS traffic lights.** The
+one place this implementation deliberately departs from the mockups. Three
+coloured discs on Linux are a costume; the cluster is the same 28×28 ghost
+button the header already uses for the gear, and it sits where each platform's
+user looks for it. §3.1.
+
+**2026-09-26 — Surfaces are solid fills, not alpha stacks.** The mockups' own
+inconsistency is the argument: the same card is three colours across three
+screens because each was composited over a different parent. §2.1.
+
+**2026-09-26 — Fonts are imported from `main.tsx`, not `theme.css`.** Through
+CSS the `@fontsource` import is inlined by the Tailwind PostCSS plugin and its
+`url(./files/…)` is left pointing at a directory the build never writes: every
+face 404s and the window silently falls back to a system font. This had been
+true of Geist since it was added, in every production bundle. Found by grepping
+`dist/` for `.woff2` rather than by anything that type-checks.
+
+**2026-09-26 — `@theme static`.** Tailwind v4 tree-shakes `@theme`, emitting
+only the custom properties some generated utility happens to reference.
+`types.ts` hands `var(--color-ok)` to an inline style, and `--h-titlebar` is
+read by a component, so tokens must exist whether or not a utility mentions
+them.
+
+---
+
+*Everything below this line is the Console era. It documents a language the
+application no longer speaks, kept because the arguments are still the
+arguments, and because deleting the record of what was tried is how a project
+tries it twice.*
+
+## 9. Decision log — Console era (historical)
+
 
 **2026-09-07 — The Channels heading carries the way into the tunnel drawer.**
 "With no tunnel configured none of this appears" was implemented literally, and

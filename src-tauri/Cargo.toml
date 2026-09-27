@@ -58,6 +58,9 @@ tauri-plugin-process = "2"
 tauri-plugin-dialog = "2"
 # Preferences > General > "Launch at Login". Desktop-only by definition.
 tauri-plugin-autostart = "2"
+# About's two links. The JS side was already a dependency; the Rust half was
+# missing, so calling it would have failed at runtime.
+tauri-plugin-opener = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -12,6 +12,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { AboutTab } from "@/components/about/AboutTab";
+import { Badge } from "@/components/ui/Badge";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { CoreSetupModal } from "@/components/core/CoreSetupModal";
 import { SocketsTab } from "@/components/sockets/SocketsTab";
@@ -19,9 +22,6 @@ import { TelemetryTab } from "@/components/telemetry/TelemetryTab";
 import { TitleBar } from "@/components/shell/TitleBar";
 import { StatusFooter } from "@/components/shell/StatusFooter";
 import { TabRegion, type Tab } from "@/components/shell/TabRegion";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { Icon } from "@/components/ui/Icon";
 import { loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 import type { CoreStatus } from "@/lib/readouts";
 import { ProfileSheet } from "@/components/ProfileSheet";
@@ -397,22 +397,25 @@ export default function App() {
         )}
 
         {tab === "about" && (
-          <div className="flex flex-col gap-4 px-5 py-5">
-            <Card>
-              <div className="flex items-start gap-3 p-4">
-                <Icon name="info" size={18} className="mt-[2px] text-accent" />
-                <div className="flex-1">
-                  <h2 className="text-row font-semibold text-t1">Snifake</h2>
-                  <p className="mt-1 text-body text-t2">
-                    Identity, licence and updates.
-                  </p>
-                  <Button className="mt-3" variant="secondary" onClick={() => setAboutOpen(true)}>
-                    Open About
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
+          <AboutTab
+            update={update}
+            onUpdateFound={setUpdate}
+            updating={updating}
+            progress={progress}
+            silentChecks={prefs.silentUpdateChecks}
+            onSilentChecksChange={(on) => updatePrefs({ silentUpdateChecks: on })}
+            onInstall={() => {
+              if (!update) return;
+              setUpdating(true);
+              setProgress(null);
+              void applyUpdate(update, setProgress).catch((err) => {
+                setUpdating(false);
+                setProgress(null);
+                setUpdate(null);
+                setErrorDialog(`Update: ${err}`);
+              });
+            }}
+          />
         )}
       </TabRegion>
 
@@ -520,44 +523,67 @@ export default function App() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={update !== null} onOpenChange={() => !updating && setUpdate(null)}>
-        <AlertDialogContent className="prose-face">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Version {update?.version} is available</AlertDialogTitle>
-            <AlertDialogDescription>
-              {!updating
-                ? "It will be downloaded and installed, then Snifake restarts."
-                : downloading
-                  ? "Snifake will restart once the download is installed."
-                  : "Installing. Snifake will restart when it finishes."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {updating && <UpdateMeter progress={progress} />}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={updating}>Later</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={updating}
-              onClick={(e) => {
-                // The dialog must stay up while the download runs, so this
-                // action does not get to close it.
-                e.preventDefault();
-                if (!update) return;
-                setUpdating(true);
-                setProgress(null);
-                void applyUpdate(update, setProgress).catch((err) => {
-                  setUpdating(false);
-                  setProgress(null);
-                  setUpdate(null);
-                  setErrorDialog(`Update: ${err}`);
-                });
-              }}
-            >
-              {!updating ? "Install" : downloading ? "Downloading…" : "Installing…"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* The update offer. One badge, reading `Signed`, and it is the only
+          claim made about the file: the plugin verifies a minisign signature
+          before it applies anything. The mockup claimed `Verified SHA-256`
+          and `Notarized` as well - the first is not what is checked and the
+          second is an Apple process that is not ours to claim. */}
+      <ConfirmDialog
+        open={update !== null}
+        onOpenChange={() => !updating && setUpdate(null)}
+        tone="neutral"
+        icon="system_update_alt"
+        title={`Snifake v${update?.version ?? ""} is available`}
+        badge={<Badge tone="accent">v{update?.version ?? ""}</Badge>}
+        description={
+          !updating
+            ? `You are on v${update?.currentVersion ?? ""}. It will be downloaded, verified and installed, and Snifake restarts.`
+            : downloading
+              ? "Downloading. Snifake will restart once it is installed."
+              : "Installing. Snifake will restart when it finishes."
+        }
+        details={
+          <div className="flex flex-col gap-2">
+            {update?.body ? (
+              <>
+                <p className="mono text-micro tracking-[0.04em] text-t3 uppercase">
+                  What is new in v{update.version}
+                </p>
+                <p className="mono max-h-[96px] overflow-auto text-note leading-[16.5px] text-t2">
+                  {update.body}
+                </p>
+              </>
+            ) : (
+              <p className="text-note text-t2">
+                This release ships no notes. The source repository has the full history.
+              </p>
+            )}
+            {updating ? (
+              <UpdateMeter progress={progress} />
+            ) : (
+              <div className="flex items-center justify-between gap-3 border-t border-hairline pt-2">
+                <span className="mono text-note text-t3">
+                  {update?.date ? `released ${update.date.slice(0, 10)}` : "release date unknown"}
+                </span>
+                <Badge tone="ok">signed</Badge>
+              </div>
+            )}
+          </div>
+        }
+        cancelLabel="Later"
+        confirmLabel={!updating ? "Update now" : downloading ? "Downloading" : "Installing"}
+        onConfirm={() => {
+          if (!update || updating) return;
+          setUpdating(true);
+          setProgress(null);
+          void applyUpdate(update, setProgress).catch((err) => {
+            setUpdating(false);
+            setProgress(null);
+            setUpdate(null);
+            setErrorDialog(`Update: ${err}`);
+          });
+        }}
+      />
 
       <AlertDialog open={errorDialog !== null} onOpenChange={() => setErrorDialog(null)}>
         <AlertDialogContent className="prose-face">

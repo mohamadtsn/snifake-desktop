@@ -69,6 +69,7 @@ export function TelemetryTab({
   rate,
   total,
   frozenSince,
+  systemProxyBlocked,
   coreInstalled,
   blockedReason,
   activityOpen,
@@ -92,6 +93,8 @@ export function TelemetryTab({
   rate: Rate;
   total: { up: number; down: number } | null;
   frozenSince: number | null;
+  /** `sysproxy_support()`: `null` when this desktop can be written to. */
+  systemProxyBlocked: string | null;
   coreInstalled: boolean;
   /** `canStartTunnel`'s sentence, or null when the tunnel may start. */
   blockedReason: string | null;
@@ -207,6 +210,7 @@ export function TelemetryTab({
         runningId={runningId}
         linkRunning={state === "running"}
         tunnelRunning={tunnelRunning}
+        systemProxyBlocked={systemProxyBlocked}
         onSelectProfile={onSelectProfile}
         onSelectTunnel={onSelectTunnel}
         onModeChange={onModeChange}

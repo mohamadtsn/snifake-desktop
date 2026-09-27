@@ -14,6 +14,7 @@ export function ChannelRow({
   onSelectProfile,
   onSelectTunnel,
   onModeChange,
+  systemProxyBlocked,
 }: {
   store: Store | null;
   tunnels: TunnelStore | null;
@@ -23,10 +24,16 @@ export function ChannelRow({
   onSelectProfile: (id: string) => void;
   onSelectTunnel: (id: string) => void;
   onModeChange: (mode: TunnelMode) => void;
+  /** `sysproxy_support()`: `null` when this desktop can be written to. */
+  systemProxyBlocked?: string | null;
 }) {
   const mode = tunnels?.mode ?? "manual";
   const info = MODES[mode];
-  const blocked = info.blocked;
+  /** One resolution, shared with `ModeCards`. A machine that cannot have
+   *  its proxy written must not be offered the mode on either screen. */
+  const modeBlocked = (m: TunnelMode): string | null =>
+    m === "system_proxy" ? (systemProxyBlocked ?? null) : MODES[m].blocked;
+  const blocked = modeBlocked(mode);
   const hasTunnels = (tunnels?.tunnels.length ?? 0) > 0;
   // The engine is the authority on whether the link is up; `runningId` only
   // narrows it to *which* profile, and is null when nothing started it from
@@ -82,7 +89,13 @@ export function ChannelRow({
                   info.tone === "ok" ? "text-ok" : info.tone === "warn" ? "text-warn" : "text-t3"
                 }`}
               >
-                {blocked ? "not yet available" : info.tone === "warn" ? "best effort" : "port only"}
+                {blocked
+                  ? mode === "tun"
+                    ? "not yet available"
+                    : "unsupported here"
+                  : info.tone === "warn"
+                    ? "best effort"
+                    : "port only"}
               </span>
             </span>
           </div>
@@ -94,7 +107,10 @@ export function ChannelRow({
             options={MODE_ORDER.map((m) => ({
               value: m,
               label: MODES[m].name,
-              disabled: MODES[m].blocked !== null,
+              // Resolved the same way `ModeCards` resolves it, or the two
+              // screens disagree about what this machine can do - and this
+              // one would offer a mode Sockets refuses.
+              disabled: modeBlocked(m) !== null,
             }))}
             size="sm"
             stretch

@@ -141,8 +141,15 @@ because a stored copy of a read-only field eventually disagrees with reality.
   ever written; `sysproxy` is what closed that gap. It still guarantees
   nothing, because nothing compels an application to honour the setting, and
   that sentence stays on the card. The previous setting is **restored** on
-  every way out — stop, fault, a mode change away, window close, tray Exit —
-  and on the next launch after a crash, from `sysproxy/marker.rs`. `TUN`
+  every way out — tunnel stop, tunnel fault, the engine connection closing, a
+  mode change away, window close-to-quit, tray Exit, and the tray's Stop
+  (which takes the tunnel with it for exactly this reason) — and on the next
+  launch after a crash, from `sysproxy/marker.rs`. The marker is deleted only
+  after a restore that succeeded, so a transient failure is retried next
+  launch rather than becoming permanent. `should_restore` compares *identity*
+  (enabled, host, port) and not the whole record: Windows writes its own
+  `ProxyOverride` while applying and reads it back, so a whole-struct
+  comparison refused to restore on the normal path. `TUN`
   captures everything and is the only one that can fail closed; it is not
   implemented. The interface says exactly that; claiming otherwise would be
   the same lie `DESIGN.md §4.1` refuses about a throughput bar.

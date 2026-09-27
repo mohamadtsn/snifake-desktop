@@ -328,7 +328,11 @@ fn export_tunnel_uri(state: tauri::State<AppState>, id: String) -> Result<String
 /// Everything that has to be true before a tunnel can start, checked in
 /// one place and reported as one message the UI can show verbatim.
 #[tauri::command]
-fn start_tunnel(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+fn start_tunnel(
+    app: tauri::AppHandle,
+    state: tauri::State<AppState>,
+    id: String,
+) -> Result<(), String> {
     let (profile, tunnels) = {
         let tunnels = state.tunnels.lock().unwrap();
         let profile = tunnels
@@ -385,6 +389,10 @@ fn start_tunnel(state: tauri::State<AppState>, id: String) -> Result<(), String>
         // working tunnel over a desktop setting.
         if let Err(e) = sysproxy::apply(&tunnels.proxy_host, tunnels.proxy_port) {
             state.logs.push(format!("the system proxy could not be set: {e}"));
+            // And said out loud. A mode whose card reads "sets it as the
+            // system proxy" failing into a log line nobody has open is the
+            // silent no-op this whole subsystem exists to end.
+            let _ = app.emit("sysproxy-failed", e);
         }
     }
     Ok(())

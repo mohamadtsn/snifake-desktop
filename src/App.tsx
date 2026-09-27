@@ -104,8 +104,13 @@ export default function App() {
   // close over must read live state through refs, not stale captures.
   const storeRef = useRef<Store | null>(null);
   const runningRef = useRef<string | null>(null);
+  /** Read by the once-mounted listeners, which cannot see fresh state. */
+  const tunnelStateRef = useRef<TunnelState>("offline");
+  const tunnelsRef = useRef<TunnelStore | null>(null);
   storeRef.current = store;
   runningRef.current = runningId;
+  tunnelStateRef.current = tunnelState;
+  tunnelsRef.current = tunnels;
 
   useEffect(() => {
     void invoke<Store>("list_profiles").then(setStore);
@@ -156,7 +161,14 @@ export default function App() {
       }
     });
     const unlistenStart = listen("frontend-start-requested", () => void start());
-    const unlistenStop = listen("frontend-stop-requested", () => void stop());
+    // Not `stop()`. The engine's Stop takes only the SNI stage, leaving the
+    // tunnel holding - and the OS proxy still pointed at a sing-box whose
+    // outbound has nothing left to dial. The in-window switch asks first;
+    // the tray's Stop is already an explicit command, and a dialog behind a
+    // hidden window would just look like nothing happened.
+    const unlistenStop = listen("frontend-stop-requested", () => {
+      void (tunnelStateRef.current === "offline" ? stop() : stopBoth());
+    });
     const unlistenQuit = listen("frontend-quit-requested", () => setExitDialogOpen(true));
     return () => {
       unlistenState.then((f) => f());
@@ -175,6 +187,14 @@ export default function App() {
         // Started when the engine says it is up, not when we asked — the
         // same call App already makes for the link's clock.
         setTunnelSince(e.payload.state === "active" ? Date.now() : null);
+        // `modeTransition` refuses to set an OS proxy for a tunnel that is
+        // only *starting*, because it might never open the port. This is
+        // the other half of that: once it is actually up, reconcile the
+        // setting to the stored mode. `sysproxy::apply` keeps the first
+        // marker's `previous`, so calling it again is safe.
+        if (e.payload.state === "active" && tunnelsRef.current?.mode === "system_proxy") {
+          void invoke("apply_system_proxy").catch(() => {});
+        }
         if (e.payload.state === "fault" && e.payload.detail) {
           setErrorDialog({ title: "The tunnel stopped", message: e.payload.detail });
         }
@@ -187,6 +207,18 @@ export default function App() {
 
   useEffect(() => {
     void invoke<string | null>("sysproxy_support").then(setSystemProxyBlocked).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const un = listen<string>("sysproxy-failed", (e) => {
+      setErrorDialog({
+        title: "The system proxy could not be set",
+        message: `${e.payload}\n\nThe tunnel is running and the port is open; only the operating system setting failed. Point your applications at the port yourself, or choose Manual.`,
+      });
+    });
+    return () => {
+      void un.then((f) => f());
+    };
   }, []);
 
   useEffect(() => {
@@ -447,6 +479,7 @@ export default function App() {
             rate={rate}
             total={total}
             frozenSince={frozenSince}
+            systemProxyBlocked={systemProxyBlocked}
             coreInstalled={coreInstalled}
             blockedReason={blockedReason}
             activityOpen={activityOpen}

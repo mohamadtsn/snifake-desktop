@@ -21,7 +21,7 @@ mod linux;
 mod macos;
 mod windows;
 
-pub use marker::{Previous, ProxySettings};
+pub use marker::ProxySettings;
 
 /// Whether this machine can have its proxy set, and if not, why — in words
 /// a card can show. A mode that silently does nothing is the failure this
@@ -55,21 +55,10 @@ pub fn apply(host: &str, port: u16) -> Result<(), String> {
     if let Support::Unsupported(why) = support() {
         return Err(why);
     }
-    let current = read_current().unwrap_or_default();
-    let mut previous = Previous::default();
-    #[cfg(target_os = "linux")]
-    {
-        previous.gnome = Some(current.clone());
-        previous.kde = Some(current.clone());
-    }
-    #[cfg(target_os = "macos")]
-    {
-        previous.macos = Some(current.clone());
-    }
-    #[cfg(windows)]
-    {
-        previous.windows = Some(current.clone());
-    }
+    // Idempotent: a marker that already exists holds the *user's* settings,
+    // and a second `apply` would otherwise read back our own proxy and
+    // record that as the thing to restore.
+    let previous = marker::previous_to_record(marker::read().as_ref(), plat::read_previous());
     let applied = ProxySettings {
         enabled: true,
         host: host.to_string(),
@@ -91,7 +80,13 @@ pub fn clear() -> Result<(), String> {
     } else {
         Ok(())
     };
-    marker::remove();
+    // Only on success. The marker is the *only* record of what the user had
+    // and the only thing that makes the next launch try again; throwing it
+    // away after a failed restore turns a transient error into a permanent
+    // one.
+    if result.is_ok() {
+        marker::remove();
+    }
     result
 }
 

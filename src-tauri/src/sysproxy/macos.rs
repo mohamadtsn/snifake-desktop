@@ -82,6 +82,12 @@ pub fn read_current() -> Option<ProxySettings> {
     })
 }
 
+/// macOS has one backend, so this is `read_current` in the shape the
+/// dispatcher wants.
+pub fn read_previous() -> Previous {
+    Previous { macos: read_current(), ..Default::default() }
+}
+
 fn run(argv: &[Vec<String>]) -> Result<(), String> {
     for args in argv {
         let out = Command::new("networksetup").args(args).output().map_err(|e| e.to_string())?;

@@ -113,6 +113,12 @@ mod imp {
     }
 }
 
+/// Windows has one backend, so this is `read_current` in the shape the
+/// dispatcher wants.
+pub fn read_previous() -> Previous {
+    Previous { windows: imp::read_current(), ..Default::default() }
+}
+
 pub use imp::{apply, read_current, restore, support};
 
 #[cfg(test)]

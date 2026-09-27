@@ -26,6 +26,13 @@ pub struct ProxySettings {
 #[serde(default)]
 pub struct Previous {
     pub gnome: Option<ProxySettings>,
+    /// GNOME's proxy mode is three-state - `none`, `manual`, `auto` - and a
+    /// bool cannot hold it. Stored literally, so a user on a PAC file gets
+    /// `auto` back instead of `none`.
+    pub gnome_mode: Option<String>,
+    /// `org.gnome.system.proxy autoconfig-url`, meaningful when the mode is
+    /// `auto`. Without it, restoring `auto` restores a broken `auto`.
+    pub gnome_pac: Option<String>,
     pub kde: Option<ProxySettings>,
     pub macos: Option<ProxySettings>,
     pub windows: Option<ProxySettings>,
@@ -49,16 +56,41 @@ impl Default for ProxySettings {
     }
 }
 
+/// What a fresh `apply` should record as the user's settings.
+///
+/// `apply` is not safe to call twice on its own: the second call reads the
+/// live settings and finds *our* proxy, and recording that as `previous`
+/// would make the eventual restore put the user back onto our own dead
+/// port. An existing marker already holds the real answer, so it wins.
+pub fn previous_to_record(existing: Option<&Applied>, live: Previous) -> Previous {
+    match existing {
+        Some(record) => record.previous.clone(),
+        None => live,
+    }
+}
+
 impl Applied {
     /// `live` is what the platform reports right now, or `None` when it
     /// could not be read.
+    ///
+    /// The comparison is on **identity** - enabled, host, port - and not on
+    /// the whole struct. `ignore` is the platform's business: Windows
+    /// writes its own `ProxyOverride` as part of applying and reads it back
+    /// into that field, so a whole-struct comparison was false on the
+    /// *normal* path and no Windows user's proxy was ever restored. A user
+    /// who has repointed their proxy by hand has changed the host or the
+    /// port; editing only the bypass list is not that.
     pub fn should_restore(&self, live: Option<&ProxySettings>) -> bool {
         match live {
             // Unreadable: restore anyway. Leaving our proxy in place is the
             // worse of the two failures - it is the one that takes the
             // user's internet with it.
             None => true,
-            Some(now) => now == &self.applied,
+            Some(now) => {
+                now.enabled == self.applied.enabled
+                    && now.host == self.applied.host
+                    && now.port == self.applied.port
+            }
         }
     }
 }
@@ -100,6 +132,7 @@ mod tests {
             kde: None,
             macos: None,
             windows: None,
+            ..Default::default()
         }
     }
 
@@ -153,5 +186,62 @@ mod tests {
 
         // Nothing readable: restore, because leaving ours applied is worse.
         assert!(rec.should_restore(None));
+    }
+
+    #[test]
+    fn a_platform_that_adds_its_own_bypass_list_is_still_recognised_as_ours() {
+        // Windows writes `ProxyOverride` as part of applying, and reads it
+        // back into `ignore`. Comparing the whole struct therefore made
+        // `should_restore` false on the *normal* path, so the proxy was
+        // never restored and the marker was deleted anyway - a Windows user
+        // left pointed at a dead port forever, with nothing left to recover
+        // from. Identity is enabled + host + port; the bypass list is the
+        // platform's business, not evidence of a hand-edit.
+        let ours = ProxySettings {
+            enabled: true,
+            host: "127.0.0.1".into(),
+            port: 2080,
+            ignore: vec![],
+        };
+        let rec = Applied { previous: sample(), applied: ours };
+        let live_on_windows = ProxySettings {
+            enabled: true,
+            host: "127.0.0.1".into(),
+            port: 2080,
+            ignore: vec!["localhost".into(), "127.*".into(), "<local>".into()],
+        };
+        assert!(rec.should_restore(Some(&live_on_windows)));
+    }
+
+    #[test]
+    fn a_second_apply_keeps_the_users_settings_rather_than_recording_our_own() {
+        // `apply` twice without a `clear` between: the second read of the
+        // live settings returns *our* proxy. Recording that as `previous`
+        // would make the eventual restore put the user back onto our own
+        // dead port, permanently.
+        let theirs = ProxySettings {
+            enabled: true,
+            host: "10.0.0.9".into(),
+            port: 8080,
+            ignore: vec![],
+        };
+        let first = Applied {
+            previous: Previous { gnome: Some(theirs.clone()), ..Default::default() },
+            applied: ProxySettings { enabled: true, host: "127.0.0.1".into(), port: 2080, ignore: vec![] },
+        };
+        let ours_readback = Previous {
+            gnome: Some(first.applied.clone()),
+            ..Default::default()
+        };
+        assert_eq!(previous_to_record(Some(&first), ours_readback).gnome, Some(theirs));
+    }
+
+    #[test]
+    fn the_first_apply_records_what_it_actually_found() {
+        let theirs = Previous {
+            gnome: Some(ProxySettings { enabled: true, host: "10.0.0.9".into(), port: 8080, ignore: vec![] }),
+            ..Default::default()
+        };
+        assert_eq!(previous_to_record(None, theirs.clone()), theirs);
     }
 }

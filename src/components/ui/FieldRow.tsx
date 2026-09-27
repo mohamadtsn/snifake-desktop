@@ -34,15 +34,21 @@ export function FieldRow({
   error,
   mono = false,
   children,
+  /** `false` for a control that is not a single form element - a segmented
+   *  control is a group of buttons, and buttons inside a `<label>` are
+   *  invalid and forward stray clicks. */
+  labelled = true,
 }: {
   label: string;
   hint?: ReactNode;
   error?: string | null;
   mono?: boolean;
   children: ReactNode;
+  labelled?: boolean;
 }) {
+  const Tag = labelled ? "label" : "div";
   return (
-    <label className="block">
+    <Tag className="block">
       <span className="mb-[6px] flex items-baseline justify-between gap-3">
         <span className="text-note font-medium text-t2">{label}</span>
         {hint ? <span className="text-note text-t3">{hint}</span> : null}
@@ -51,6 +57,6 @@ export function FieldRow({
       <span className="mt-[4px] block min-h-[16px] text-note leading-[16px] text-bad">
         {error ?? ""}
       </span>
-    </label>
+    </Tag>
   );
 }

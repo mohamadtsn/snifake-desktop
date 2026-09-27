@@ -155,11 +155,16 @@ export function ConfigTab({
               activeId={store?.active_id ?? null}
               runningId={runningId}
               selectedId={creating ? null : selectedSni}
+              // Selecting is for *reading and editing*. Activating restarts
+              // the running engine into the chosen profile, so it is its own
+              // deliberate act on the row, not a side effect of looking at
+              // one. CLAUDE.md records the same call about the chip rail
+              // this list replaced.
               onSelect={(id) => {
                 setCreating(false);
                 setSelectedSni(id);
-                onSelectProfile(id);
               }}
+              onActivate={onSelectProfile}
             />
             <SniEditor
               profile={selectedProfile}
@@ -184,8 +189,8 @@ export function ConfigTab({
               onSelect={(id) => {
                 setCreatingTunnel(false);
                 setSelectedTunnel(id);
-                onSelectTunnel(id);
               }}
+              onActivate={onSelectTunnel}
             />
             <TunnelEditorPane
               tunnel={selectedTunnelProfile}

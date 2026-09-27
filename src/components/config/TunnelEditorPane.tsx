@@ -133,7 +133,7 @@ export function TunnelEditorPane({
           <div className="w-[200px] shrink-0">
             {/* Two protocols, and the set is closed: widening it is a spec
                 change, not a code change. See ACCEPTED_V2_CONFIG.md. */}
-            <FieldRow label="Protocol architecture">
+            <FieldRow label="Protocol architecture" labelled={false}>
               <Segmented
                 stretch
                 label="Protocol"

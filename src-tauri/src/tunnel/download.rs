@@ -55,9 +55,9 @@ pub struct CoreStatus {
 pub fn status() -> CoreStatus {
     let path = core::core_binary();
     let installed = core::is_installed();
-    // Hashing a ~30MB binary on every status call is acceptable because the
-    // call is user-initiated: opening Preferences, or finishing an install.
-    // Nothing polls it.
+    // Hashing a ~30MB binary is not free, and this is called on launch.
+    // `core_status` is therefore `async`, so Tauri runs it on the async
+    // runtime rather than blocking the main thread through the first paint.
     let sha256 = if installed {
         std::fs::read(&path).ok().map(|bytes| core::sha256_hex(&bytes))
     } else {

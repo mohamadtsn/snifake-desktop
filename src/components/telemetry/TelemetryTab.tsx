@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { ActivitySection } from "@/components/ActivitySection";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -98,6 +99,19 @@ export function TelemetryTab({
   onModeChange: (mode: TunnelMode) => void;
   onSetupCore: () => void;
 }) {
+  // The clock. `formatUptime(Date.now() - since)` is computed at render, so
+  // without something to render on it reads 0s and then jumps whenever some
+  // unrelated state changes. One interval, and only while something is
+  // actually up: a timer running against a stopped engine is a render a
+  // second for a number that cannot change.
+  const ticking = state === "running" || tunnelState === "active";
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!ticking) return;
+    const id = window.setInterval(() => setTick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [ticking]);
+
   const profile = store ? activeProfile(store) : undefined;
   const tunnel = tunnels ? activeTunnel(tunnels) : undefined;
   const hasTunnel = (tunnels?.tunnels.length ?? 0) > 0;

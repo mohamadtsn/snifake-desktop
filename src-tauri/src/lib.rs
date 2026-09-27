@@ -121,8 +121,10 @@ fn shutdown_engine(state: tauri::State<AppState>) {
     state.engine.lock().unwrap().shutdown();
 }
 
+/// `async` on purpose: it reads and digests the installed core, which is
+/// tens of megabytes, and a synchronous command runs on the main thread.
 #[tauri::command]
-fn core_status() -> tunnel::download::CoreStatus {
+async fn core_status() -> tunnel::download::CoreStatus {
     tunnel::download::status()
 }
 
@@ -221,7 +223,13 @@ fn set_active_tunnel(
 
 /// Mode, proxy port and the three lists, saved as one unit — they are
 /// edited on one screen and validated together.
-#[tauri::command]
+///
+/// `rename_all` is not decoration: `#[tauri::command]` lower-camel-cases
+/// every argument key by default, so without it this command expects
+/// `proxyHost`/`proxyPort` while every call site in the frontend sends
+/// `proxy_host`/`proxy_port`, and every save is rejected before it runs.
+/// The test at the foot of this file pins that down for the next one.
+#[tauri::command(rename_all = "snake_case")]
 fn save_routing(
     state: tauri::State<AppState>,
     mode: tunnel::model::TunnelMode,
@@ -468,5 +476,63 @@ mod verify_tests {
             Err(e) => assert!(e.contains("pin"), "unexpected error: {e}"),
         }
         let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod command_argument_case_tests {
+    /// `#[tauri::command]` lower-camel-cases every argument key by default
+    /// (`tauri-macros`'s `ArgumentCase::Camel`), so a command with a
+    /// multi-word parameter silently stops accepting the snake_case payload
+    /// the whole frontend sends, and every call fails with
+    /// `missing required key <camelCase>`.
+    ///
+    /// This scans this file rather than testing one command, because the
+    /// failure is invisible at the call site and costs nothing until
+    /// somebody adds the next two-word argument.
+    #[test]
+    fn every_command_with_a_multi_word_argument_opts_into_snake_case() {
+        let source = include_str!("lib.rs");
+        let mut offenders = Vec::new();
+
+        for (index, _) in source.match_indices("#[tauri::command") {
+            let rest = &source[index..];
+            let attribute_end = rest.find(']').expect("an attribute is closed");
+            let attribute = &rest[..attribute_end];
+            let body = &rest[attribute_end..];
+            let signature_end = body.find(')').unwrap_or(body.len());
+            let signature = &body[..signature_end];
+
+            let name = signature
+                .split("fn ")
+                .nth(1)
+                .and_then(|s| s.split('(').next())
+                .unwrap_or("<unknown>");
+
+            let multi_word = signature.lines().any(|line| {
+                let line = line.trim();
+                match line.split_once(':') {
+                    // Skip the injected `app: tauri::AppHandle` and
+                    // `state: tauri::State<..>`, which are not wire keys.
+                    Some((key, _)) if key == "app" || key == "state" => false,
+                    Some((key, _)) => {
+                        !key.is_empty()
+                            && key.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                            && key.contains('_')
+                    }
+                    None => false,
+                }
+            });
+
+            if multi_word && !attribute.contains("rename_all = \"snake_case\"") {
+                offenders.push(name.to_string());
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "these commands take a multi-word argument but do not opt into \
+             snake_case, so the frontend's payload will be rejected: {offenders:?}"
+        );
     }
 }

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { parseRawRules } from "@/lib/rawRules";
 import { validateRuleList } from "@/lib/rules";
 import type { Routing, TunnelMode, TunnelStore } from "@/types";
 import { AdvancedJson } from "./AdvancedJson";
@@ -33,10 +34,18 @@ export function SocketsTab({
   const [text, setText] = useState({ block: "", bypass: "", proxy: "" });
   const [raw, setRaw] = useState("");
 
-  // Reload the draft whenever the stored document changes - on first load,
-  // and after a save returns the canonical version.
+  /** What the draft was loaded from, so an unrelated write to the tunnel
+   *  store - Preferences saving `proxy_port`, say - does not silently throw
+   *  away rules the user is in the middle of typing. */
+  const loadedFrom = useRef<string | null>(null);
+
+  // Reload the draft when the *routing* changes: on first load, and after a
+  // save returns the canonical version.
   useEffect(() => {
     if (!store) return;
+    const signature = JSON.stringify({ mode: store.mode, routing: store.routing });
+    if (loadedFrom.current === signature) return;
+    loadedFrom.current = signature;
     setMode(store.mode);
     setRouting(store.routing);
     setText({
@@ -47,18 +56,7 @@ export function SocketsTab({
     setRaw(store.routing.raw === null ? "" : JSON.stringify(store.routing.raw, null, 2));
   }, [store]);
 
-  const rawParsed = useMemo(() => {
-    if (raw.trim() === "") return { value: null as unknown, error: null as string | null };
-    try {
-      const value: unknown = JSON.parse(raw);
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
-        return { value: null, error: "The raw block has to be a JSON object." };
-      }
-      return { value, error: null };
-    } catch (e) {
-      return { value: null, error: `Not valid JSON: ${(e as Error).message}` };
-    }
-  }, [raw]);
+  const rawParsed = useMemo(() => parseRawRules(raw), [raw]);
 
   const badLines = useMemo(
     () =>

@@ -1,37 +1,9 @@
 import { Card } from "@/components/ui/Card";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { MODES, MODE_ORDER } from "@/lib/modes";
 import type { Store, TunnelMode, TunnelStore } from "@/types";
 import { ProfilePicker } from "./ProfilePicker";
-
-/**
- * What each mode does, and what it does not.
- *
- * This is the single biggest honesty gain in the redesign, and it is three
- * sentences. `System proxy` guaranteeing nothing is not a caveat in small
- * print; it is the fact that decides whether the mode is the right one, and
- * it belongs where the mode is chosen.
- */
-const MODES: Record<TunnelMode, { label: string; blurb: string; guarantee: string; tone: "ok" | "warn" | "neutral" }> = {
-  manual: {
-    label: "Manual",
-    blurb: "Only applications you point at the port below. Nothing else is captured.",
-    guarantee: "port only",
-    tone: "neutral",
-  },
-  system_proxy: {
-    label: "System proxy",
-    blurb: "Sets the system proxy. Nothing compels an application to honour it.",
-    guarantee: "best effort",
-    tone: "warn",
-  },
-  tun: {
-    label: "TUN",
-    blurb: "Captures everything. The only mode that can fail closed.",
-    guarantee: "fails closed",
-    tone: "ok",
-  },
-};
 
 export function ChannelRow({
   store,
@@ -54,6 +26,7 @@ export function ChannelRow({
 }) {
   const mode = tunnels?.mode ?? "manual";
   const info = MODES[mode];
+  const blocked = info.blocked;
   const hasTunnels = (tunnels?.tunnels.length ?? 0) > 0;
   // The engine is the authority on whether the link is up; `runningId` only
   // narrows it to *which* profile, and is null when nothing started it from
@@ -101,12 +74,15 @@ export function ChannelRow({
             <h2 className="text-row font-semibold text-t1">Routing mode</h2>
             <span className="flex items-center gap-[6px]">
               <StatusDot tone={info.tone === "neutral" ? "off" : info.tone} size={6} />
+              {/* The word here is what the mode *guarantees*, which for both
+                  modes that exist is nothing. Saying "no guarantee" out loud
+                  is the point; an unavailable mode says so instead. */}
               <span
                 className={`mono text-micro tracking-[0.04em] uppercase ${
                   info.tone === "ok" ? "text-ok" : info.tone === "warn" ? "text-warn" : "text-t3"
                 }`}
               >
-                {info.guarantee}
+                {blocked ? "not yet available" : info.tone === "warn" ? "best effort" : "port only"}
               </span>
             </span>
           </div>
@@ -115,16 +91,19 @@ export function ChannelRow({
             label="Routing mode"
             value={mode}
             onChange={onModeChange}
-            options={(Object.keys(MODES) as TunnelMode[]).map((m) => ({
+            options={MODE_ORDER.map((m) => ({
               value: m,
-              label: MODES[m].label,
+              label: MODES[m].name,
+              disabled: MODES[m].blocked !== null,
             }))}
             size="sm"
             stretch
           />
 
           <div className="flex items-end justify-between gap-3">
-            <p className="min-w-0 flex-1 text-note leading-[16.5px] text-t2">{info.blurb}</p>
+            <p className="min-w-0 flex-1 text-note leading-[16.5px] text-t2">
+              {blocked ?? info.guarantee}
+            </p>
             <span className="mono shrink-0 text-note text-t3" dir="ltr">
               {tunnels ? `${tunnels.proxy_host}:${tunnels.proxy_port}` : ""}
             </span>

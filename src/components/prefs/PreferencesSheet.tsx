@@ -42,6 +42,10 @@ export function PreferencesSheet({
   savingNetwork: boolean;
 }) {
   const [tab, setTab] = useState<PrefTab>("general");
+  /** Bumped by Restore Defaults so `GeneralTab` re-reads the platform's own
+   *  answer for Launch at Login. Without it the row keeps showing the state
+   *  it read on mount, which the reset has just changed underneath it. */
+  const [resetCount, setResetCount] = useState(0);
   const [version, setVersion] = useState("");
 
   useEffect(() => {
@@ -58,11 +62,13 @@ export function PreferencesSheet({
   function restoreDefaults() {
     onPrefsChange({ ...DEFAULT_PREFS });
     void invoke("set_tray_colorize", { on: DEFAULT_PREFS.colorizeTray });
-    void invoke(DEFAULT_PREFS.launchAtLogin ? "plugin:autostart|enable" : "plugin:autostart|disable").catch(
-      () => {
+    void invoke(
+      DEFAULT_PREFS.launchAtLogin ? "plugin:autostart|enable" : "plugin:autostart|disable",
+    )
+      .catch(() => {
         // The platform may refuse; the rest of the reset still stands.
-      },
-    );
+      })
+      .finally(() => setResetCount((n) => n + 1));
   }
 
   return (
@@ -104,7 +110,7 @@ export function PreferencesSheet({
       }
     >
       {tab === "general" ? (
-        <GeneralTab prefs={prefs} onChange={onPrefsChange} />
+        <GeneralTab key={resetCount} prefs={prefs} onChange={onPrefsChange} />
       ) : tab === "network" ? (
         <NetworkTab store={tunnels} onSave={onSaveNetwork} saving={savingNetwork} />
       ) : (

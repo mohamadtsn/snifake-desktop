@@ -82,7 +82,11 @@ export function Segmented<T extends string>({
             value={option.value}
             disabled={option.disabled}
             role={itemRole}
+            // Base UI's Toggle renders `aria-pressed`, which is ignored
+            // under `role="radio"` and `role="tab"`. Without these the
+            // control announces as a radio button with no state at all.
             aria-selected={role === "tablist" ? active : undefined}
+            aria-checked={role === "radiogroup" ? active : undefined}
             className={`${
               stretch ? "flex flex-1 basis-0" : "inline-flex"
             } relative items-center justify-center gap-[6px] rounded-sm font-medium whitespace-nowrap transition-colors duration-(--dur-fast) ease-(--ease-out) ${

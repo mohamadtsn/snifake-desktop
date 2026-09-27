@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 
 /**
- * `routing.raw`: a JSON object merged into the generated sing-box routing
- * block, for the cases the three lists cannot express.
+ * `routing.raw`: an array of sing-box rule objects appended to the generated
+ * rule list, for the cases the three lists cannot express.
  *
  * Behind a disclosure because it is an escape hatch, not a setting, and an
  * escape hatch on the face of a screen invites people through it. Unparseable
@@ -61,9 +61,9 @@ export function AdvancedJson({
           className="border-t border-hairline px-4 pt-3 pb-4"
         >
           <p className="mb-2 text-note leading-[16.5px] text-t2">
-            Merged into the generated routing block. The four guard rules that keep the tunnel
-            from swallowing the SNI link&rsquo;s own connection are always generated and cannot
-            be overridden from here.
+            An array of sing-box rule objects, appended to the generated rule list. The four
+            guard rules that keep the tunnel from swallowing the SNI link&rsquo;s own
+            connection are generated first and cannot be overridden from here.
           </p>
           <textarea
             value={value}
@@ -72,7 +72,7 @@ export function AdvancedJson({
             dir="ltr"
             aria-label="Raw routing JSON"
             aria-invalid={error ? true : undefined}
-            placeholder={'{ "final": "proxy" }'}
+            placeholder={'[\n  { "domain": ["intranet.example"], "outbound": "direct" }\n]'}
             className={`mono pick block h-[120px] w-full resize-none rounded-md border bg-inset px-3 py-[10px] text-note leading-[18px] text-t1 placeholder:text-t4 focus:outline-none ${
               error
                 ? "border-bad focus:shadow-[0_0_0_3px_rgba(255,69,58,0.3)]"

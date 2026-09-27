@@ -169,10 +169,16 @@ export function RuleEditor({
               onChange={(e) => onLinesChange(e.target.value)}
               onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
               spellCheck={false}
+              // No soft wrap. The gutter and the highlight layer render one
+              // fixed-height row per newline; a line that wraps to three
+              // visual rows puts every number and every red wash below it
+              // against the wrong rule. A rule scrolls sideways instead,
+              // which is what `.log-lines` does for the same reason.
+              wrap="off"
               dir="ltr"
               aria-label={`${list} rules, one per line`}
               placeholder={"domain: example.com\nsuffix: .example.org\nip: 10.0.0.0/8"}
-              className="mono pick relative block h-[188px] w-full resize-none bg-transparent px-3 py-[10px] text-note leading-[18px] text-t1 placeholder:text-t4 focus:outline-none"
+              className="mono pick relative block h-[188px] w-full resize-none overflow-x-auto bg-transparent px-3 py-[10px] text-note leading-[18px] whitespace-pre text-t1 placeholder:text-t4 focus:outline-none"
             />
           </div>
         </div>

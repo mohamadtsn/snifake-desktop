@@ -40,7 +40,12 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [errorDialog, setErrorDialog] = useState<string | null>(null);
+  /** A failure to show, with what it was about. The title was guessed from
+   *  a string prefix, so a failed clipboard write told the user the SNI link
+   *  could not start. */
+  const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
+  const fail = (title: string) => (e: unknown) =>
+    setErrorDialog({ title, message: String(e) });
   const [update, setUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -129,7 +134,7 @@ export default function App() {
         // same call App already makes for the link's clock.
         setTunnelSince(e.payload.state === "active" ? Date.now() : null);
         if (e.payload.state === "fault" && e.payload.detail) {
-          setErrorDialog(`Tunnel: ${e.payload.detail}`);
+          setErrorDialog({ title: "The tunnel stopped", message: e.payload.detail });
         }
       },
     );
@@ -150,7 +155,7 @@ export default function App() {
     try {
       await invoke("start_tunnel", { id });
     } catch (e) {
-      setErrorDialog(String(e));
+      fail("The tunnel could not start")(e);
     }
   }
 
@@ -183,7 +188,7 @@ export default function App() {
       await invoke("start_proxy", { id: target });
       setRunningId(target);
     } catch (e) {
-      setErrorDialog(String(e));
+      fail("The SNI link could not start")(e);
     }
   }
 
@@ -225,7 +230,7 @@ export default function App() {
     try {
       setStore(await invoke<Store>("delete_profile", { id }));
     } catch (e) {
-      setErrorDialog(String(e));
+      fail("The profile could not be deleted")(e);
     }
   }
 
@@ -237,7 +242,7 @@ export default function App() {
     try {
       setStore(await invoke<Store>("delete_profile", { id }));
     } catch (e) {
-      setErrorDialog(String(e));
+      fail("The profile could not be deleted")(e);
     }
   }
 
@@ -328,7 +333,7 @@ export default function App() {
                 routing: tunnels.routing,
               })
                 .then(setTunnels)
-                .catch((e) => setErrorDialog(String(e)));
+                .catch(fail("The routing rules could not be saved"));
             }}
             onSetupCore={() => setCoreSetupOpen(true)}
           />
@@ -342,7 +347,7 @@ export default function App() {
               setSavingRouting(true);
               void invoke<TunnelStore>("save_routing", patch)
                 .then(setTunnels)
-                .catch((e) => setErrorDialog(String(e)))
+                .catch(fail("The routing rules could not be saved"))
                 .finally(() => setSavingRouting(false));
             }}
           />
@@ -368,7 +373,7 @@ export default function App() {
             onDeleteTunnel={(id) =>
               void invoke<TunnelStore>("delete_tunnel", { id })
                 .then(setTunnels)
-                .catch((e) => setErrorDialog(String(e)))
+                .catch(fail("The tunnel could not be deleted"))
             }
             onSelectTunnel={(id) =>
               void invoke<TunnelStore>("set_active_tunnel", { id }).then(setTunnels)
@@ -376,7 +381,7 @@ export default function App() {
             onCopyTunnelLink={(id) =>
               void invoke<string>("export_tunnel_uri", { id })
                 .then((uri) => navigator.clipboard.writeText(uri))
-                .catch((e) => setErrorDialog(String(e)))
+                .catch(fail("The share link could not be copied"))
             }
           />
         )}
@@ -397,7 +402,7 @@ export default function App() {
                 setUpdating(false);
                 setProgress(null);
                 setUpdate(null);
-                setErrorDialog(`Update: ${err}`);
+                setErrorDialog({ title: "The update could not be applied", message: String(err) });
               });
             }}
           />
@@ -425,7 +430,7 @@ export default function App() {
             routing: tunnels.routing,
           })
             .then(setTunnels)
-            .catch((e) => setErrorDialog(String(e)))
+            .catch(fail("The network settings could not be saved"))
             .finally(() => setSavingRouting(false));
         }}
       />
@@ -570,6 +575,7 @@ export default function App() {
             )}
           </div>
         }
+        busy={updating}
         cancelLabel="Later"
         confirmLabel={!updating ? "Update now" : downloading ? "Downloading" : "Installing"}
         onConfirm={() => {
@@ -580,7 +586,7 @@ export default function App() {
             setUpdating(false);
             setProgress(null);
             setUpdate(null);
-            setErrorDialog(`Update: ${err}`);
+            setErrorDialog({ title: "The update could not be applied", message: String(err) });
           });
         }}
       />
@@ -593,16 +599,12 @@ export default function App() {
         onOpenChange={() => setErrorDialog(null)}
         tone="danger"
         icon="error"
-        title={
-          errorDialog?.startsWith("Update:")
-            ? "The update could not be applied"
-            : errorDialog?.startsWith("Tunnel:")
-              ? "The tunnel stopped"
-              : "The SNI link could not start"
-        }
+        title={errorDialog?.title ?? ""}
         description="This is what the engine reported."
         details={
-          <p className="mono pick text-note leading-[16.5px] break-all text-t1">{errorDialog}</p>
+          <p className="mono pick text-note leading-[16.5px] break-all text-t1">
+            {errorDialog?.message}
+          </p>
         }
         cancelLabel={null}
         confirmLabel="Close"

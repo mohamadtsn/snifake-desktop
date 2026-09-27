@@ -30,6 +30,7 @@ export function ConfirmDialog({
   cancelLabel,
   confirmLabel,
   onConfirm,
+  busy = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,6 +46,9 @@ export function ConfirmDialog({
   cancelLabel: string | null;
   confirmLabel: string;
   onConfirm: () => void;
+  /** Work is running and neither answer applies any more. Both buttons say
+   *  so rather than looking live and doing nothing. */
+  busy?: boolean;
 }) {
   const danger = tone === "danger";
   return (
@@ -87,9 +91,15 @@ export function ConfirmDialog({
                 and the first thing a screen reader reads. The destructive
                 answer is never the easy one. */}
             {cancelLabel === null ? null : (
-              <AlertDialog.Close render={<Button variant="secondary">{cancelLabel}</Button>} />
+              <AlertDialog.Close
+                render={
+                  <Button variant="secondary" disabled={busy}>
+                    {cancelLabel}
+                  </Button>
+                }
+              />
             )}
-            <Button variant={danger ? "danger" : "primary"} onClick={onConfirm}>
+            <Button variant={danger ? "danger" : "primary"} disabled={busy} onClick={onConfirm}>
               {confirmLabel}
             </Button>
           </footer>

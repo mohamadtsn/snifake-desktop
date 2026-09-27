@@ -1,6 +1,4 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { motion, useReducedMotion } from "motion/react";
-import { TAB_TWEEN } from "@/lib/motion";
 
 export type Tab = "telemetry" | "sockets" | "config" | "about";
 
@@ -28,7 +26,6 @@ export function TabRegion({ tab, children }: { tab: Tab; children: ReactNode }) 
   const ref = useRef<HTMLElement>(null);
   const tops = useRef<Partial<Record<Tab, number>>>({});
   const previous = useRef<Tab>(tab);
-  const reduce = useReducedMotion();
 
   useEffect(() => {
     const node = ref.current;
@@ -44,15 +41,16 @@ export function TabRegion({ tab, children }: { tab: Tab; children: ReactNode }) 
     <main ref={ref} className="tab-scroll min-h-0 flex-1">
       {/* Keyed on the tab so React replaces the subtree rather than trying
           to reconcile four unrelated panels into each other - and so the
-          entrance runs on every change. */}
-      <motion.div
-        key={tab}
-        initial={reduce ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={TAB_TWEEN}
-      >
+          entrance runs on every change.
+
+          A CSS animation, not a `motion` one, and the difference matters:
+          `initial={{ opacity: 0 }}` hides the panel until JavaScript
+          animates it back, so anything that stops the animation starting
+          leaves the tab permanently blank. A keyframe that *ends* at the
+          element's normal state can only ever fail towards visible. */}
+      <div key={tab} className="tab-enter">
         {children}
-      </motion.div>
+      </div>
     </main>
   );
 }

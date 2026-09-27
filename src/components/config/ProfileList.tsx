@@ -27,6 +27,7 @@ export function ProfileList({
   activeId,
   runningId,
   onSelect,
+  onActivate,
   selectedId,
 }: {
   kind: "sni" | "tunnel";
@@ -35,6 +36,9 @@ export function ProfileList({
   /** The one actually carrying traffic, which is not always the active one. */
   runningId: string | null;
   onSelect: (id: string) => void;
+  /** Make this the one the engine runs. Separate from selecting it, because
+   *  it restarts a running engine into the new profile. */
+  onActivate: (id: string) => void;
   selectedId: string | null;
 }) {
   const reduce = useReducedMotion();
@@ -94,7 +98,28 @@ export function ProfileList({
                     <span className="min-w-0 flex-1 truncate text-row font-medium text-t1">
                       {middleTruncate(item.name, 26)}
                     </span>
-                    {active ? <Badge tone="ok">active</Badge> : null}
+                    {active ? (
+                      <Badge tone="ok">active</Badge>
+                    ) : (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title={`Make ${item.name} the active ${label}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onActivate(item.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter" && e.key !== " ") return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onActivate(item.id);
+                        }}
+                        className="shrink-0 rounded-xs border border-hairline px-[6px] py-[2px] text-micro tracking-[0.04em] text-t3 uppercase transition-colors duration-(--dur-press) ease-(--ease-out) hover:border-accent-line hover:bg-accent-soft hover:text-accent"
+                      >
+                        activate
+                      </span>
+                    )}
                   </span>
                   <span className="flex items-center gap-[6px] pl-[16px]">
                     <Icon name={kind === "sni" ? "dns" : "vpn_key"} size={12} className="text-t3" />
@@ -120,8 +145,9 @@ export function ProfileList({
 
       <p className="mt-auto flex items-start gap-2 rounded-md border border-hairline bg-inset px-3 py-[10px] text-note leading-[16.5px] text-t2">
         <Icon name="info" size={14} className="mt-[1px] shrink-0 text-t3" />
-        One profile per category is active at a time. Switching while the engine is running
-        restarts it into the new profile, with no password prompt.
+        Selecting a row opens it for editing. <em className="not-italic text-t1">Activate</em>{" "}
+        makes it the one the engine runs, which while the engine is up restarts it into that
+        profile - with no password prompt, but it is a restart.
       </p>
     </div>
   );

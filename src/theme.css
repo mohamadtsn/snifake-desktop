@@ -242,12 +242,32 @@ body {
   white-space: pre;
 }
 
+/* A tab's contents arriving. Opacity only, and short: the tab bar is the
+   most-pressed control in the window, and anything hit a hundred times a day
+   must not make anyone wait for it. The outgoing panel is not animated at
+   all - waiting for an exit before the entrance would double the latency of
+   every press.
+
+   Deliberately a keyframe that *ends* at the element's normal state, so a
+   browser that never runs it shows the panel rather than hiding it. */
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+  }
+}
+
+.tab-enter {
+  animation: tab-enter 140ms var(--ease-out) both;
+}
+
 /* -----------------------------------------------------------------------
    Reduced motion. Every animation in the application has an opt-out, and
    this is the backstop for the CSS-driven half: the components that
    animate through `motion/react` read `useReducedMotion()` themselves.
-   Nothing here disables a *transition* on colour, because a control that
-   changes colour instantly still communicates; it disables movement.
+   It is a blunt instrument - `transition-duration` on `*` takes colour with
+   it - and that is the right trade for a backstop: the components that have
+   something gentler to offer read `useReducedMotion()` and degrade
+   deliberately, and this catches everything else.
    --------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   *,

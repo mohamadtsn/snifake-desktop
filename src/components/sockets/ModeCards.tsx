@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { MODES, MODE_ORDER } from "@/lib/modes";
 import type { TunnelMode } from "@/types";
 
 /**
@@ -15,36 +16,6 @@ import type { TunnelMode } from "@/types";
  *
  * The guarantee lines are the mockup's own, kept verbatim.
  */
-const MODES: {
-  value: TunnelMode;
-  icon: string;
-  name: string;
-  does: string;
-  guarantee: string;
-}[] = [
-  {
-    value: "manual",
-    icon: "tune",
-    name: "Manual",
-    does: "Only apps pointed directly at the local port.",
-    guarantee: "None (only intercepts what you target).",
-  },
-  {
-    value: "system_proxy",
-    icon: "code",
-    name: "System proxy",
-    does: "Apps that read the system proxy setting.",
-    guarantee: "None (apps bypassing the system proxy leak direct).",
-  },
-  {
-    value: "tun",
-    icon: "hub",
-    name: "TUN (virtual)",
-    does: "Entire operating-system network traffic.",
-    guarantee: "Full system encapsulation. The only mode that can fail closed.",
-  },
-];
-
 export function ModeCards({
   mode,
   bound,
@@ -62,7 +33,7 @@ export function ModeCards({
           Interception tier
         </h2>
         <span className="text-note text-t3">
-          Active target <span className="text-accent">{MODES.find((m) => m.value === mode)?.name}</span>
+          Active target <span className="text-accent">{MODES[mode].name}</span>
         </span>
       </div>
 
@@ -71,46 +42,62 @@ export function ModeCards({
         aria-label="Interception mode"
         className="grid grid-cols-3 items-stretch gap-[6px]"
       >
-        {MODES.map((m) => {
+        {MODE_ORDER.map((key) => {
+          const m = MODES[key];
           const selected = m.value === mode;
+          const blocked = m.blocked;
           return (
-            <Card key={m.value} tone={selected ? "active" : "default"} className="overflow-hidden">
+            <Card
+              key={m.value}
+              tone={selected && !blocked ? "active" : "default"}
+              className={`overflow-hidden ${blocked ? "opacity-55" : ""}`}
+            >
               <button
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                disabled={Boolean(blocked)}
+                title={blocked ?? undefined}
                 onClick={() => onChange(m.value)}
-                className="flex h-full w-full flex-col text-left"
+                className="flex h-full w-full flex-col text-left disabled:cursor-default"
               >
                 <span className="flex flex-1 flex-col gap-1 p-3">
                   <span className="flex items-center justify-between gap-2">
                     <Icon name={m.icon} size={16} className={selected ? "text-ok" : "text-t3"} />
-                    {selected ? (
+                    {blocked ? (
+                      <Badge tone="warn">not yet</Badge>
+                    ) : selected ? (
                       <span className="flex items-center gap-[5px]">
                         <StatusDot tone="ok" size={6} glow />
                         <span className="mono text-micro tracking-[0.04em] text-ok uppercase">
                           active
                         </span>
                       </span>
-                    ) : (
-                      <Badge>{m.value === "manual" ? bound : "system"}</Badge>
-                    )}
+                    ) : m.value === "manual" ? (
+                      <Badge>{bound}</Badge>
+                    ) : null}
                   </span>
-                  <span className={`text-row font-semibold ${selected ? "text-t1" : "text-t2"}`}>
+                  <span
+                    className={`text-row font-semibold ${
+                      blocked ? "text-t3" : selected ? "text-t1" : "text-t2"
+                    }`}
+                  >
                     {m.name}
                   </span>
-                  <span className="text-note leading-[16.5px] text-t3">{m.does}</span>
+                  <span className="text-note leading-[16.5px] text-t3">
+                    {blocked ?? m.does}
+                  </span>
                 </span>
                 <span className="block border-t border-hairline bg-inset px-3 py-[9px]">
                   <span className="flex items-center gap-[5px]">
                     <Icon
-                      name={selected ? "verified_user" : "shield"}
+                      name={selected && !blocked ? "verified_user" : "shield"}
                       size={12}
-                      className={selected ? "text-ok" : "text-t4"}
+                      className={selected && !blocked ? "text-ok" : "text-t4"}
                     />
                     <span
                       className={`mono text-micro tracking-[0.04em] uppercase ${
-                        selected ? "text-ok" : "text-t4"
+                        selected && !blocked ? "text-ok" : "text-t4"
                       }`}
                     >
                       guarantee
@@ -118,7 +105,7 @@ export function ModeCards({
                   </span>
                   <span
                     className={`mt-[3px] block text-note leading-[15px] ${
-                      selected ? "text-t1" : "text-t3"
+                      selected && !blocked ? "text-t1" : "text-t3"
                     }`}
                   >
                     {m.guarantee}

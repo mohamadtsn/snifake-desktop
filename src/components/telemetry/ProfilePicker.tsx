@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Select } from "@base-ui/react/select";
 import { Icon } from "@/components/ui/Icon";
 
@@ -32,10 +33,13 @@ export function ProfilePicker<T extends { id: string; name: string }>({
   empty: string;
 }) {
   const active = items.find((i) => i.id === activeId);
+  const labelId = useId();
   return (
     <div className="min-w-0 flex-1">
       <div className="mb-[6px] flex items-baseline justify-between gap-2">
-        <span className="text-note text-t2">{label}</span>
+        <span id={labelId} className="text-note text-t2">
+          {label}
+        </span>
         <span className={`mono text-micro tracking-[0.04em] uppercase ${statusTone}`}>
           {status}
         </span>
@@ -47,7 +51,7 @@ export function ProfilePicker<T extends { id: string; name: string }>({
         }}
         disabled={items.length === 0}
       >
-        <Select.Trigger className="flex h-[32px] w-full items-center gap-2 rounded-md border border-hairline bg-inset px-[10px] text-left transition-[border-color,background-color] duration-(--dur-fast) ease-(--ease-out) hover:border-hairline-strong data-[disabled]:cursor-default data-[disabled]:opacity-60">
+        <Select.Trigger aria-labelledby={labelId} className="flex h-[32px] w-full items-center gap-2 rounded-md border border-hairline bg-inset px-[10px] text-left transition-[border-color,background-color] duration-(--dur-fast) ease-(--ease-out) hover:border-hairline-strong data-[disabled]:cursor-default data-[disabled]:opacity-60">
           <Icon name={icon} size={14} className={active ? "text-accent" : "text-t3"} />
           <span className={`min-w-0 flex-1 truncate text-body ${active ? "text-t1" : "text-t3"}`}>
             {active?.name ?? empty}

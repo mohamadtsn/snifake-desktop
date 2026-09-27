@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeRoute,
   coreLabel,
+  endpointLabel,
   listenAddress,
   logBufferLabel,
   middleTruncate,
@@ -188,5 +189,18 @@ describe("absent second stage", () => {
   it("does not claim a version for a core that is not installed", () => {
     const status = { installed: false, version: "1.12.0", url: "", path: "", sha256: null };
     expect(coreLabel(status)).not.toContain("1.12.0");
+  });
+});
+
+describe("endpointLabel", () => {
+  it("says the address when there is one", () => {
+    expect(endpointLabel("127.0.0.1:2080")).toBe("127.0.0.1:2080");
+  });
+
+  it("says a dash when nothing is configured", () => {
+    // The footer slot exists whether or not a stage does. An empty string
+    // would collapse the row; a dash keeps the layout and states the
+    // absence.
+    expect(endpointLabel(null)).toBe("—");
   });
 });

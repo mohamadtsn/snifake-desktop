@@ -102,3 +102,8 @@ export function logBufferLabel(count: number): string {
   if (count <= 0) return "log empty";
   return `${count} ${count === 1 ? "line" : "lines"}`;
 }
+
+/** A footer endpoint slot. The slot is fixed; what fills it is not. */
+export function endpointLabel(address: string | null): string {
+  return address ?? "—";
+}

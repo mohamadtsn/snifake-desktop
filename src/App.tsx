@@ -19,6 +19,7 @@ import {
   ProxyState,
   Store,
   activeProfile,
+  activeTunnel,
   type TunnelProfile,
   type TunnelState,
   type TunnelStore,
@@ -26,6 +27,7 @@ import {
 } from "@/types";
 import { canStartTunnel, nextTunnelState } from "@/lib/tunnelMachine";
 import { modeTransition, type Transition } from "@/lib/modeTransition";
+import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
 import { UpdateMeter } from "@/components/UpdateMeter";
@@ -57,6 +59,16 @@ export default function App() {
   const [tunnelState, setTunnelState] = useState<TunnelState>("offline");
   const [tunnelSince, setTunnelSince] = useState<number | null>(null);
   const [core, setCore] = useState<CoreStatus | null>(null);
+
+  // Live throughput. The engine sends cumulative totals once a second; the
+  // rate is derived from two of them, and every case where it cannot be
+  // derived is a `null` that renders as a dash. See `lib/traffic.ts`.
+  //
+  // The previous sample is a ref, not state: it is arithmetic input that is
+  // never rendered, and holding it in state would mean deriving the rate
+  // inside a state updater - work React is allowed to run twice.
+  const previousSample = useRef<Sample | null>(null);
+  const [rate, setRate] = useState<Rate>({ up: null, down: null });
   const coreInstalled = core?.installed ?? false;
   const [tab, setTab] = useState<Tab>("telemetry");
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
@@ -143,6 +155,25 @@ export default function App() {
       void un.then((f) => f());
     };
   }, []);
+
+  useEffect(() => {
+    const un = listen<[number, number]>("traffic", (e) => {
+      const next: Sample = { up: e.payload[0], down: e.payload[1], at: Date.now() };
+      setRate(rateBetween(previousSample.current, next));
+      previousSample.current = next;
+    });
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
+  // A stopped stage has no reading at all - not a stale one. The last rate
+  // before it stopped would sit on the face claiming traffic is moving.
+  useEffect(() => {
+    if (state === "running") return;
+    previousSample.current = null;
+    setRate({ up: null, down: null });
+  }, [state]);
 
   // The coupling: the tunnel cannot outlive the link it dials. Encoded once,
   // in tunnelMachine, so the rule is tested rather than scattered.
@@ -441,7 +472,14 @@ export default function App() {
         )}
       </TabRegion>
 
-      <StatusFooter store={store} closeToTray={prefs.closeToTray} />
+      <StatusFooter
+        link={profile ? listenAddress(profile) : null}
+        linkLive={state === "running"}
+        tunnel={tunnels ? `${tunnels.proxy_host}:${tunnels.proxy_port}` : null}
+        tunnelLive={tunnelState === "active"}
+        tunnelRemote={tunnels ? (activeTunnel(tunnels)?.remote_host ?? null) : null}
+        rate={rate}
+      />
 
       <PreferencesSheet
         open={prefsOpen}

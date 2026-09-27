@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import {
   activeRoute,
-  coreLabel,
   endpointLabel,
   listenAddress,
   logBufferLabel,
@@ -81,24 +80,6 @@ describe("tunnel readouts", () => {
   });
 });
 
-describe("coreLabel", () => {
-  it("names the installed version", () => {
-    expect(
-      coreLabel({ installed: true, version: "1.12.0", url: "", path: "", sha256: null }),
-    ).toBe("core v1.12.0");
-  });
-
-  it("says the core is missing rather than showing a version it has not got", () => {
-    expect(
-      coreLabel({ installed: false, version: "1.12.0", url: "", path: "", sha256: null }),
-    ).toBe("no core");
-  });
-
-  it("says so when the status has not loaded yet", () => {
-    expect(coreLabel(null)).toBe("no core");
-  });
-});
-
 describe("activeRoute", () => {
   const store: Store = { profiles: [profile], active_id: "p1" };
 
@@ -170,7 +151,6 @@ describe("absent second stage", () => {
       upstreamAddress(undefined),
       tunnelSignature(undefined),
       tunnelSni(undefined),
-      coreLabel(null),
       activeRoute({ profiles: [], active_id: null }),
       logBufferLabel(0),
     ];
@@ -186,10 +166,6 @@ describe("absent second stage", () => {
     expect(tunnelSignature({ ...tunnel, protocol: "trojan" })).toBe("TROJAN · WS · TLS");
   });
 
-  it("does not claim a version for a core that is not installed", () => {
-    const status = { installed: false, version: "1.12.0", url: "", path: "", sha256: null };
-    expect(coreLabel(status)).not.toContain("1.12.0");
-  });
 });
 
 describe("endpointLabel", () => {

@@ -342,7 +342,6 @@ export default function App() {
         tab={tab}
         onTabChange={setTab}
         state={state}
-        core={core}
         onClose={closeWindow}
         onPreferences={() => setPrefsOpen(true)}
       />

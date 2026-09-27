@@ -3,11 +3,10 @@ import { getVersion } from "@tauri-apps/api/app";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { coreLabel, type CoreStatus } from "@/lib/readouts";
 import { isMac } from "@/lib/platform";
 import { STATE_TEXT, type ProxyState } from "@/types";
 import { TABS, type Tab } from "./TabRegion";
-import { CONTROLS_WIDTH, WindowControls } from "./WindowControls";
+import { WindowControls } from "./WindowControls";
 
 const TONE: Record<ProxyState, "off" | "ok" | "warn" | "bad"> = {
   stopped: "off",
@@ -24,29 +23,40 @@ const TEXT: Record<ProxyState, string> = {
 };
 
 /**
- * 52px of fixed chrome: identity on the left, the four tabs in the middle,
- * what the application is doing on the right.
+ * 52px of fixed chrome: identity flush left, the four tabs at the window's
+ * centre, what the application is doing on the right.
  *
  * The bar and its non-interactive parts are the window's drag surface, which
  * is the whole reason a frameless window still feels like a window.
  *
- * Both sides reserve `CONTROLS_WIDTH` whether or not the control cluster is
- * on that side, so the tab bar sits at exactly the same x on macOS as on
- * Linux. Without that the nav would jump by 84px between platforms, and a
- * screenshot from one would be useless for the other.
+ * **The tab bar is centred on the window, absolutely, not laid out between
+ * the two clusters.** Before, both sides reserved `CONTROLS_WIDTH` whether
+ * or not the control cluster was on that side, so that the bar would land at
+ * the same x on macOS as on Linux. That is compensation for a mis-centred
+ * bar rather than a centred one: it has to be recomputed whenever either
+ * cluster changes weight, and it centres on the space between the clusters,
+ * which is not where the eye looks. Positioning in the window removes the
+ * problem instead of balancing it, and the side clusters get a max-width so
+ * they can never reach the tabs.
+ *
+ * The identity is the application icon rather than the word "Snifake", from
+ * the same `public/icon.png` that feeds the favicon - one asset, and the
+ * name is already on the window and in the tray. The core pill that used to
+ * sit on the right is gone: a missing core is stated by the tunnel actuator
+ * that refuses to start, by `CoreSetupModal`, and by Preferences → Core with
+ * the real path and digest. A pill that says `core v1.13.21` when everything
+ * is fine is a readout nobody reads.
  */
 export function TitleBar({
   tab,
   onTabChange,
   state,
-  core,
   onClose,
   onPreferences,
 }: {
   tab: Tab;
   onTabChange: (tab: Tab) => void;
   state: ProxyState;
-  core: CoreStatus | null;
   onClose: () => void;
   onPreferences: () => void;
 }) {
@@ -57,21 +67,20 @@ export function TitleBar({
     void getVersion().then(setVersion);
   }, []);
 
-  const spacer = <span className="shrink-0" style={{ width: CONTROLS_WIDTH }} aria-hidden />;
-
   return (
     <header
       data-tauri-drag-region
-      className="flex h-[var(--h-titlebar)] shrink-0 items-center justify-between gap-3 border-b border-hairline bg-surface px-3"
+      className="relative flex h-[var(--h-titlebar)] shrink-0 items-center justify-between gap-3 border-b border-hairline bg-surface px-[10px]"
     >
-      <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
-        {mac ? <WindowControls mac onClose={onClose} /> : spacer}
-        <span
+      <div data-tauri-drag-region className="flex min-w-0 max-w-[31%] items-center gap-2">
+        {mac ? <WindowControls mac onClose={onClose} /> : null}
+        <img
+          src="/icon.png"
+          alt=""
+          aria-hidden
           data-tauri-drag-region
-          className="ml-1 shrink-0 text-row font-semibold tracking-[-0.325px] text-t1"
-        >
-          Snifake
-        </span>
+          className="size-[18px] shrink-0 rounded-[4px]"
+        />
         {version ? (
           <span className="mono shrink-0 rounded-xs border border-hairline bg-raised px-[6px] py-[2px] text-mini text-t2">
             v{version}
@@ -79,24 +88,27 @@ export function TitleBar({
         ) : null}
       </div>
 
-      <Segmented
-        role="tablist"
-        label="Sections"
-        value={tab}
-        onChange={onTabChange}
-        options={TABS}
-        size="sm"
-      />
+      {/* Absolutely positioned, so the tab bar sits at the window's centre
+          whatever the clusters beside it weigh. `pointer-events-none` on the
+          full-width layer keeps the drag surface and the clusters reachable
+          through it; only the control itself takes the pointer back. */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="pointer-events-auto">
+          <Segmented
+            role="tablist"
+            label="Sections"
+            value={tab}
+            onChange={onTabChange}
+            options={TABS}
+            size="md"
+          />
+        </div>
+      </div>
 
-      <div data-tauri-drag-region className="flex min-w-0 items-center gap-[10px]">
-        {/* The slot the mockup filled with a `12ms` latency pill. There is no
-            probe and no measurement; there is a pinned core version, and
-            whether it is on disk. */}
-        <span className="flex min-w-0 shrink items-center gap-[6px] rounded-sm border border-hairline bg-inset px-[9px] py-[4px]">
-          <Icon name="memory" size={13} className={core?.installed ? "text-t2" : "text-t3"} />
-          <span className="mono truncate text-note text-t2">{coreLabel(core)}</span>
-        </span>
-
+      <div
+        data-tauri-drag-region
+        className="flex min-w-0 max-w-[31%] items-center justify-end gap-[10px]"
+      >
         <span
           className={`flex shrink-0 items-center gap-[6px] rounded-sm border px-[9px] py-[4px] ${
             state === "running"
@@ -122,7 +134,7 @@ export function TitleBar({
           <Icon name="settings" size={15} />
         </button>
 
-        {mac ? spacer : <WindowControls mac={false} onClose={onClose} />}
+        {mac ? null : <WindowControls mac={false} onClose={onClose} />}
       </div>
     </header>
   );

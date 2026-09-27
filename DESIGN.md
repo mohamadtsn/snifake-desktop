@@ -208,22 +208,42 @@ whatever is left and is the only thing that scrolls. Window: 850×760, min
 ## 3. Layout
 
 ```
-AppShell (850×760, opaque, square)
-├─ TitleBar   52px   window controls · wordmark+version · tab bar · status · gear
+AppShell (850×760, transparent, 12px radius)
+├─ TitleBar   52px   app icon+version · tab bar (window-centred) · status · gear
 ├─ TabRegion  flex   the only scroll container: Telemetry | Sockets | Config | About
-└─ StatusFooter 36px left: active route · right: tray hint
+└─ StatusFooter 36px left: link and tunnel endpoints · right: live throughput
 ```
 
-The left and right clusters each reserve the window-control cluster's width
-whether or not the controls are on that side, so the tab bar sits at exactly
-the same x on macOS as on Linux and a screenshot of one is a screenshot of the
-other. It is not centred on the window: at 850px the right cluster is wider
-than the left, and forcing a window-centred tab bar would either overlap it or
-cost the core readout. The mockups are built the same way, with `justify-
-between`. That is also why every readout in the title bar and the footer goes through a formatter in
-`src/lib/readouts.ts` that truncates with a middle ellipsis: a 60-character
-profile name is a value the user chose, and it must not be able to push the
-tab bar off centre.
+**The tab bar is centred on the window**, in a `pointer-events-none` layer
+positioned `absolute inset-0` inside the header, with the control itself
+taking the pointer back. The side clusters get `max-w-[31%]` so neither can
+reach it.
+
+This replaces the reserved-width approach. Both clusters used to reserve the
+window-control cluster's width whether or not the controls were on that side,
+so that the bar landed at the same x on macOS as on Linux. That is
+compensation for a mis-centred bar rather than a centred one: it centres on
+the space *between* the clusters, which is not where the eye looks, and it has
+to be recomputed every time either cluster changes weight — which is exactly
+what removing the core pill would have forced. Positioning in the window
+dissolves the problem instead of balancing it, and it measures at a delta of
+0.00px from the window centre at 780, 1000 and 1280 wide.
+
+Every readout in the title bar and the footer still goes through a formatter
+in `src/lib/readouts.ts` that truncates with a middle ellipsis: a
+60-character profile name is a value the user chose, and it must not be able
+to push a cluster into the tabs.
+
+**The core pill is gone.** It read `core v1.13.21` whenever everything was
+fine, which is a readout nobody reads, and it said nothing that is not said
+better elsewhere: a missing core is stated by the tunnel actuator that
+refuses to start, by `CoreSetupModal`, and by Preferences → Core with the
+real path and the real digest. `coreLabel()` went with it; the pill was its
+only consumer.
+
+**The wordmark is gone too**, replaced by the application icon from
+`public/icon.png` — the same asset that feeds the favicon. The name is
+already on the window, in the tray, and on About.
 
 Each tab is its own scroll container. Sockets and both Config tabs overflow at
 760px **by design** — the mockups are clipped there and the clipped content is
@@ -236,10 +256,11 @@ with `decorations: false`, so instead of three coloured discs it renders one
 neutral cluster of 28×28 ghost glyph buttons, matching the gear button already
 in the header: *hide to tray*, *minimize*, *maximize/restore*.
 
-The cluster sits **left of the wordmark on macOS** and **right of the gear on
-Windows and Linux**, which is where each platform's user looks for it. Both
-sides reserve a fixed width so the centred tab bar does not shift between
-platforms.
+The cluster sits **left of the app icon on macOS** and **right of the gear on
+Windows and Linux**, which is where each platform's user looks for it. It no
+longer needs a reserved width on the opposite side: the tab bar is centred on
+the window rather than between the clusters, so the cluster's width cannot
+move it. `CONTROLS_WIDTH` survives only as the cluster's own width.
 
 Quit is reachable from the tray, and from the close glyph when *Close Window
 Minimizes to Menu Bar* is off.

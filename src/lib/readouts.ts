@@ -73,18 +73,6 @@ export function tunnelSni(tunnel: TunnelProfile | undefined): string {
 }
 
 /**
- * The slot the mockup filled with a `12ms` latency pill.
- *
- * `installed` and not merely `version`: the version is pinned in
- * `corepin.rs` and is therefore always known, so reporting it when the
- * binary is absent would claim a core that is not there.
- */
-export function coreLabel(status: CoreStatus | null): string {
-  if (!status?.installed) return "no core";
-  return `core v${status.version}`;
-}
-
-/**
  * The slot the mockup filled with `BUS: 0x88F2 // 1,420 pkts/s`.
  *
  * Also the answer to an empty profile store, which the old interface

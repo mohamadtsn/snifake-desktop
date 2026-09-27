@@ -455,6 +455,37 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-27 — The window is transparent and the root draws the frame.**
+`transparent: true` on the `main` window (plus `macOSPrivateApi` in the
+config *and* the `macos-private-api` cargo feature on `tauri`, or the build
+script refuses the config), transparent `html` and `body`, and the root
+element at `rounded-[12px] overflow-hidden` with a 1px inset ring.
+
+**There is no outer margin and no drop shadow, deliberately.** With
+`decorations: false` the window's own edge is the region the window manager
+grabs for resizing; insetting the content to make room for a shadow takes
+that grab region away, and a window that cannot be resized by its edge is a
+worse window than one without a shadow. Depth comes from the inset ring.
+
+**Known failure mode, accepted:** on a window manager with no compositor
+(i3 without picom, say) the four corners render solid black rather than
+transparent. That is what an unsupported alpha channel looks like; it is not
+a bug in this code.
+
+**This is the one change here that cannot be verified in CI.** A rounded
+frame exists only at runtime and the build container has no desktop session.
+It was confirmed as far as a browser can confirm it — 12px radius, clipped
+content, transparent body — and needs `npm run tauri dev` for the rest.
+
+**2026-09-27 — `ring-inset` is not a modifier in this project.** Tailwind v4
+generates a *colour* utility for every `--color-*` token, and this theme has
+`--color-inset`. So `.ring-inset` exists twice in the sheet: once as
+`--tw-ring-inset: inset` and once as `--tw-ring-color: var(--color-inset)` —
+and the colour rule wins, painting a 1px opaque `#0c0e14` line instead of
+the hairline that was asked for. Found on the root frame, where the ring
+simply did not appear. **Use `inset-ring-*` instead**, which has no
+collision, and never write `ring-inset` while a token of that name exists.
+
 **2026-09-26 — The segmented control has a thumb that moves.** It had a
 background that appeared on one segment and disappeared from another, which
 is a different thing: a segmented control's whole point is that the

@@ -418,7 +418,7 @@ export default function App() {
   const tunnelRunning = tunnelState !== "offline";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-surface">
+    <div className="flex h-screen flex-col overflow-hidden rounded-[12px] bg-surface inset-ring-1 inset-ring-hairline-strong">
       <TitleBar
         tab={tab}
         onTabChange={requestTab}

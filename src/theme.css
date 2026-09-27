@@ -130,10 +130,20 @@ body,
   height: 100%;
 }
 
+/* The window is transparent; everything visible is drawn by the root
+   element, which is what lets it have rounded corners at all. There is
+   deliberately no outer margin and no drop shadow: with `decorations:
+   false` the window's edge is the region the window manager grabs for
+   resizing, and insetting the content to make room for a shadow takes that
+   grab region away. Depth comes from the root's inner ring instead. */
+html {
+  background: transparent;
+}
+
 body {
   margin: 0;
   letter-spacing: normal;
-  background: var(--color-canvas);
+  background: transparent;
   color: var(--color-t1);
   font-family: var(--font-ui);
   font-size: var(--text-body);

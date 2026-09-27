@@ -371,6 +371,11 @@ impl EngineHost {
                             // stage, and two meanings on one dot is worse
                             // than one meaning.
                             Applied::Tunnel(state, detail) => {
+                                if state == "fault" {
+                                    // The tunnel is gone; the proxy pointing
+                                    // at it must not outlive it.
+                                    let _ = crate::sysproxy::clear();
+                                }
                                 *tunnel_state.lock().unwrap() = state.clone();
                                 let _ = handle.emit(
                                     "tunnel-state-changed",
@@ -386,7 +391,10 @@ impl EngineHost {
             let _ = handle.emit("state-changed", "error");
             // The tunnel cannot outlive the engine that supervises it, so
             // saying otherwise would leave a switch lit for a process that
-            // is gone.
+            // is gone. The OS proxy cannot outlive it either: it points at a
+            // port that just stopped listening, and leaving it set is how a
+            // user loses their internet to this application.
+            let _ = crate::sysproxy::clear();
             *tunnel_state.lock().unwrap() = "offline".into();
             let _ = handle.emit(
                 "tunnel-state-changed",

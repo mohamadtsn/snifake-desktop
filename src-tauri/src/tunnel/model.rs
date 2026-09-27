@@ -129,7 +129,12 @@ impl Default for TunnelStore {
         TunnelStore {
             tunnels: Vec::new(),
             active_id: None,
-            mode: TunnelMode::Manual,
+            // SystemProxy, not Manual: a first-time user who turns the
+            // tunnel on expects their browser to go through it. Manual
+            // opens a port nothing is pointed at, which is indistinguishable
+            // from "it did not work". `sysproxy` restores whatever was there
+            // on the way out, including after a crash.
+            mode: TunnelMode::SystemProxy,
             proxy_host: "127.0.0.1".into(),
             proxy_port: 2080,
             routing: Routing::default(),
@@ -195,3 +200,22 @@ pub fn set_active(store: &mut TunnelStore, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fresh_store_sets_the_system_proxy_by_default() {
+        // The mode a first-time user gets. Manual opens a port that nothing is
+        // pointed at, which reads as "it did not work".
+        assert_eq!(TunnelStore::default().mode, TunnelMode::SystemProxy);
+    }
+
+    #[test]
+    fn a_stored_mode_survives_the_default_change() {
+        let stored = r#"{"mode":"manual","proxy_port":2080}"#;
+        let store: TunnelStore = serde_json::from_str(stored).unwrap();
+        assert_eq!(store.mode, TunnelMode::Manual, "an existing choice must not be overwritten");
+    }
+}

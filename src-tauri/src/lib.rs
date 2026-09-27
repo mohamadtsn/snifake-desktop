@@ -116,9 +116,22 @@ fn get_log_buffer(state: tauri::State<AppState>) -> Vec<String> {
     state.logs.snapshot()
 }
 
+/// `None` when this machine can have its proxy set. Otherwise the reason,
+/// in words the mode card shows on its face.
+#[tauri::command]
+fn sysproxy_support() -> Option<String> {
+    match sysproxy::support() {
+        sysproxy::Support::Supported => None,
+        sysproxy::Support::Unsupported(why) => Some(why),
+    }
+}
+
 /// Called by the frontend immediately before the window is destroyed.
 #[tauri::command]
 fn shutdown_engine(state: tauri::State<AppState>) {
+    // The proxy must never outlive the process that set it. This is the
+    // ordinary exit; `sysproxy::recover_after_crash` covers the rest.
+    let _ = sysproxy::clear();
     state.engine.lock().unwrap().shutdown();
 }
 
@@ -347,11 +360,26 @@ fn start_tunnel(state: tauri::State<AppState>, id: String) -> Result<(), String>
         connect_port: link.connect_port,
         listen_host: link.listen_host.clone(),
     };
-    state.engine.lock().unwrap().tunnel_start(spec)
+    state.engine.lock().unwrap().tunnel_start(spec)?;
+
+    if tunnels.mode == tunnel::model::TunnelMode::SystemProxy {
+        // Best effort, and reported as a log line rather than an error: the
+        // tunnel is up either way, and failing the start would throw away a
+        // working tunnel over a desktop setting.
+        if let Err(e) = sysproxy::apply(&tunnels.proxy_host, tunnels.proxy_port) {
+            state.logs.push(format!("the system proxy could not be set: {e}"));
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn stop_tunnel(state: tauri::State<AppState>) {
+    // Unconditional, and before the stop: `clear()` is a no-op without a
+    // marker, so this also covers a mode that was changed while running.
+    if let Err(e) = sysproxy::clear() {
+        state.logs.push(format!("the system proxy could not be restored: {e}"));
+    }
     state.engine.lock().unwrap().tunnel_stop();
 }
 
@@ -410,6 +438,7 @@ pub fn run() {
             set_verbose,
             get_log_buffer,
             shutdown_engine,
+            sysproxy_support,
             core_status,
             verify_core,
             set_tray_colorize,
@@ -426,6 +455,16 @@ pub fn run() {
             stop_tunnel,
         ])
         .setup(move |app| {
+            // A marker here means the previous run did not get to clear its
+            // proxy - a crash, a SIGKILL, a power cut - and the user is
+            // still pointed at a port nothing is listening on. Put their
+            // settings back before the window is even shown.
+            if let Some(result) = sysproxy::recover_after_crash() {
+                match result {
+                    Ok(()) => logs.push("restored the system proxy left by a previous run".into()),
+                    Err(e) => logs.push(format!("could not restore the system proxy: {e}")),
+                }
+            }
             tray::setup_tray(app.handle(), &active_name)?;
             logs.clone().spawn_flusher(app.handle().clone());
             for (from, to) in [

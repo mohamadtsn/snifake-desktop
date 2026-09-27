@@ -130,6 +130,11 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
             }
             Applied::Tunnel(state.clone(), detail.clone())
         }
+        // Task 6 gives this its own `Applied` arm and a Tauri event. Until
+        // then it is accepted and dropped: traffic is not a log line, and
+        // pushing it into the buffer would be the log-per-byte cost
+        // CLAUDE.md records.
+        Event::Traffic { .. } => Applied::Nothing,
     }
 }
 

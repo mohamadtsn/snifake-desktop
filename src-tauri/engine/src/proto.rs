@@ -105,6 +105,13 @@ pub enum Event {
         state: String,
         detail: Option<String>,
     },
+    /// Cumulative bytes since this run started, once a second.
+    ///
+    /// Cumulative rather than deltas on purpose: a dropped or coalesced
+    /// line cannot corrupt the total, and the receiver derives the rate
+    /// from two samples and the wall clock. A delta stream loses bytes
+    /// permanently the first time a line does not arrive.
+    Traffic { up: u64, down: u64 },
 }
 
 #[cfg(test)]
@@ -189,5 +196,20 @@ mod tests {
         assert!(serde_json::to_string(&Command::Shutdown)
             .unwrap()
             .contains("\"cmd\":\"shutdown\""));
+    }
+
+    #[test]
+    fn a_traffic_event_round_trips_and_carries_cumulative_totals() {
+        let ev = Event::Traffic { up: 1_048_576, down: 9_437_184 };
+        let line = serde_json::to_string(&ev).unwrap();
+        assert!(!line.contains('\n'), "an event must be one line");
+        assert!(line.contains("\"ev\":\"traffic\""), "{line}");
+        match serde_json::from_str::<Event>(&line).unwrap() {
+            Event::Traffic { up, down } => {
+                assert_eq!(up, 1_048_576);
+                assert_eq!(down, 9_437_184);
+            }
+            other => panic!("wrong variant: {other:?}"),
+        }
     }
 }

@@ -5,8 +5,9 @@
 use crate::proto::{LogLevel, Profile};
 use crate::sniffer::{LogFn, PortTable};
 use std::io;
+use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -78,9 +79,41 @@ pub fn discover_egress(connect_ip: Ipv4Addr) -> Result<Egress, String> {
     }
 }
 
+/// Cumulative bytes relayed, for the life of one run.
+///
+/// **This one pair covers both stages.** The tunnel's outbound dials this
+/// forwarder's listener, so everything the tunnel carries passes through
+/// here too. A second counter inside the core would be a second source that
+/// can disagree with this one.
+#[derive(Default)]
+pub struct Counters {
+    /// client → upstream
+    pub up: Arc<AtomicU64>,
+    /// upstream → client
+    pub down: Arc<AtomicU64>,
+}
+
+/// `io::copy` reports nothing until it finishes, and a relay finishes when
+/// the connection closes - which for a long-lived TLS session is far too
+/// late to draw a meter with. Counting on the way through costs one
+/// relaxed add per buffer.
+struct Counting<R: Read> {
+    inner: R,
+    total: Arc<AtomicU64>,
+}
+
+impl<R: Read> Read for Counting<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.total.fetch_add(n as u64, Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
 pub struct Forwarder {
     listener: TcpListener,
     running: Arc<AtomicBool>,
+    counters: Arc<Counters>,
 }
 
 impl Forwarder {
@@ -104,6 +137,8 @@ impl Forwarder {
         ));
 
         let running = Arc::new(AtomicBool::new(true));
+        let counters = Arc::new(Counters::default());
+        let accept_counters = counters.clone();
         let accept_listener = listener.try_clone().map_err(|e| e.to_string())?;
         let flag = running.clone();
         std::thread::spawn(move || {
@@ -120,15 +155,22 @@ impl Forwarder {
                 };
                 let table = table.clone();
                 let log = log.clone();
+                let counters = accept_counters.clone();
                 std::thread::spawn(move || {
-                    if let Err(e) = handle(client, upstream, table, &log) {
+                    if let Err(e) = handle(client, upstream, table, &log, &counters) {
                         log(LogLevel::Warn, e);
                     }
                 });
             }
         });
 
-        Ok(Forwarder { listener, running })
+        Ok(Forwarder { listener, running, counters })
+    }
+
+    /// The live totals, shared with every relay thread. Read, never written,
+    /// by whoever draws the meter.
+    pub fn counters(&self) -> Arc<Counters> {
+        self.counters.clone()
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -166,6 +208,7 @@ fn handle(
     upstream: SocketAddr,
     table: Arc<PortTable>,
     log: &LogFn,
+    counters: &Counters,
 ) -> Result<(), String> {
     let server = TcpStream::connect_timeout(&upstream, Duration::from_secs(5))
         .map_err(|e| format!("dial {upstream}: {e}"))?;
@@ -221,19 +264,31 @@ fn handle(
         ));
     }
 
-    let up = server.try_clone().map_err(|e| e.to_string())?;
-    let down = client.try_clone().map_err(|e| e.to_string())?;
-    let t = std::thread::spawn(move || pipe(down, up));
-    pipe(server, client);
+    // Named after the flow, not the socket: the old names were `up` and
+    // `down` for socket *clones*, which reads as a direction and is not one.
+    let to_upstream = server.try_clone().map_err(|e| e.to_string())?;
+    let to_client = client.try_clone().map_err(|e| e.to_string())?;
+    let up = counters.up.clone();
+    let down = counters.down.clone();
+    // client → upstream is "up".
+    let t = std::thread::spawn(move || pipe(to_client, to_upstream, up));
+    // upstream → client is "down".
+    pipe(server, client, down);
     let _ = t.join();
     log(LogLevel::Info, format!("conn #{port}  closed"));
     Ok(())
 }
 
 /// Copies until EOF, then half-closes both ends so the peer thread unblocks.
-fn pipe(mut from: TcpStream, mut to: TcpStream) {
-    let _ = io::copy(&mut from, &mut to);
-    let _ = from.shutdown(std::net::Shutdown::Read);
+fn pipe(from: TcpStream, mut to: TcpStream, total: Arc<AtomicU64>) {
+    // The source is moved into the counting adapter, so keep a handle for
+    // the half-close first.
+    let shutdown_src = from.try_clone().ok();
+    let mut counting = Counting { inner: from, total };
+    let _ = io::copy(&mut counting, &mut to);
+    if let Some(s) = shutdown_src {
+        let _ = s.shutdown(std::net::Shutdown::Read);
+    }
     let _ = to.shutdown(std::net::Shutdown::Write);
 }
 
@@ -310,6 +365,21 @@ mod tests {
         (addr, rx)
     }
 
+    /// The sniffer's part, done by hand. The upstream tells us which local
+    /// port our dial used, which is exactly what `classify()` reads off our
+    /// SYN. Shared by both relay tests so the two cannot drift: a change to
+    /// the gate protocol has to be made once, not remembered twice.
+    fn open_gate_for_next_connection(
+        table: &PortTable,
+        port_rx: &std::sync::mpsc::Receiver<u16>,
+    ) -> u16 {
+        let port = port_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        table.register(port, 7, vec![0xde]);
+        table.take_for_injection(port).unwrap();
+        assert!(table.confirm(port, 8), "ISN+1 must open the gate");
+        port
+    }
+
     #[test]
     fn relays_only_after_the_gate_opens() {
         let (upstream, port_rx) = spawn_echo_upstream();
@@ -318,12 +388,7 @@ mod tests {
         let listen = fwd.local_addr().unwrap();
 
         let mut client = TcpStream::connect(listen).unwrap();
-        // Stand in for the sniffer: the upstream tells us which local port our
-        // dial used, which is exactly what classify() reads off our SYN.
-        let port = port_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-        table.register(port, 7, vec![0xde]);
-        table.take_for_injection(port).unwrap();
-        assert!(table.confirm(port, 8), "ISN+1 must open the gate");
+        let port = open_gate_for_next_connection(&table, &port_rx);
 
         client.write_all(b"ping").unwrap();
         let mut buf = [0u8; 4];
@@ -356,6 +421,31 @@ mod tests {
         let mut buf = [0u8; 1];
         // Nothing was ever registered, so handle() bails and drops both ends.
         assert_eq!(client.read(&mut buf).unwrap(), 0, "expected EOF, not relay");
+        fwd.stop();
+    }
+
+    #[test]
+    fn the_forwarder_counts_bytes_in_both_directions() {
+        let (upstream, port_rx) = spawn_echo_upstream();
+        let table = Arc::new(PortTable::default());
+        let fwd = Forwarder::start(&profile_for(upstream), table.clone(), silent_log()).unwrap();
+        let counters = fwd.counters();
+
+        let mut client = TcpStream::connect(fwd.local_addr().unwrap()).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        open_gate_for_next_connection(&table, &port_rx);
+
+        client.write_all(b"hello").unwrap();
+        let mut buf = [0u8; 5];
+        client.read_exact(&mut buf).unwrap();
+
+        // Up is client -> upstream, down is upstream -> client. Both are
+        // already counted by the time the echo comes back: `up` is added
+        // before the write to the upstream, `down` before the write to us.
+        assert_eq!(counters.up.load(Ordering::Relaxed), 5, "5 bytes were written");
+        assert_eq!(counters.down.load(Ordering::Relaxed), 5, "and 5 echoed back");
+
+        drop(client);
         fwd.stop();
     }
 }

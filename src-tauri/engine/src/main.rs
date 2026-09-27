@@ -19,6 +19,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Serialises writes so log lines from many connection threads cannot
 /// interleave mid-line on the socket.
@@ -44,6 +45,10 @@ struct Running {
     forwarder: Forwarder,
     stop: Arc<AtomicBool>,
     sniffer: std::thread::JoinHandle<()>,
+    /// Stops the traffic ticker. Owned by the run so the ticker cannot
+    /// outlive the counters it reads, and so a stopped stage emits nothing.
+    traffic_stop: Arc<AtomicBool>,
+    traffic: std::thread::JoinHandle<()>,
 }
 
 impl Running {
@@ -51,6 +56,8 @@ impl Running {
         // Listener first: no new connections while the sniffer is winding down.
         self.forwarder.stop();
         self.stop.store(true, Ordering::Relaxed);
+        self.traffic_stop.store(true, Ordering::Relaxed);
+        let _ = self.traffic.join();
         // Worst case one capture::RECV_TIMEOUT.
         let _ = self.sniffer.join();
     }
@@ -297,9 +304,41 @@ fn start(
         )
     });
 
+    // One line a second while the stage runs, and nothing at all when it
+    // does not. CLAUDE.md records that one event per log line pegged the
+    // CPU during a download; this is fixed-rate and does not grow with
+    // load. It does not go through the log buffer - that is the log path.
+    let counters = forwarder.counters();
+    let traffic_stop = Arc::new(AtomicBool::new(false));
+    let ticker_stop = traffic_stop.clone();
+    let ticker_out = out.clone();
+    let traffic = std::thread::spawn(move || {
+        let mut tick = 0u64;
+        while !ticker_stop.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(250));
+            if ticker_stop.load(Ordering::Relaxed) {
+                return;
+            }
+            // Four 250ms naps rather than one 1s nap, so stopping the stage
+            // is not held up for most of a second by a sleeping thread.
+            // `tick` is a local, declared above the loop: a `static` would
+            // be shared by every run in the process.
+            tick += 1;
+            if tick % 4 != 0 {
+                continue;
+            }
+            ticker_out.send(&Event::Traffic {
+                up: counters.up.load(Ordering::Relaxed),
+                down: counters.down.load(Ordering::Relaxed),
+            });
+        }
+    });
+
     Ok(Running {
         forwarder,
         stop,
         sniffer,
+        traffic_stop,
+        traffic,
     })
 }

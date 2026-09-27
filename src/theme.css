@@ -290,6 +290,43 @@ body {
   }
 }
 
+/* The identity plate's badge, and the pulse behind it.
+   This is the one animated indicator in the application that reports
+   nothing: it is decoration on a nameplate, not an instrument, which is why
+   it is allowed here and nowhere that real data sits beside it.
+
+   The ring is its own element, drawn *before* the badge in the DOM, rather
+   than a `::after` on the badge. A negative-z-index pseudo-element inside an
+   `isolate` still paints above its own element's background, so the ring
+   would have drawn over the glyph; paint order does the job with no
+   z-index at all. */
+@keyframes badge-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(2.1);
+    opacity: 0;
+  }
+}
+
+.badge-ping {
+  border-radius: 9999px;
+  background: var(--color-ok);
+  animation: badge-ping 1.8s var(--ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Gone, not slowed. The blanket rule above would leave it holding its
+     first frame as a solid disc behind the badge; this is decoration with
+     no reading behind it, so the honest reduced-motion form is absence. */
+  .badge-ping {
+    display: none;
+  }
+}
+
 /* The indeterminate progress band. A transform-only loop, and the only
    animation in the application that repeats - because the thing it stands
    for, a download with no content-length, also has no end in sight. */

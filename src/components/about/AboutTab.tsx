@@ -93,7 +93,12 @@ export function AboutTab({
         />
         <div className="relative flex flex-col items-center gap-3 px-6 py-8">
           <span className="relative flex size-[64px] items-center justify-center rounded-xl border border-hairline-strong bg-inset shadow-specular-strong">
-            <Icon name="radar" size={32} className="text-accent" />
+            <img src="/icon.png" alt="" aria-hidden className="size-[38px]" />
+            {/* Before the badge in the DOM, so the badge paints over it. */}
+            <span
+              aria-hidden
+              className="badge-ping pointer-events-none absolute -right-[2px] -bottom-[2px] size-[20px]"
+            />
             <span className="absolute -right-[2px] -bottom-[2px] flex size-[20px] items-center justify-center rounded-full border-[3px] border-card bg-ok">
               <Icon name="bolt" size={11} className="text-black" />
             </span>

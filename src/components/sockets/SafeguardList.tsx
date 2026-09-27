@@ -26,6 +26,7 @@ export function SafeguardList({
       <GroupedList>
         <GroupedList.Row
           icon="sync_alt"
+          on={routing.default_route === "proxy"}
           title="Default route through tunnel"
           subtitle="Unclassified traffic goes to the tunnel instead of out directly."
           control={
@@ -38,6 +39,7 @@ export function SafeguardList({
         />
         <GroupedList.Row
           icon="block"
+          on={routing.block_quic}
           title="Block QUIC (UDP 443)"
           subtitle="Chromium and iOS fall back to TCP rather than leaking past the tunnel over UDP."
           control={
@@ -50,6 +52,7 @@ export function SafeguardList({
         />
         <GroupedList.Row
           icon="devices"
+          on={routing.allow_lan}
           title="Allow local network (LAN bypass)"
           subtitle="Keeps printers, AirPlay and everything on 192.168.0.0/16 reachable."
           control={

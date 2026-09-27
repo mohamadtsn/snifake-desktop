@@ -280,7 +280,7 @@ business, not `theme.css`'s.
 | `Segmented` | the tab bar, the rule-list switcher, verbosity, import tabs |
 | `Toggle` | the pill switch, 36×20 and 30×17 |
 | `Card` | inset panel with the specular top edge, in three tones |
-| `GroupedList` | the inset list with hairline rows, and `GroupedList.Row` |
+| `GroupedList` | the inset list, and `GroupedList.Row` (see below) |
 | `Badge` | mono uppercase tag in the state colours |
 | `StatusDot` | 6/8px pip, with its glow |
 | `FieldRow` / `TextField` | label + input + right-aligned hint, and the undo stack the editors need |
@@ -293,6 +293,19 @@ because focus trapping, `Esc`, scroll lock and the `aria` wiring are the part
 that is easy to get quietly wrong. The split between them is semantic: a sheet
 is a place you go, and `Esc`/backdrop dismissing it is correct; a dialog asks a
 question, and its two answers are buttons.
+
+**`GroupedList` separators belong to the row, not to the group.** The rule
+was `[&>*+*]:border-t` on the container, which draws full-bleed lines and
+cuts the group into a table. It is now a `::before` on the row, inset to the
+text column — `44px` with an icon (`px-4` 16 + icon 16 + `gap-3` 12), `16px`
+without one — and hidden on `:first-child`. That is what macOS System
+Settings does, and this list borrows its idiom. The row also takes a
+`hover:bg-raised-dim/40` raise, so a row reads as operable.
+
+**`GroupedList.Row` takes `on`**, which tints the row's icon with the accent.
+It is not decoration: without it a group of switches reads as a column of
+sentences that each happen to have a control beside them, and with it the
+group reports its own state at a glance. Sockets' three safeguards pass it.
 
 ### 4.2 Primitives in `theme.css`
 

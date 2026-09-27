@@ -126,6 +126,23 @@ fn sysproxy_support() -> Option<String> {
     }
 }
 
+/// Sets the OS proxy to the tunnel's own inbound. Called by the frontend
+/// when a mode change asks for it while the tunnel is already up; the
+/// tunnel's own start covers the ordinary case.
+#[tauri::command]
+fn apply_system_proxy(state: tauri::State<AppState>) -> Result<(), String> {
+    let (host, port) = {
+        let t = state.tunnels.lock().unwrap();
+        (t.proxy_host.clone(), t.proxy_port)
+    };
+    sysproxy::apply(&host, port)
+}
+
+#[tauri::command]
+fn clear_system_proxy() -> Result<(), String> {
+    sysproxy::clear()
+}
+
 /// Called by the frontend immediately before the window is destroyed.
 #[tauri::command]
 fn shutdown_engine(state: tauri::State<AppState>) {
@@ -439,6 +456,8 @@ pub fn run() {
             get_log_buffer,
             shutdown_engine,
             sysproxy_support,
+            apply_system_proxy,
+            clear_system_proxy,
             core_status,
             verify_core,
             set_tray_colorize,

@@ -25,6 +25,7 @@ import {
   TUNNEL_STATE_TEXT,
 } from "@/types";
 import { canStartTunnel, nextTunnelState } from "@/lib/tunnelMachine";
+import { modeTransition, type Transition } from "@/lib/modeTransition";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
 import { UpdateMeter } from "@/components/UpdateMeter";
@@ -163,6 +164,25 @@ export default function App() {
     await invoke("stop_tunnel");
     setTunnelState("offline");
     setTunnelSince(null);
+  }
+
+  /**
+   * Carries out what a routing-mode change requires. `modeTransition` owns
+   * the decision; this owns the order, and the order matters: the OS proxy
+   * is undone *before* the core changes shape under it, so there is never a
+   * moment where the machine points at a port that has stopped listening.
+   *
+   * `applyProxy` is an `else` on purpose - a restart's own `start_tunnel`
+   * applies the proxy itself when the new mode asks for it.
+   */
+  async function reconcileMode(plan: Transition, activeId: string | null) {
+    if (plan.clearProxy) await invoke("clear_system_proxy");
+    if (plan.restartTunnel && activeId) {
+      await invoke("stop_tunnel");
+      await invoke("start_tunnel", { id: activeId });
+    } else if (plan.applyProxy) {
+      await invoke("apply_system_proxy");
+    }
   }
 
   /** Stops both in the order the engine does: the tunnel dials the link. */
@@ -326,13 +346,17 @@ export default function App() {
             }
             onModeChange={(mode) => {
               if (!tunnels) return;
+              const plan = modeTransition(tunnels.mode, mode, tunnelState === "active");
               void invoke<TunnelStore>("save_routing", {
                 mode,
                 proxy_host: tunnels.proxy_host,
                 proxy_port: tunnels.proxy_port,
                 routing: tunnels.routing,
               })
-                .then(setTunnels)
+                .then(async (next) => {
+                  setTunnels(next);
+                  await reconcileMode(plan, next.active_id);
+                })
                 .catch(fail("The routing rules could not be saved"));
             }}
             onSetupCore={() => setCoreSetupOpen(true)}
@@ -345,8 +369,16 @@ export default function App() {
             saving={savingRouting}
             onSave={(patch) => {
               setSavingRouting(true);
+              const plan = modeTransition(
+                tunnels?.mode ?? "manual",
+                patch.mode,
+                tunnelState === "active",
+              );
               void invoke<TunnelStore>("save_routing", patch)
-                .then(setTunnels)
+                .then(async (next) => {
+                  setTunnels(next);
+                  await reconcileMode(plan, next.active_id);
+                })
                 .catch(fail("The routing rules could not be saved"))
                 .finally(() => setSavingRouting(false));
             }}

@@ -134,6 +134,48 @@ async fn download_core(app: tauri::AppHandle) -> Result<(), String> {
 /// The escape hatch for a user who cannot reach the download server —
 /// which, for this application's audience, is a substantial share of them.
 /// It goes through the same checksum verification as the download.
+/// Split from the command so the digest comparison is testable without a
+/// running app.
+///
+/// Two outcomes that must not collapse into one: `Err` means the check could
+/// not be made (no file, unreadable, no pin for this platform) and `Ok(false)`
+/// means it was made and the binary is not the pinned one. A user whose core
+/// vanished needs a different sentence from a user whose core was swapped.
+fn verify_binary_at(path: &std::path::Path) -> Result<bool, String> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| format!("Could not read the core binary at {}: {e}", path.display()))?;
+    let pinned = snifake_engine::corepin::binary_sha256()
+        .ok_or_else(|| "No digest pin exists for this platform".to_string())?;
+    Ok(tunnel::core::sha256_hex(&bytes) == pinned)
+}
+
+/// The GUI's convenience check. The guarantee is still the engine's: it
+/// re-checks this same digest before it executes the binary as root, because
+/// the path it is handed comes from an unprivileged process and points into a
+/// user-writable directory.
+#[tauri::command]
+fn verify_core() -> Result<bool, String> {
+    verify_binary_at(&tunnel::core::core_binary())
+}
+
+/// Preferences > General > "Colorize Menu Bar Icon by Status".
+///
+/// Redraws immediately rather than at the next state change, so the toggle
+/// shows its own effect.
+#[tauri::command]
+fn set_tray_colorize(app: tauri::AppHandle, state: tauri::State<AppState>, on: bool) {
+    tray::set_colorize(on);
+    let engine_state = state.engine.lock().unwrap().state();
+    let name = {
+        let store = state.store.lock().unwrap();
+        profiles::active(&store)
+            .map(|p| p.name.clone())
+            .unwrap_or_default()
+    };
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || tray::update_tray(&handle, &engine_state, &name));
+}
+
 #[tauri::command]
 fn import_core(path: String) -> Result<(), String> {
     tunnel::core::install_from_archive(std::path::Path::new(&path)).map(|_| ())
@@ -326,6 +368,14 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }));
+        // Preferences > General > "Launch at Login". The plugin owns the
+        // platform mechanism (a LaunchAgent on macOS, the registry Run key on
+        // Windows, an XDG autostart .desktop on Linux); the frontend only
+        // calls its enable/disable/isEnabled.
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
         builder = builder
             .plugin(tauri_plugin_updater::Builder::new().build())
             .plugin(tauri_plugin_process::init())
@@ -351,6 +401,8 @@ pub fn run() {
             get_log_buffer,
             shutdown_engine,
             core_status,
+            verify_core,
+            set_tray_colorize,
             download_core,
             import_core,
             list_tunnels,
@@ -389,4 +441,31 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod verify_tests {
+    #[test]
+    fn a_missing_binary_is_an_error_not_a_false() {
+        // verify_binary_at distinguishes "cannot check" from "checked and
+        // wrong": a user whose core file vanished needs a different sentence
+        // from a user whose core file was swapped.
+        let path = std::path::Path::new("/nonexistent/snifake-core");
+        assert!(super::verify_binary_at(path).is_err());
+    }
+
+    #[test]
+    fn a_digest_that_does_not_match_the_pin_is_false_not_an_error() {
+        let dir = std::env::temp_dir().join("snifake-verify-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("core");
+        std::fs::write(&path, b"not the pinned binary").unwrap();
+        // With a pin present for this target this is a clean `false`; with no
+        // pin there is nothing to compare against and it is an error.
+        match super::verify_binary_at(&path) {
+            Ok(v) => assert!(!v),
+            Err(e) => assert!(e.contains("pin"), "unexpected error: {e}"),
+        }
+        let _ = std::fs::remove_file(&path);
+    }
 }

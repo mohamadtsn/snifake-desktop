@@ -1,18 +1,48 @@
 use image::{Rgba, RgbaImage};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
 /// The state palette, straight from `theme.css` — the same four values the
-/// window shows, so the tray and the console never disagree about a colour.
+/// window shows, so the tray and the window never disagree about a colour.
 fn state_color(state: &str) -> [u8; 3] {
     match state {
-        "starting" => [0xff, 0xb2, 0x24], // --color-amber
-        "running" => [0x4e, 0xd1, 0x7f],  // --color-live
-        "error" => [0xff, 0x5c, 0x4d],    // --color-st-error
-        _ => [0x6a, 0x6f, 0x76],          // --color-st-stopped
+        "starting" => [0xff, 0x95, 0x00], // --color-warn
+        "running" => [0x34, 0xc7, 0x59],  // --color-ok
+        "error" => [0xff, 0x45, 0x3a],    // --color-bad
+        // Not --color-t4: that is a 22% white alpha, and a tray icon has no
+        // known background to be 22% of. This is the opaque graphite the
+        // alpha resolves to on the window surface.
+        _ => [0x6a, 0x6f, 0x76],
     }
+}
+
+/// Whether the tray icon carries the state colour at all.
+///
+/// Process-wide rather than in `AppState` because `build_tray_icon` is called
+/// from the tray plumbing, which has an `AppHandle` but no borrow of the
+/// state, and threading one through four call sites to carry a single bool
+/// would be the more complicated of the two designs.
+static COLORIZE: AtomicBool = AtomicBool::new(COLORIZE_DEFAULT);
+
+/// On, so an install that never opens Preferences behaves as it always has.
+const COLORIZE_DEFAULT: bool = true;
+
+pub fn set_colorize(on: bool) {
+    COLORIZE.store(on, Ordering::Relaxed);
+}
+
+pub fn colorize() -> bool {
+    COLORIZE.load(Ordering::Relaxed)
+}
+
+/// The state's tint, or `None` when the user has asked not to be shown one.
+/// Split out from `build_tray_icon` so the decision is testable without a
+/// running app to read the default window icon from.
+fn tint_for(state: &str) -> Option<[u8; 3]> {
+    colorize().then(|| state_color(state))
 }
 
 /// Below this chroma a pixel belongs to the plate rather than to the trace.
@@ -47,7 +77,9 @@ pub fn build_tray_icon(app: &AppHandle, state: &str) -> Image<'static> {
     )
     .expect("icon buffer has valid dimensions");
 
-    relight(&mut img, state_color(state));
+    if let Some(lit) = tint_for(state) {
+        relight(&mut img, lit);
+    }
     Image::new_owned(img.into_raw(), base_icon.width(), base_icon.height())
 }
 
@@ -252,5 +284,32 @@ mod tests {
         // Anything the engine has not defined reads as stopped, not as the
         // last state that happened to be set.
         assert_eq!(state_color("nonsense"), state_color("stopped"));
+    }
+}
+
+#[cfg(test)]
+mod colorize_tests {
+    use super::*;
+
+    /// With the preference off the icon ships as drawn - the plate and its
+    /// own trace colour - rather than carrying a state the user asked not to
+    /// see. Tested through `tint_for` rather than `build_tray_icon` because
+    /// the latter needs a running app to read the default window icon.
+    #[test]
+    fn the_state_tint_is_withheld_when_colorizing_is_off() {
+        set_colorize(false);
+        assert!(tint_for("running").is_none());
+        assert!(tint_for("error").is_none());
+        set_colorize(true);
+        assert_eq!(tint_for("running"), Some(state_color("running")));
+    }
+
+    /// Default on, so an install that never opens Preferences behaves as it
+    /// did before Preferences existed.
+    #[test]
+    fn colorizing_is_on_by_default() {
+        // The flag is process-wide, so this asserts the initial value of the
+        // static rather than re-reading it after another test has written.
+        assert!(COLORIZE_DEFAULT);
     }
 }

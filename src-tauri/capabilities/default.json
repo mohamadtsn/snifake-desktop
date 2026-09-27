@@ -18,6 +18,9 @@
     "core:window:allow-set-focus",
     "updater:default",
     "process:allow-restart",
-    "dialog:default"
+    "dialog:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled"
   ]
 }

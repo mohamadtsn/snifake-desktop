@@ -41,13 +41,34 @@ pub struct CoreStatus {
     /// Shown in the failure message so a blocked user knows what to fetch
     /// by hand and import.
     pub url: String,
+    /// The managed location. Read-only in the interface: the user does not
+    /// choose where the core lives, because the engine verifies a path it was
+    /// handed by an unprivileged process, and a wandering path is the one
+    /// thing that check cannot cover.
+    pub path: String,
+    /// The installed binary's digest, absent when nothing is installed.
+    /// Displayed beside the pin in Preferences so a mismatch is visible
+    /// rather than merely reported.
+    pub sha256: Option<String>,
 }
 
 pub fn status() -> CoreStatus {
+    let path = core::core_binary();
+    let installed = core::is_installed();
+    // Hashing a ~30MB binary on every status call is acceptable because the
+    // call is user-initiated: opening Preferences, or finishing an install.
+    // Nothing polls it.
+    let sha256 = if installed {
+        std::fs::read(&path).ok().map(|bytes| core::sha256_hex(&bytes))
+    } else {
+        None
+    };
     CoreStatus {
-        installed: core::is_installed(),
+        installed,
         version: core::SINGBOX_VERSION.to_string(),
         url: core::asset_url(),
+        path: path.to_string_lossy().into_owned(),
+        sha256,
     }
 }
 
@@ -112,5 +133,33 @@ mod tests {
         let p = Progress::new(Some(1024), 512);
         assert_eq!(p.downloaded, 512);
         assert_eq!(p.total, Some(1024));
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    /// The Core preferences tab shows this path whether or not anything is
+    /// installed: "the core will live here" is useful, and an empty field is
+    /// not.
+    #[test]
+    fn status_reports_the_managed_path_even_when_nothing_is_installed() {
+        let s = status();
+        assert_eq!(s.path, core::core_binary().to_string_lossy());
+        assert!(!s.path.is_empty());
+        if !s.installed {
+            assert!(s.sha256.is_none(), "an absent binary has no digest to show");
+        }
+    }
+
+    /// The version is compiled in, so it is known even with no binary on
+    /// disk. That is exactly why `installed` has to be reported separately:
+    /// the frontend must not read a known version as a present core.
+    #[test]
+    fn the_pinned_version_is_reported_independently_of_installation() {
+        let s = status();
+        assert_eq!(s.version, core::SINGBOX_VERSION);
+        assert!(!s.url.is_empty());
     }
 }

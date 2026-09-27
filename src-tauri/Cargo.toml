@@ -56,6 +56,8 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 # The file picker behind "Import a file" on the core setup screen.
 tauri-plugin-dialog = "2"
+# Preferences > General > "Launch at Login". Desktop-only by definition.
+tauri-plugin-autostart = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

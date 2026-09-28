@@ -149,6 +149,9 @@ fn killing_the_core_leaves_the_machine_closed() {
     assert!(reaches(UPSTREAM), "(d) the SNI upstream stays reachable");
     sup.stop();
     g.lower().unwrap();
+    // Stop after a crash has to give the network back, without the startup
+    // purge: sing-box's policy rules outlive its SIGKILL.
+    assert!(answers(OTHER), "Stop after a core crash must open the network");
 }
 
 #[test]

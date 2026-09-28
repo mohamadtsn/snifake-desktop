@@ -12,6 +12,7 @@ use super::model::{DefaultRoute, Protocol, TunnelMode, TunnelProfile, TunnelStor
 use super::rules::{parse_list, rule_set_source, to_rule_objects, RuleAction, RuleEntry, RuleKind};
 use serde_json::{json, Map, Value};
 use snifake_engine::proto::Profile;
+use snifake_engine::tunpin;
 
 pub fn generate(
     tunnel: &TunnelProfile,
@@ -45,6 +46,13 @@ pub fn generate(
         }),
     );
     route.insert("auto_detect_interface".into(), json!(true));
+    // The kill switch accepts packets carrying this mark, which is how the
+    // core's own direct traffic — the Bypass list, LAN, its resolver — gets
+    // out while everything else is dropped (spec §3.4). SO_MARK is Linux's.
+    #[cfg(target_os = "linux")]
+    if store.mode == TunnelMode::Tun {
+        route.insert("default_mark".into(), json!(tunpin::ROUTING_MARK));
+    }
     // Replaces the pre-1.12 `{"outbound":"any","server":"local"}` DNS rule,
     // which is fatal on the pinned core. Names that a direct outbound has to
     // resolve are resolved locally, not through the tunnel.
@@ -59,7 +67,7 @@ pub fn generate(
     Ok(json!({
         "log": { "level": "warn", "timestamp": false },
         "dns": dns(&block, &bypass),
-        "inbounds": inbounds(store)?,
+        "inbounds": inbounds(store, link)?,
         "outbounds": [ outbound(tunnel, link), { "type": "direct", "tag": "direct" } ],
         "route": Value::Object(route),
     }))
@@ -74,19 +82,23 @@ fn parse_named(lines: &[String], list: &str) -> Result<Vec<RuleEntry>, String> {
 
 /// Generated, non-overridable, always first.
 fn guards(store: &TunnelStore, link: &Profile) -> Vec<Value> {
-    let mut out = vec![
-        // Sniffing is the first thing that happens, and it has to be a rule:
-        // the inbound `sniff` field was removed in 1.13.0. Without it a
-        // connection carries only an address, so every domain rule below —
-        // the user's lists included — would silently never match.
-        //
-        // Deliberately no `{"action": "resolve"}` after it: rewriting the
-        // destination to a resolved address is what the old
-        // `sniff_override_destination` did, and this pipeline wants the name
-        // to survive all the way to the outbound.
-        json!({ "action": "sniff" }),
-        json!({ "ip_cidr": [format!("{}/32", link.connect_ip)], "outbound": "direct" }),
-    ];
+    // Sniffing is the first thing that happens, and it has to be a rule:
+    // the inbound `sniff` field was removed in 1.13.0. Without it a
+    // connection carries only an address, so every domain rule below —
+    // the user's lists included — would silently never match.
+    //
+    // Deliberately no `{"action": "resolve"}` after it: rewriting the
+    // destination to a resolved address is what the old
+    // `sniff_override_destination` did, and this pipeline wants the name
+    // to survive all the way to the outbound.
+    let mut out = vec![json!({ "action": "sniff" })];
+    if store.mode == TunnelMode::Tun {
+        // `auto_route` delivers every port-53 packet to the TUN. This hands
+        // the DNS ones to the resolver instead of routing them as traffic,
+        // which is what pulls hard-coded resolvers into the tunnel too.
+        out.push(json!({ "protocol": "dns", "action": "hijack-dns" }));
+    }
+    out.push(json!({ "ip_cidr": [format!("{}/32", link.connect_ip)], "outbound": "direct" }));
 
     // A loopback listener is never routed into the tunnel, so it needs no
     // guard; a LAN-facing one does.
@@ -197,11 +209,26 @@ fn dns(block: &[RuleEntry], bypass: &[RuleEntry]) -> Value {
     })
 }
 
-fn inbounds(store: &TunnelStore) -> Result<Value, String> {
+fn inbounds(store: &TunnelStore, link: &Profile) -> Result<Value, String> {
     match store.mode {
-        TunnelMode::Tun => Err(
-            "TUN mode arrives in a later phase. Choose System Proxy or Manual for now.".into(),
-        ),
+        // Every value here is a `tunpin` constant, because the engine builds
+        // its kill switch from the same constants and the two must agree.
+        TunnelMode::Tun => Ok(json!([{
+            "type": "tun",
+            "tag": "tun-in",
+            "interface_name": tunpin::INTERFACE_NAME,
+            "address": [tunpin::ADDRESS_V4, tunpin::ADDRESS_V6],
+            "mtu": tunpin::MTU,
+            "auto_route": true,
+            "strict_route": true,
+            "stack": "system",
+            // Pinned so the engine's startup purge can find the policy rules
+            // `strict_route` leaves behind a killed core (tunpin).
+            "iproute2_table_index": tunpin::IPROUTE2_TABLE,
+            "iproute2_rule_index": tunpin::IPROUTE2_RULE,
+            // Layer 1 of the four loop guards (design §6).
+            "route_exclude_address": [format!("{}/32", link.connect_ip)]
+        }])),
         // No `sniff` / `sniff_override_destination` here: those inbound
         // fields were *removed* in sing-box 1.13.0, not merely deprecated,
         // and the config is refused outright if they appear. Sniffing is a
@@ -525,12 +552,69 @@ mod tests {
         assert_eq!(inbounds[0]["listen_port"], json!(3128));
     }
 
+    fn tun_store() -> TunnelStore {
+        let mut s = TunnelStore::default();
+        s.mode = crate::tunnel::model::TunnelMode::Tun;
+        s
+    }
+
     #[test]
-    fn tun_mode_is_refused_until_the_phase_that_implements_it() {
-        let mut store = TunnelStore::default();
-        store.mode = crate::tunnel::model::TunnelMode::Tun;
-        let err = generate(&tunnel(), &store, &link()).unwrap_err();
-        assert!(err.contains("TUN"), "{err}");
+    fn tun_mode_has_one_tun_inbound_and_no_proxy_port() {
+        let cfg = generate(&tunnel(), &tun_store(), &link()).unwrap();
+        let inbounds = cfg["inbounds"].as_array().unwrap();
+        assert_eq!(inbounds.len(), 1);
+        let i = &inbounds[0];
+        assert_eq!(i["type"], json!("tun"));
+        assert_eq!(i["interface_name"], json!(snifake_engine::tunpin::INTERFACE_NAME));
+        assert_eq!(i["address"], json!(["172.19.83.1/30", "fdfe:dcba:534e::1/126"]));
+        assert_eq!(i["auto_route"], json!(true));
+        assert_eq!(i["strict_route"], json!(true));
+        assert_eq!(i["stack"], json!("system"));
+        assert_eq!(i["iproute2_table_index"], json!(5346));
+        assert_eq!(i["iproute2_rule_index"], json!(5346));
+    }
+
+    #[test]
+    fn the_sni_upstream_is_excluded_from_the_tun() {
+        let cfg = generate(&tunnel(), &tun_store(), &link()).unwrap();
+        assert_eq!(cfg["inbounds"][0]["route_exclude_address"], json!(["103.160.204.34/32"]));
+    }
+
+    #[test]
+    fn tun_mode_hijacks_dns_right_after_sniffing() {
+        let cfg = generate(&tunnel(), &tun_store(), &link()).unwrap();
+        assert_eq!(rules(&cfg)[0], json!({ "action": "sniff" }));
+        assert_eq!(rules(&cfg)[1], json!({ "protocol": "dns", "action": "hijack-dns" }));
+    }
+
+    #[test]
+    fn proxy_modes_do_not_hijack_dns() {
+        let cfg = generate(&tunnel(), &TunnelStore::default(), &link()).unwrap();
+        assert!(!rules(&cfg).iter().any(|r| r["action"] == json!("hijack-dns")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn tun_mode_marks_the_cores_sockets_for_the_kill_switch() {
+        let cfg = generate(&tunnel(), &tun_store(), &link()).unwrap();
+        assert_eq!(cfg["route"]["default_mark"], json!(0x534e));
+        let proxy = generate(&tunnel(), &TunnelStore::default(), &link()).unwrap();
+        assert!(proxy["route"].get("default_mark").is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_tun_config_matches_its_golden_snapshot() {
+        assert_golden("vless-tun.json", &generate(&tunnel(), &tun_store(), &link()).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_trojan_tun_config_matches_its_golden_snapshot() {
+        let mut t = tunnel();
+        t.protocol = Protocol::Trojan;
+        t.credential = "secret-password-123".into();
+        assert_golden("trojan-tun.json", &generate(&t, &tun_store(), &link()).unwrap());
     }
 
     #[test]

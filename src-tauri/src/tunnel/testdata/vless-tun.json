@@ -1,0 +1,127 @@
+{
+  "dns": {
+    "final": "remote",
+    "rules": [],
+    "servers": [
+      {
+        "detour": "proxy",
+        "domain_resolver": "local",
+        "server": "1.1.1.1",
+        "tag": "remote",
+        "type": "tls"
+      },
+      {
+        "tag": "local",
+        "type": "local"
+      }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "address": [
+        "172.19.83.1/30",
+        "fdfe:dcba:534e::1/126"
+      ],
+      "auto_route": true,
+      "interface_name": "snifake-tun0",
+      "iproute2_rule_index": 5346,
+      "iproute2_table_index": 5346,
+      "mtu": 9000,
+      "route_exclude_address": [
+        "103.160.204.34/32"
+      ],
+      "stack": "system",
+      "strict_route": true,
+      "tag": "tun-in",
+      "type": "tun"
+    }
+  ],
+  "log": {
+    "level": "warn",
+    "timestamp": false
+  },
+  "outbounds": [
+    {
+      "packet_encoding": "xudp",
+      "server": "127.0.0.1",
+      "server_port": 40443,
+      "tag": "proxy",
+      "tls": {
+        "alpn": [
+          "h3",
+          "h2",
+          "http/1.1"
+        ],
+        "enabled": true,
+        "insecure": false,
+        "server_name": "origin.cdn-domain.com",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        }
+      },
+      "transport": {
+        "headers": {
+          "Host": "origin.cdn-domain.com"
+        },
+        "path": "/websocket",
+        "type": "ws"
+      },
+      "type": "vless",
+      "uuid": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    },
+    {
+      "tag": "direct",
+      "type": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": {
+      "server": "local"
+    },
+    "default_mark": 21326,
+    "final": "proxy",
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "action": "hijack-dns",
+        "protocol": "dns"
+      },
+      {
+        "ip_cidr": [
+          "103.160.204.34/32"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "outbound": "direct",
+        "process_name": [
+          "snifake",
+          "snifake-engine",
+          "sing-box"
+        ]
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      },
+      {
+        "action": "reject",
+        "ip_version": 6
+      },
+      {
+        "action": "reject",
+        "network": [
+          "udp"
+        ],
+        "port": [
+          443
+        ]
+      }
+    ]
+  }
+}

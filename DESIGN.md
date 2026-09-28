@@ -504,6 +504,12 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-28 — Routing mode is `md`.** The mode selector is the channel
+card's decision, and at `sm` it read as a filter beside the profile
+selectors. Verified at the 780px minimum and at 1000px: no segment label
+truncates, the card row stays on one line, and the guarantee sentence keeps
+the line count it had at `sm`.
+
 **2026-09-28 — Preferences keeps one height.** The body is fixed at the
 tallest pane's height (`PREFS_BODY_HEIGHT`, Core, 448px), so switching panes
 never moves the frame; shorter panes leave space below, as System Settings

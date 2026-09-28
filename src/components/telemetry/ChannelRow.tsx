@@ -112,7 +112,9 @@ export function ChannelRow({
               // one would offer a mode Sockets refuses.
               disabled: modeBlocked(m) !== null,
             }))}
-            size="sm"
+            // `md`: this is the card's decision, and at `sm` it read as a
+            // filter beside the profile selectors.
+            size="md"
             stretch
           />
 

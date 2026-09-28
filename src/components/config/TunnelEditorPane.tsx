@@ -74,11 +74,17 @@ export function TunnelEditorPane({
     return () => clearTimeout(t);
   }, [copied]);
 
+  // Keyed on the content, not the object: activating or deleting another
+  // row hands back a new store with an equal tunnel in it, and that must
+  // not wipe an unsaved draft.
+  const stored = JSON.stringify(tunnel);
   useEffect(() => {
     setDraft(tunnel ?? blank());
     setTouched(new Set());
     setAttempted(false);
-  }, [tunnel]);
+    // `tunnel` is read through `stored`, which changes exactly when it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stored]);
 
   const errors = {
     name: draft.name.trim() ? null : "Give it a name you will recognise.",

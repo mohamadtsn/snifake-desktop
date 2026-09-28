@@ -131,7 +131,9 @@ export function ConfigTab({
                   setCreatingTunnel(true);
                   setSelectedTunnel(null);
                 }
-              })
+                // New while already on a new form is not leaving it: the
+                // form would stay as it is, so discarding it would be a lie.
+              }, kind === "sni" ? creating : creatingTunnel)
             }
           >
             <Icon name="add" size={13} />

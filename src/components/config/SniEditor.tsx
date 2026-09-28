@@ -69,12 +69,17 @@ export function SniEditor({
   const [attempted, setAttempted] = useState(false);
 
   // Reload whenever a different profile is selected, or the stored one
-  // changes under us after a save.
+  // changes under us after a save. Keyed on the content, not the object:
+  // activating or deleting *another* row hands back a new store with an
+  // equal profile in it, and that must not wipe an unsaved draft.
+  const stored = JSON.stringify(profile);
   useEffect(() => {
     setDraft(profile ?? blank());
     setTouched(new Set());
     setAttempted(false);
-  }, [profile]);
+    // `profile` is read through `stored`, which changes exactly when it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stored]);
 
   const errors = {
     name: draft.name.trim() ? null : "Give it a name you will recognise.",

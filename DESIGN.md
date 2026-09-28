@@ -521,7 +521,9 @@ the body scrolls.
 
 **2026-09-28 — Updates are followed on About, not in a modal.** `Update now`
 closes the offer and moves to About (through the leave guard, like any tab
-change), whose panel carries the meter; About's button names the phase,
+change), whose panel carries the meter. The download starts only once the
+user has left: an update ends in a relaunch, so "Keep editing" also defers
+it, and About can start it later; About's button names the phase,
 Downloading then Installing. The meter gains an opt-in leading dot (`pulse`)
 that pings in the accent while bytes arrive and holds still while installing;
 reduced motion removes the ring and keeps the dot. The core download does not

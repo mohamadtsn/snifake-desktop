@@ -535,21 +535,27 @@ export default function App() {
    * The one way an update starts, from the offer or from About. The offer
    * closes and the download is followed on About, because a modal held
    * open for a whole download traps the window for no reason. Moving to
-   * About goes through the leave guard like any other tab change; if the
-   * user stays to finish a draft, the download carries on regardless.
+   * About goes through the leave guard like any other tab change, and the
+   * download starts only once the user has actually left: an update ends
+   * in a relaunch, so starting it after "Keep editing" would discard the
+   * draft the user just chose to keep. The update stays found, and About
+   * can start it again.
    */
   function beginUpdate() {
-    if (!update || updating) return;
+    const found = update;
+    if (!found || updating) return;
     setOfferOpen(false);
-    setUpdating(true);
-    setProgress(null);
-    guardLeave(() => setTab("about"), tab === "about");
-    void applyUpdate(update, setProgress).catch((err) => {
-      setUpdating(false);
+    guardLeave(() => {
+      setTab("about");
+      setUpdating(true);
       setProgress(null);
-      setUpdate(null);
-      setErrorDialog({ title: "The update could not be applied", message: String(err) });
-    });
+      void applyUpdate(found, setProgress).catch((err) => {
+        setUpdating(false);
+        setProgress(null);
+        setUpdate(null);
+        setErrorDialog({ title: "The update could not be applied", message: String(err) });
+      });
+    }, tab === "about");
   }
 
   async function confirmExit() {

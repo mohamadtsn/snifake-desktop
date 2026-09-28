@@ -16,6 +16,7 @@ pub mod sniffer;
 pub mod sysbin;
 pub mod sysrand;
 pub mod transport;
+pub mod tun;
 pub mod tunnel;
 pub mod tunpin;
 pub mod validate;

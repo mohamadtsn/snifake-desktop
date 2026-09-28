@@ -55,17 +55,23 @@ fn validate_sni(sni: &str) -> Result<(), String> {
 /// the unprivileged side the firewall trusts, so it is held to "one real,
 /// routable IPv4 host and a port".
 pub fn validate_tun(s: &TunnelSpec) -> Result<(), String> {
-    let ip: Ipv4Addr = s
-        .connect_ip
+    validate_upstream(&s.connect_ip, s.connect_port).map(|_| ())
+}
+
+/// `validate_tun`'s rule for a bare address, for the link's own Start: a
+/// profile switch moves the kill switch's one hole, and that value has to
+/// meet the same bar as the one a `TunnelStart` carried.
+pub fn validate_upstream(ip: &str, port: u16) -> Result<Ipv4Addr, String> {
+    let ip: Ipv4Addr = ip
         .parse()
-        .map_err(|_| format!("CONNECT_IP '{}' is not an IPv4 address", s.connect_ip))?;
+        .map_err(|_| format!("CONNECT_IP '{ip}' is not an IPv4 address"))?;
     if ip.is_loopback() || ip.is_unspecified() || ip.is_broadcast() || ip.is_multicast() {
         return Err(format!("CONNECT_IP {ip} cannot be the tunnel's permitted upstream"));
     }
-    if s.connect_port == 0 {
+    if port == 0 {
         return Err("CONNECT_PORT must be between 1 and 65535".into());
     }
-    Ok(())
+    Ok(ip)
 }
 
 #[cfg(test)]

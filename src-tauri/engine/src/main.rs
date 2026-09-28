@@ -9,11 +9,14 @@
 
 use snifake_engine::capture;
 use snifake_engine::forward::{discover_egress, Forwarder};
+use snifake_engine::killswitch::Allowlist;
 use snifake_engine::proto::{Command, Event, LogLevel, Profile, TunnelSpec};
 use snifake_engine::sniffer::{self, LogFn, PortTable};
 use snifake_engine::transport::Stream;
-use snifake_engine::tunnel::TunnelSupervisor;
-use snifake_engine::validate::validate;
+use snifake_engine::tun::{self, TunGuard};
+use snifake_engine::tunnel::{ExitFn, TunnelSupervisor};
+use snifake_engine::tunpin;
+use snifake_engine::validate::{validate, validate_tun, validate_upstream};
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
@@ -105,9 +108,23 @@ fn main() {
         version: env!("CARGO_PKG_VERSION").to_string(),
     });
 
+    // Before anything else, every time: a previous run that crashed with
+    // TUN up left the machine closed, and this is what opens it. The event
+    // is what lets the GUI delete its crash marker (spec §12.7).
+    match tun::purge_leftovers() {
+        Ok(()) => tunnel_state(&out, "offline", None, false),
+        Err(e) => out.send(&Event::Error {
+            code: "purge_failed".into(),
+            msg: format!("could not remove a previous session's firewall rules: {e}"),
+        }),
+    }
+
     let verbose = Arc::new(AtomicBool::new(false));
     let mut running: Option<Running> = None;
     let mut tunnel: Option<TunnelSupervisor> = None;
+    // Outlives `tunnel` on purpose: it is raised before a TUN core starts,
+    // lowered after it stops, and kept across a core crash.
+    let mut guard: Option<TunGuard> = None;
 
     for line in reader.lines() {
         let Ok(line) = line else { break };
@@ -126,6 +143,32 @@ fn main() {
         };
         match cmd {
             Command::Start { profile } => {
+                // The tunnel dials this stage's listener, and in TUN the
+                // guard permits this stage's upstream; both are about to
+                // change. The core stops, the guard follows the new upstream
+                // *before* the link needs it, and the GUI restarts the core
+                // once the link is back (spec §12.6).
+                let had_tunnel = tunnel.is_some();
+                if let Some(t) = tunnel.take() {
+                    t.stop();
+                }
+                if let Some(g) = guard.as_mut() {
+                    // Held to the TunnelStart bar: this moves the kill
+                    // switch's one hole. An invalid profile leaves the old
+                    // upstream permitted, and `start` refuses it below.
+                    let moved = validate_upstream(&profile.connect_ip, profile.connect_port)
+                        .map(|ip| g.allow().retarget(ip, profile.connect_port))
+                        .and_then(|next| g.retarget(next));
+                    if let Err(e) = moved {
+                        out.send(&Event::Log {
+                            level: LogLevel::Error,
+                            msg: format!("[tunnel] the kill switch could not follow the new profile: {e}"),
+                        });
+                    }
+                }
+                if had_tunnel {
+                    tunnel_state(&out, "holding", Some("the SNI link is restarting".into()), guard.is_some());
+                }
                 if let Some(r) = running.take() {
                     r.stop();
                 }
@@ -148,6 +191,13 @@ fn main() {
                 }
             }
             Command::Stop => {
+                let had_tunnel = tunnel.is_some();
+                if let Some(t) = tunnel.take() {
+                    t.stop();
+                }
+                if had_tunnel {
+                    tunnel_state(&out, "holding", Some("the SNI link is stopped".into()), guard.is_some());
+                }
                 if let Some(r) = running.take() {
                     r.stop();
                 }
@@ -166,20 +216,60 @@ fn main() {
                 // this process is the trust boundary, and a tunnel whose
                 // outbound has nothing to dial is worse than no tunnel.
                 if running.is_none() {
-                    tunnel_state(&out, "fault", Some("the SNI stage is not running".into()), false);
+                    tunnel_state(&out, "fault", Some("the SNI stage is not running".into()), guard.is_some());
                     continue;
                 }
+                // A start while a tunnel runs replaces it: the core goes
+                // first, and a guard that is already up stays up across the
+                // swap (spec §12.5).
                 if let Some(t) = tunnel.take() {
                     t.stop();
                 }
-                tunnel_state(&out, "starting", None, false);
-                match start_tunnel(&spec, &out, verbose.clone()) {
+                let raised_here = spec.tun.is_some() && guard.is_none();
+                if spec.tun.is_some() {
+                    if let Err(e) = raise_or_retarget(&mut guard, &spec) {
+                        tunnel_state(&out, "fault", Some(e), guard.is_some());
+                        continue;
+                    }
+                } else if let Some(g) = guard.as_mut() {
+                    // TUN to a proxy mode: the drop has to go, or the new
+                    // mode's traffic has nowhere to leave.
+                    if let Err(e) = g.lower() {
+                        tunnel_state(&out, "fault", Some(format!("the firewall rules could not be removed: {e}")), true);
+                        continue;
+                    }
+                    guard = None;
+                }
+                // After the guard, never before it: the GUI deletes its
+                // crash marker on an event that says the guard is down.
+                tunnel_state(&out, "starting", None, guard.is_some());
+                let started = start_tunnel(&spec, &out, verbose.clone(), guard.is_some()).and_then(|t| {
+                    if let Some(g) = guard.as_mut() {
+                        if let Err(e) = g.permit_interface(tunpin::INTERFACE_NAME) {
+                            t.stop();
+                            return Err(format!("the tunnel interface could not be permitted: {e}"));
+                        }
+                    }
+                    Ok(t)
+                });
+                match started {
                     Ok(t) => {
                         tunnel = Some(t);
-                        tunnel_state(&out, "active", None, false);
+                        tunnel_state(&out, "active", None, guard.is_some());
                     }
                     Err(e) => {
-                        tunnel_state(&out, "fault", Some(e), false);
+                        // Roll back only what this start raised. A user who
+                        // was not protected before pressing Start is not left
+                        // offline by a start that never succeeded; one who
+                        // was stays protected (spec §12.8).
+                        if raised_here {
+                            if let Some(g) = guard.as_mut() {
+                                if g.lower().is_ok() {
+                                    guard = None;
+                                }
+                            }
+                        }
+                        tunnel_state(&out, "fault", Some(e), guard.is_some());
                     }
                 }
             }
@@ -187,15 +277,26 @@ fn main() {
                 if let Some(t) = tunnel.take() {
                     t.stop();
                 }
-                tunnel_state(&out, "offline", None, false);
+                match guard.as_mut().map(|g| g.lower()) {
+                    Some(Err(e)) => {
+                        // Still in force, as far as anyone can tell, so the
+                        // guard is kept for the next Stop to retry and the
+                        // event says so.
+                        tunnel_state(&out, "fault", Some(format!("the firewall rules could not be removed: {e}")), true);
+                    }
+                    _ => {
+                        guard = None;
+                        tunnel_state(&out, "offline", None, false);
+                    }
+                }
             }
             Command::TunnelReconcile { link: _ } => {
-                // Phase 1 has no routes or firewall rules to move, and the
-                // GUI regenerates and restarts the tunnel on a profile
-                // switch. The real work arrives with TUN mode.
+                // Unused since TUN: a link Start retargets the guard itself,
+                // and the GUI restarts the core with a `TunnelStart`
+                // (spec §12.5). Kept so an older GUI's line still parses.
                 out.send(&Event::Log {
                     level: LogLevel::Debug,
-                    msg: "[tunnel] reconcile: nothing to do in proxy modes".into(),
+                    msg: "[tunnel] reconcile: handled by link start".into(),
                 });
             }
         }
@@ -207,18 +308,24 @@ fn main() {
     if let Some(t) = tunnel.take() {
         t.stop();
     }
+    // A guard still here means no TunnelStop arrived: the GUI went away
+    // without saying so. It is deliberately not lowered — `TunGuard` has no
+    // `Drop` — so the machine stays closed, and the GUI's marker brings the
+    // user to Restore network on the next launch.
+    drop(guard);
     if let Some(r) = running.take() {
         r.stop();
     }
 }
 
 /// Mirrors `start` for the tunnel: builds the log sink the supervisor
-/// writes through, so core output reaches the GUI on the same channel as
-/// everything else.
+/// writes through, and the exit report, which differs by whether a kill
+/// switch is holding the machine.
 fn start_tunnel(
     spec: &TunnelSpec,
     out: &Out,
     verbose: Arc<AtomicBool>,
+    tun: bool,
 ) -> Result<TunnelSupervisor, String> {
     let sink = out.clone();
     let log: LogFn = Arc::new(move |level, msg| {
@@ -227,7 +334,30 @@ fn start_tunnel(
         }
         sink.send(&Event::Log { level, msg });
     });
-    TunnelSupervisor::start(spec, log)
+    let exit_out = out.clone();
+    let on_exit: ExitFn = Box::new(move || {
+        let detail = if tun {
+            "The core exited. Traffic stays blocked until you stop or restart the tunnel."
+        } else {
+            "The core exited."
+        };
+        tunnel_state(&exit_out, "fault", Some(detail.into()), tun);
+    });
+    TunnelSupervisor::start(spec, log, on_exit)
+}
+
+fn raise_or_retarget(guard: &mut Option<TunGuard>, spec: &TunnelSpec) -> Result<(), String> {
+    validate_tun(spec)?;
+    let allow = Allowlist::from_spec(spec)?;
+    if let Some(g) = guard.as_mut() {
+        return g
+            .retarget(allow)
+            .map_err(|e| format!("the kill switch could not be moved: {e}"));
+    }
+    *guard = Some(
+        TunGuard::raise(allow).map_err(|e| format!("the kill switch could not be raised: {e}"))?,
+    );
+    Ok(())
 }
 
 fn start(

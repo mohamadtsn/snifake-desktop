@@ -27,6 +27,8 @@ use std::io::Write;
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// How long to wait for the core to come up before giving up on it.
@@ -35,13 +37,24 @@ const READY_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long a stopped core gets to exit on its own before it is killed.
 const EXIT_GRACE: Duration = Duration::from_secs(5);
 
+/// How often the watcher looks at the core. A crash is reported within this.
+const WATCH_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Called once, from the watcher thread, when the core exits without having
+/// been asked to.
+pub type ExitFn = Box<dyn FnOnce() + Send>;
+
 pub struct TunnelSupervisor {
-    child: Child,
+    child: Arc<Mutex<Child>>,
+    pid: u32,
+    /// Set before any signal is sent, so the watcher can tell a stop from a
+    /// crash.
+    stopping: Arc<AtomicBool>,
     config_path: PathBuf,
 }
 
 impl TunnelSupervisor {
-    pub fn start(spec: &TunnelSpec, log: LogFn) -> Result<TunnelSupervisor, String> {
+    pub fn start(spec: &TunnelSpec, log: LogFn, on_exit: ExitFn) -> Result<TunnelSupervisor, String> {
         let core = Path::new(&spec.core_path);
         verify_core(core)?;
 
@@ -80,37 +93,70 @@ impl TunnelSupervisor {
             return Err(e);
         }
 
-        Ok(TunnelSupervisor { child, config_path })
+        let pid = child.id();
+        let child = Arc::new(Mutex::new(child));
+        let stopping = Arc::new(AtomicBool::new(false));
+        watch(child.clone(), stopping.clone(), on_exit);
+        Ok(TunnelSupervisor { child, pid, stopping, config_path })
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.pid
     }
 
     /// Teardown never gives up half way: every step runs even if an
     /// earlier one failed, because a skipped step leaves system state
     /// behind that nothing else will clean up.
-    pub fn stop(mut self) {
+    pub fn stop(self) {
+        self.stopping.store(true, Ordering::SeqCst);
         #[cfg(unix)]
         {
-            // SAFETY: signalling a process group we created.
+            // SAFETY: signalling a process group we created. ESRCH for a
+            // core that already exited is harmless.
             unsafe {
-                libc::killpg(self.child.id() as i32, libc::SIGTERM);
+                libc::killpg(self.pid as i32, libc::SIGTERM);
             }
         }
         #[cfg(windows)]
-        let _ = self.child.kill();
+        let _ = self.child.lock().unwrap().kill();
 
         let deadline = Instant::now() + EXIT_GRACE;
         loop {
-            match self.child.try_wait() {
+            let mut child = self.child.lock().unwrap();
+            match child.try_wait() {
                 Ok(Some(_)) => break,
                 _ if Instant::now() > deadline => {
-                    let _ = self.child.kill();
-                    let _ = self.child.wait();
+                    let _ = child.kill();
+                    let _ = child.wait();
                     break;
                 }
-                _ => std::thread::sleep(Duration::from_millis(50)),
+                _ => {
+                    drop(child);
+                    std::thread::sleep(Duration::from_millis(50));
+                }
             }
         }
         let _ = std::fs::remove_file(&self.config_path);
     }
+}
+
+/// Watches for an exit nobody asked for. Before this, a core that died left
+/// the interface reading ACTIVE over a dead port in every mode; in TUN it
+/// leaves the kill switch up, which is right, but the user has to be told.
+pub(crate) fn watch(child: Arc<Mutex<Child>>, stopping: Arc<AtomicBool>, on_exit: ExitFn) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(WATCH_INTERVAL);
+        if stopping.load(Ordering::SeqCst) {
+            return;
+        }
+        let exited = matches!(child.lock().unwrap().try_wait(), Ok(Some(_)));
+        if exited {
+            if !stopping.load(Ordering::SeqCst) {
+                on_exit();
+            }
+            return;
+        }
+    });
 }
 
 /// The trust boundary for the core binary. See the module comment.
@@ -362,7 +408,7 @@ mod tests {
         let log: LogFn =
             std::sync::Arc::new(move |_lvl, msg| sink.lock().unwrap().push(msg));
 
-        let sup = TunnelSupervisor::start(&spec, log).expect("the core should come up");
+        let sup = TunnelSupervisor::start(&spec, log, Box::new(|| {})).expect("the core should come up");
         // Readiness returning means the port really accepts.
         TcpStream::connect(("127.0.0.1", port)).expect("the proxy port must accept");
 
@@ -380,4 +426,24 @@ mod tests {
         );
     }
 
+    fn spawn(script: &str) -> Arc<Mutex<Child>> {
+        Arc::new(Mutex::new(
+            Command::new("sh").args(["-c", script]).spawn().unwrap(),
+        ))
+    }
+
+    #[test]
+    fn an_exit_nobody_asked_for_is_reported() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        watch(spawn("exit 3"), Arc::new(AtomicBool::new(false)), Box::new(move || tx.send(()).unwrap()));
+        assert!(rx.recv_timeout(Duration::from_secs(3)).is_ok(), "the exit was never reported");
+    }
+
+    #[test]
+    fn an_exit_during_a_stop_is_not_reported() {
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let stopping = Arc::new(AtomicBool::new(true));
+        watch(spawn("exit 0"), stopping, Box::new(move || tx.send(()).unwrap()));
+        assert!(rx.recv_timeout(Duration::from_secs(1)).is_err(), "a requested stop was reported as a crash");
+    }
 }

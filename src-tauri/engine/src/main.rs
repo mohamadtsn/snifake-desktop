@@ -38,6 +38,14 @@ impl Out {
     }
 }
 
+fn tunnel_state(out: &Out, state: &str, detail: Option<String>, blocking: bool) {
+    out.send(&Event::TunnelState {
+        state: state.into(),
+        detail,
+        blocking,
+    });
+}
+
 /// One active run. The sniff thread owns the raw capture socket, so stopping
 /// means signalling *and* joining it — dropping the handle would leak a
 /// thread and a packet socket on every start/stop cycle.
@@ -158,32 +166,20 @@ fn main() {
                 // this process is the trust boundary, and a tunnel whose
                 // outbound has nothing to dial is worse than no tunnel.
                 if running.is_none() {
-                    out.send(&Event::TunnelState {
-                        state: "fault".into(),
-                        detail: Some("the SNI stage is not running".into()),
-                    });
+                    tunnel_state(&out, "fault", Some("the SNI stage is not running".into()), false);
                     continue;
                 }
                 if let Some(t) = tunnel.take() {
                     t.stop();
                 }
-                out.send(&Event::TunnelState {
-                    state: "starting".into(),
-                    detail: None,
-                });
+                tunnel_state(&out, "starting", None, false);
                 match start_tunnel(&spec, &out, verbose.clone()) {
                     Ok(t) => {
                         tunnel = Some(t);
-                        out.send(&Event::TunnelState {
-                            state: "active".into(),
-                            detail: None,
-                        });
+                        tunnel_state(&out, "active", None, false);
                     }
                     Err(e) => {
-                        out.send(&Event::TunnelState {
-                            state: "fault".into(),
-                            detail: Some(e),
-                        });
+                        tunnel_state(&out, "fault", Some(e), false);
                     }
                 }
             }
@@ -191,10 +187,7 @@ fn main() {
                 if let Some(t) = tunnel.take() {
                     t.stop();
                 }
-                out.send(&Event::TunnelState {
-                    state: "offline".into(),
-                    detail: None,
-                });
+                tunnel_state(&out, "offline", None, false);
             }
             Command::TunnelReconcile { link: _ } => {
                 // Phase 1 has no routes or firewall rules to move, and the

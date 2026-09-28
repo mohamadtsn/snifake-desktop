@@ -354,6 +354,7 @@ mod tests {
             connect_ip: "127.0.0.1".into(),
             connect_port: 443,
             listen_host: "127.0.0.1".into(),
+            tun: None,
         };
 
         let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));

@@ -2,6 +2,7 @@
 //! convenience for the user, this one is the actual guarantee.
 
 use crate::proto::Profile;
+use crate::proto::TunnelSpec;
 use std::net::Ipv4Addr;
 
 const MAX_SNI: usize = 219;
@@ -46,6 +47,23 @@ fn validate_sni(sni: &str) -> Result<(), String> {
                 "FAKE_SNI '{sni}' contains characters not valid in a hostname"
             ));
         }
+    }
+    Ok(())
+}
+
+/// The upstream a TUN kill switch will permit. It is the only value from
+/// the unprivileged side the firewall trusts, so it is held to "one real,
+/// routable IPv4 host and a port".
+pub fn validate_tun(s: &TunnelSpec) -> Result<(), String> {
+    let ip: Ipv4Addr = s
+        .connect_ip
+        .parse()
+        .map_err(|_| format!("CONNECT_IP '{}' is not an IPv4 address", s.connect_ip))?;
+    if ip.is_loopback() || ip.is_unspecified() || ip.is_broadcast() || ip.is_multicast() {
+        return Err(format!("CONNECT_IP {ip} cannot be the tunnel's permitted upstream"));
+    }
+    if s.connect_port == 0 {
+        return Err("CONNECT_PORT must be between 1 and 65535".into());
     }
     Ok(())
 }
@@ -127,5 +145,33 @@ mod tests {
         assert_eq!(p.fake_sni.len(), MAX_SNI);
         assert!(validate(&p).is_ok(), "{:?}", validate(&p));
         assert!(crate::hello::build_client_hello(&p.fake_sni).is_ok());
+    }
+
+    fn tun_spec(ip: &str, port: u16) -> crate::proto::TunnelSpec {
+        crate::proto::TunnelSpec {
+            config: serde_json::json!({}),
+            core_path: "/x".into(),
+            ready_probe: crate::proto::ReadyProbe::Interface { name: "snifake-tun0".into() },
+            connect_ip: ip.into(),
+            connect_port: port,
+            listen_host: "127.0.0.1".into(),
+            tun: Some(crate::proto::TunSpec { allow_lan: true }),
+        }
+    }
+
+    #[test]
+    fn a_tun_spec_with_a_real_upstream_is_accepted() {
+        assert!(validate_tun(&tun_spec("104.18.4.130", 443)).is_ok());
+    }
+
+    #[test]
+    fn a_tun_spec_whose_upstream_the_firewall_cannot_mean_is_refused() {
+        // Each of these would turn the one permitted escape into a hole or
+        // into nothing: loopback is already open, and the rest are not a
+        // single host.
+        for bad in ["127.0.0.1", "0.0.0.0", "255.255.255.255", "224.0.0.1", "example.com", "::1"] {
+            assert!(validate_tun(&tun_spec(bad, 443)).is_err(), "{bad} must be refused");
+        }
+        assert!(validate_tun(&tun_spec("104.18.4.130", 0)).is_err());
     }
 }

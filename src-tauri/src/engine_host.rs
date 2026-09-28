@@ -126,7 +126,7 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
             Applied::Nothing
         }
         Event::State { state } => Applied::Link(state.clone()),
-        Event::TunnelState { state, detail } => {
+        Event::TunnelState { state, detail, .. } => {
             if let Some(d) = detail {
                 logs.push(format!("[tunnel] {d}"));
             }
@@ -506,6 +506,7 @@ mod tests {
             &Event::TunnelState {
                 state: "fault".into(),
                 detail: Some("the SNI stage is not running".into()),
+                blocking: false,
             },
             &logs,
         );
@@ -524,6 +525,7 @@ mod tests {
             &Event::TunnelState {
                 state: "fault".into(),
                 detail: Some("core checksum mismatch".into()),
+                blocking: false,
             },
             &logs,
         );
@@ -537,7 +539,7 @@ mod tests {
     fn a_tunnel_state_without_a_detail_writes_nothing_to_the_log() {
         let logs = logs();
         apply_event(
-            &Event::TunnelState { state: "active".into(), detail: None },
+            &Event::TunnelState { state: "active".into(), detail: None, blocking: false },
             &logs,
         );
         assert!(logs.snapshot().is_empty());

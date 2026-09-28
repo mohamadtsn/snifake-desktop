@@ -30,7 +30,7 @@ pub struct Profile {
 /// rewrites it. The three fields beside it are the only values the engine
 /// reads for itself, because routes and firewall rules cannot be expressed
 /// inside a sing-box config.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TunnelSpec {
     pub config: serde_json::Value,
     /// Where the core lives. The engine verifies its SHA-256 against
@@ -48,6 +48,21 @@ pub struct TunnelSpec {
     /// The SNI listener's bind address, so a non-loopback one can be
     /// excluded too.
     pub listen_host: String,
+    /// Present only in TUN mode. Its presence is what tells the engine to
+    /// raise the kill switch and the route guard around the core. Absent
+    /// from an older GUI's spec, which is a proxy-mode spec.
+    #[serde(default)]
+    pub tun: Option<TunSpec>,
+}
+
+/// The one TUN setting the engine needs. Everything else about the TUN is a
+/// compiled constant in `tunpin`, so it cannot arrive from the unprivileged
+/// side.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct TunSpec {
+    /// Mirrors `Routing::allow_lan`: private and link-local IPv4 may leave
+    /// directly.
+    pub allow_lan: bool,
 }
 
 /// Readiness is probed, never matched against a log line: a core upgrade
@@ -104,6 +119,12 @@ pub enum Event {
     TunnelState {
         state: String,
         detail: Option<String>,
+        /// Whether the kill switch is in force at the moment this was sent.
+        /// The GUI deletes its crash marker on an `offline` or `fault` that
+        /// says `false` — the name of the state alone cannot say it, because
+        /// a core that exits in TUN leaves the machine blocked.
+        #[serde(default)]
+        blocking: bool,
     },
     /// Cumulative bytes since this run started, once a second.
     ///
@@ -130,6 +151,7 @@ mod tests {
             connect_ip: "103.160.204.34".into(),
             connect_port: 443,
             listen_host: "127.0.0.1".into(),
+            tun: None,
         }
     }
 
@@ -175,12 +197,14 @@ mod tests {
             let ev = Event::TunnelState {
                 state: "holding".into(),
                 detail: detail.clone(),
+                blocking: true,
             };
             let line = serde_json::to_string(&ev).unwrap();
             assert!(line.contains("\"ev\":\"tunnel_state\""), "{line}");
             match serde_json::from_str::<Event>(&line).unwrap() {
-                Event::TunnelState { state, detail: got } => {
+                Event::TunnelState { state, detail: got, blocking } => {
                     assert_eq!(state, "holding");
+                    assert!(blocking);
                     assert_eq!(got, detail);
                 }
                 other => panic!("wrong variant: {other:?}"),
@@ -209,6 +233,35 @@ mod tests {
                 assert_eq!(up, 1_048_576);
                 assert_eq!(down, 9_437_184);
             }
+            other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_spec_from_an_older_gui_has_no_tun_section() {
+        // The field is additive: a proxy-mode spec is the same line it was.
+        let mut v = serde_json::to_value(spec()).unwrap();
+        v.as_object_mut().unwrap().remove("tun");
+        let back: TunnelSpec = serde_json::from_value(v).unwrap();
+        assert_eq!(back.tun, None);
+    }
+
+    #[test]
+    fn a_tun_spec_round_trips() {
+        let mut s = spec();
+        s.tun = Some(TunSpec { allow_lan: false });
+        let line = serde_json::to_string(&Command::TunnelStart { spec: s }).unwrap();
+        match serde_json::from_str::<Command>(&line).unwrap() {
+            Command::TunnelStart { spec } => assert_eq!(spec.tun, Some(TunSpec { allow_lan: false })),
+            other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_tunnel_state_without_blocking_means_not_blocking() {
+        let line = r#"{"ev":"tunnel_state","state":"offline","detail":null}"#;
+        match serde_json::from_str::<Event>(line).unwrap() {
+            Event::TunnelState { blocking, .. } => assert!(!blocking),
             other => panic!("wrong variant: {other:?}"),
         }
     }

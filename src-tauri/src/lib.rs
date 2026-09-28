@@ -380,6 +380,7 @@ fn start_tunnel(
         connect_ip: link.connect_ip.clone(),
         connect_port: link.connect_port,
         listen_host: link.listen_host.clone(),
+        tun: None,
     };
     state.engine.lock().unwrap().tunnel_start(spec)?;
 

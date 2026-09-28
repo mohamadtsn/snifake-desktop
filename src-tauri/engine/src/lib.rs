@@ -11,9 +11,11 @@ pub mod hello;
 pub mod netpkt;
 pub mod proto;
 pub mod sniffer;
+pub mod sysbin;
 pub mod sysrand;
 pub mod transport;
 pub mod tunnel;
+pub mod tunpin;
 pub mod validate;
 
 #[cfg(test)]

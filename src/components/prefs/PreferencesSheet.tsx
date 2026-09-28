@@ -15,6 +15,12 @@ import { NetworkTab } from "./NetworkTab";
 type PrefTab = "general" | "network" | "core";
 
 /**
+ * The body height of the tallest pane (Core, measured 2026-09-28), so the
+ * sheet keeps one frame across all three. Re-measure if a pane grows.
+ */
+const PREFS_BODY_HEIGHT = 448;
+
+/**
  * Three tabs over one sheet. Every change takes effect as it is made -
  * there is no Apply, and the footer says so - because every one of these is
  * a single value with an immediate effect, and a form that batches them
@@ -79,6 +85,7 @@ export function PreferencesSheet({
       title="Preferences"
       subtitle={version ? `v${version}` : undefined}
       width={680}
+      bodyHeight={PREFS_BODY_HEIGHT}
       tabs={
         <Segmented
           size="sm"

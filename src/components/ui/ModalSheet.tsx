@@ -29,6 +29,7 @@ export function ModalSheet({
   footer,
   children,
   width = 680,
+  bodyHeight,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,6 +41,10 @@ export function ModalSheet({
   footer: ReactNode;
   children: ReactNode;
   width?: number;
+  /** A fixed height for the scrolling body, in px. For a sheet with tabs,
+   *  so switching panes does not resize the frame. The popup's own
+   *  `max-h` still wins on a short window, and the body scrolls. */
+  bodyHeight?: number;
 }) {
   const popupRef = useRef<HTMLDivElement>(null);
   return (
@@ -85,7 +90,13 @@ export function ModalSheet({
             </Dialog.Close>
           </header>
 
-          <div className="tab-scroll flex min-h-0 flex-1 flex-col gap-5 px-6 py-4">
+          <div
+            className="tab-scroll flex min-h-0 flex-1 flex-col gap-5 px-6 py-4"
+            // The basis, not `height`: `flex-1` sets a 0% basis, and in a
+            // column flex container the basis wins over `height`. Shrinkable,
+            // so the popup's `max-h` still holds on a short window.
+            style={bodyHeight ? { flex: `0 1 ${bodyHeight}px` } : undefined}
+          >
             {children}
           </div>
 

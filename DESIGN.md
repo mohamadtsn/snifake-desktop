@@ -504,6 +504,15 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-28 — Preferences keeps one height.** The body is fixed at the
+tallest pane's height (`PREFS_BODY_HEIGHT`, Core, 448px), so switching panes
+never moves the frame; shorter panes leave space below, as System Settings
+does. `ModalSheet` takes it as `bodyHeight` and sets it as the flex *basis*,
+not `height`: `flex-1`'s 0% basis wins over `height` in a column container,
+and the measured result of setting `height` was no change at all. On a
+window shorter than that (the 780×620 minimum) the popup's `max-h` wins and
+the body scrolls.
+
 **2026-09-28 — Updates are followed on About, not in a modal.** `Update now`
 closes the offer and moves to About (through the leave guard, like any tab
 change), whose panel carries the meter; About's button names the phase,

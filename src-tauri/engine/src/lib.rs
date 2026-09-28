@@ -8,6 +8,7 @@ pub mod capture;
 pub mod corepin;
 pub mod forward;
 pub mod hello;
+pub mod killswitch;
 pub mod netpkt;
 pub mod proto;
 pub mod sniffer;

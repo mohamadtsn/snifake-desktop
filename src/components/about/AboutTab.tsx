@@ -179,7 +179,7 @@ export function AboutTab({
                 </p>
               ) : null}
 
-              {updating ? <UpdateMeter progress={progress} /> : null}
+              {updating ? <UpdateMeter progress={progress} pulse /> : null}
             </div>
           ) : (
             <p className="flex items-start gap-3 rounded-md border border-hairline bg-inset px-3 py-[10px] text-note leading-[16.5px] text-t2">
@@ -215,7 +215,13 @@ export function AboutTab({
               onClick={onInstall}
             >
               <Icon name="download" size={14} />
-              {updating ? "Installing" : "Download and relaunch"}
+              {/* Two phases, one flow. `Finished` reports total === received,
+                  so the download is over exactly when they meet. */}
+              {!updating
+                ? "Download and relaunch"
+                : !progress || progress.total === null || progress.received < progress.total
+                  ? "Downloading"
+                  : "Installing"}
             </Button>
             <Button variant="secondary" onClick={() => void run()} disabled={check === "checking"}>
               <Icon name="refresh" size={14} />

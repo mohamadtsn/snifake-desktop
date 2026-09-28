@@ -338,6 +338,11 @@ copyable value back into text selection, against the window-wide
 `user-select: none`), `.material-symbols-outlined`'s variation settings,
 `.tab-scroll`, and `.log-lines`.
 
+`.meter-ping` is the ring on `UpdateMeter`'s opt-in `pulse` dot. It reuses
+`badge-ping`'s keyframes (one curve for one idea) in the accent, runs only
+while bytes arrive, and is absent under reduced motion; the steady dot beneath
+it stays.
+
 `.log-lines` does not wrap. Log lines scroll sideways, because wrapping splits
 an IPv4 address mid-octet, and a log you cannot scan by column is not a log.
 
@@ -498,6 +503,16 @@ the reason is in the row.
 ---
 
 ## 8. Decision log
+
+**2026-09-28 — Updates are followed on About, not in a modal.** `Update now`
+closes the offer and moves to About (through the leave guard, like any tab
+change), whose panel carries the meter; About's button names the phase,
+Downloading then Installing. The meter gains an opt-in leading dot (`pulse`)
+that pings in the accent while bytes arrive and holds still while installing;
+reduced motion removes the ring and keeps the dot. The core download does not
+opt in. Closing the offer no longer discards the update it found. Only the
+silent launch check opens the offer; a check pressed on About reports into
+About.
 
 **2026-09-28 — The unsaved-changes question covers every draft and offers
 Save.** Three owners (Sockets, the SNI editor, the tunnel editor), and every

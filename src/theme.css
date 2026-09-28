@@ -327,6 +327,23 @@ body {
   }
 }
 
+/* The updater's "bytes are moving" mark: a steady accent dot at the head
+   of the meter, with the same ring the About badge uses. The ring runs only
+   while bytes arrive; installing has no stream to show, so the dot holds
+   still. Reuses `badge-ping`'s keyframes - one curve for one idea. */
+.meter-ping {
+  border-radius: 9999px;
+  background: var(--color-accent);
+  animation: badge-ping 1.8s var(--ease-out) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Absent, as with the badge: the steady dot beneath still says it. */
+  .meter-ping {
+    display: none;
+  }
+}
+
 /* The indeterminate progress band. A transform-only loop, and the only
    animation in the application that repeats - because the thing it stands
    for, a download with no content-length, also has no end in sight. */

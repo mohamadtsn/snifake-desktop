@@ -32,7 +32,6 @@ import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
-import { UpdateMeter } from "@/components/UpdateMeter";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 export default function App() {
@@ -87,6 +86,10 @@ export default function App() {
     setErrorDialog({ title, message: String(e) });
   const [update, setUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
+  /** Whether the offer dialog is showing. Separate from `update`: closing
+   *  the offer hides it, and must not throw away the update it found -
+   *  About keeps showing it and can still install it. */
+  const [offerOpen, setOfferOpen] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
 
   // The optional second stage. `tunnels === null` only until the first load
@@ -161,7 +164,12 @@ export default function App() {
   // convenience that must never surface as a failure.
   useEffect(() => {
     if (!prefs.silentUpdateChecks) return;
-    void findUpdate().then(setUpdate);
+    // Only this silent check opens the offer. A check pressed on About
+    // reports into About's own panel, which is already on screen.
+    void findUpdate().then((found) => {
+      setUpdate(found);
+      setOfferOpen(found !== null);
+    });
     // Deliberately on mount only. Turning the preference on mid-session
     // should not fire a check the user did not ask for.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -523,6 +531,27 @@ export default function App() {
     }
   }
 
+  /**
+   * The one way an update starts, from the offer or from About. The offer
+   * closes and the download is followed on About, because a modal held
+   * open for a whole download traps the window for no reason. Moving to
+   * About goes through the leave guard like any other tab change; if the
+   * user stays to finish a draft, the download carries on regardless.
+   */
+  function beginUpdate() {
+    if (!update || updating) return;
+    setOfferOpen(false);
+    setUpdating(true);
+    setProgress(null);
+    guardLeave(() => setTab("about"), tab === "about");
+    void applyUpdate(update, setProgress).catch((err) => {
+      setUpdating(false);
+      setProgress(null);
+      setUpdate(null);
+      setErrorDialog({ title: "The update could not be applied", message: String(err) });
+    });
+  }
+
   async function confirmExit() {
     await invoke("stop_proxy");
     await invoke("shutdown_engine");
@@ -530,12 +559,6 @@ export default function App() {
   }
 
   const profile = store ? activeProfile(store) : undefined;
-
-  // Two phases, one flow. `Finished` reports total === received, so the
-  // download is over exactly when they meet; before the first event there is
-  // no progress object yet and we are certainly still downloading.
-  const downloading =
-    !progress || progress.total === null || progress.received < progress.total;
 
   const blockedReason = canStartTunnel(coreInstalled, tunnels?.active_id != null);
   const tunnelRunning = tunnelState !== "offline";
@@ -677,17 +700,7 @@ export default function App() {
             progress={progress}
             silentChecks={prefs.silentUpdateChecks}
             onSilentChecksChange={(on) => updatePrefs({ silentUpdateChecks: on })}
-            onInstall={() => {
-              if (!update) return;
-              setUpdating(true);
-              setProgress(null);
-              void applyUpdate(update, setProgress).catch((err) => {
-                setUpdating(false);
-                setProgress(null);
-                setUpdate(null);
-                setErrorDialog({ title: "The update could not be applied", message: String(err) });
-              });
-            }}
+            onInstall={beginUpdate}
           />
         )}
       </TabRegion>
@@ -890,19 +903,15 @@ export default function App() {
           and `Notarized` as well - the first is not what is checked and the
           second is an Apple process that is not ours to claim. */}
       <ConfirmDialog
-        open={update !== null}
-        onOpenChange={() => !updating && setUpdate(null)}
+        open={offerOpen && update !== null}
+        onOpenChange={(open) => {
+          if (!open) setOfferOpen(false);
+        }}
         tone="neutral"
         icon="system_update_alt"
         title={`Snifake v${update?.version ?? ""} is available`}
         badge={<Badge tone="accent">v{update?.version ?? ""}</Badge>}
-        description={
-          !updating
-            ? `You are on v${update?.currentVersion ?? ""}. It will be downloaded, verified and installed, and Snifake restarts.`
-            : downloading
-              ? "Downloading. Snifake will restart once it is installed."
-              : "Installing. Snifake will restart when it finishes."
-        }
+        description={`You are on v${update?.currentVersion ?? ""}. It will be downloaded, verified and installed, and Snifake restarts. You can follow it on About.`}
         details={
           <div className="flex flex-col gap-2">
             {update?.body ? (
@@ -919,32 +928,17 @@ export default function App() {
                 This release ships no notes. The source repository has the full history.
               </p>
             )}
-            {updating ? (
-              <UpdateMeter progress={progress} />
-            ) : (
-              <div className="flex items-center justify-between gap-3 border-t border-hairline pt-2">
-                <span className="mono text-note text-t3">
-                  {update?.date ? `released ${update.date.slice(0, 10)}` : "release date unknown"}
-                </span>
-                <Badge tone="ok">signed</Badge>
-              </div>
-            )}
+            <div className="flex items-center justify-between gap-3 border-t border-hairline pt-2">
+              <span className="mono text-note text-t3">
+                {update?.date ? `released ${update.date.slice(0, 10)}` : "release date unknown"}
+              </span>
+              <Badge tone="ok">signed</Badge>
+            </div>
           </div>
         }
-        busy={updating}
         cancelLabel="Later"
-        confirmLabel={!updating ? "Update now" : downloading ? "Downloading" : "Installing"}
-        onConfirm={() => {
-          if (!update || updating) return;
-          setUpdating(true);
-          setProgress(null);
-          void applyUpdate(update, setProgress).catch((err) => {
-            setUpdating(false);
-            setProgress(null);
-            setUpdate(null);
-            setErrorDialog({ title: "The update could not be applied", message: String(err) });
-          });
-        }}
+        confirmLabel="Update now"
+        onConfirm={beginUpdate}
       />
 
       {/* A dialog with one answer. `ConfirmDialog` gives it the same frame

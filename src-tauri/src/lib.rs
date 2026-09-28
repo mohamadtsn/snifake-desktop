@@ -328,6 +328,22 @@ fn export_tunnel_uri(state: tauri::State<AppState>, id: String) -> Result<String
 /// Everything that has to be true before a tunnel can start, checked in
 /// one place and reported as one message the UI can show verbatim.
 #[tauri::command]
+fn tun_support() -> Option<String> {
+    tunnel::tun::support()
+}
+
+/// Whether a previous session may have left the kill switch up.
+#[tauri::command]
+fn tun_leftover_status() -> bool {
+    tunnel::tun::marker_present()
+}
+
+#[tauri::command]
+fn restore_network(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
+    state.engine.lock().unwrap().restore(&app)
+}
+
+#[tauri::command]
 fn start_tunnel(
     app: tauri::AppHandle,
     state: tauri::State<AppState>,
@@ -353,36 +369,70 @@ fn start_tunnel(
         profiles::active(&store).cloned().ok_or("no active SNI profile")?
     };
 
-    // Bind and release, so a clash is reported against the field the user
-    // can change rather than surfacing as an opaque core failure. The
-    // engine maps sing-box's own bind error to the same message, because
-    // the gap between this check and the spawn is real.
-    let bind = (tunnels.proxy_host.as_str(), tunnels.proxy_port);
-    match std::net::TcpListener::bind(bind) {
-        Ok(l) => drop(l),
-        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-            return Err(format!(
-                "Port {} is already in use. Choose another port.",
-                tunnels.proxy_port
-            ));
+    let is_tun = tunnels.mode == tunnel::model::TunnelMode::Tun;
+    if is_tun {
+        if let Some(why) = tunnel::tun::support() {
+            return Err(why);
         }
-        Err(e) => return Err(format!("Cannot listen on port {}: {e}", tunnels.proxy_port)),
+    }
+
+    // A start while a tunnel runs replaces it in the engine, and the
+    // predecessor still holds its port, so the pre-check only applies to a
+    // first start (spec §12.5). TUN opens no port at all.
+    let replacing = state.engine.lock().unwrap().tunnel_state() != "offline";
+    if !is_tun && !replacing {
+        // Bind and release, so a clash is reported against the field the
+        // user can change rather than surfacing as an opaque core failure.
+        // The engine maps sing-box's own bind error to the same message,
+        // because the gap between this check and the spawn is real.
+        let bind = (tunnels.proxy_host.as_str(), tunnels.proxy_port);
+        match std::net::TcpListener::bind(bind) {
+            Ok(l) => drop(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                return Err(format!(
+                    "Port {} is already in use. Choose another port.",
+                    tunnels.proxy_port
+                ));
+            }
+            Err(e) => return Err(format!("Cannot listen on port {}: {e}", tunnels.proxy_port)),
+        }
     }
 
     let config = tunnel::generate::generate(&profile, &tunnels, &link)?;
+    let ready_probe = if is_tun {
+        snifake_engine::proto::ReadyProbe::Interface {
+            name: snifake_engine::tunpin::INTERFACE_NAME.into(),
+        }
+    } else {
+        snifake_engine::proto::ReadyProbe::TcpAccept {
+            host: tunnels.proxy_host.clone(),
+            port: tunnels.proxy_port,
+        }
+    };
     let spec = snifake_engine::proto::TunnelSpec {
         config,
         core_path: tunnel::core::core_binary().to_string_lossy().into_owned(),
-        ready_probe: snifake_engine::proto::ReadyProbe::TcpAccept {
-            host: tunnels.proxy_host.clone(),
-            port: tunnels.proxy_port,
-        },
+        ready_probe,
         connect_ip: link.connect_ip.clone(),
         connect_port: link.connect_port,
         listen_host: link.listen_host.clone(),
-        tun: None,
+        tun: is_tun.then(|| snifake_engine::proto::TunSpec {
+            allow_lan: tunnels.routing.allow_lan,
+        }),
     };
-    state.engine.lock().unwrap().tunnel_start(spec)?;
+
+    {
+        let mut engine = state.engine.lock().unwrap();
+        if !engine.is_connected() {
+            return Err("Start the SNI stage first.".into());
+        }
+        // Before the start is sent, and synced: if anything dies from here
+        // on with the kill switch up, this is how the next launch knows.
+        if is_tun {
+            tunnel::tun::write_marker()?;
+        }
+        engine.tunnel_start(spec)?;
+    }
 
     if tunnels.mode == tunnel::model::TunnelMode::SystemProxy {
         // Best effort, and reported as a log line rather than an error: the
@@ -481,6 +531,9 @@ pub fn run() {
             export_tunnel_uri,
             start_tunnel,
             stop_tunnel,
+            tun_support,
+            tun_leftover_status,
+            restore_network,
         ])
         .setup(move |app| {
             // A marker here means the previous run did not get to clear its

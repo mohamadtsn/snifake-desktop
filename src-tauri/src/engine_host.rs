@@ -102,7 +102,7 @@ pub enum Applied {
     /// Cumulative bytes, up then down.
     Traffic(u64, u64),
     Link(String),
-    Tunnel(String, Option<String>),
+    Tunnel(String, Option<String>, bool),
 }
 
 /// Folds one engine event into the log buffer and says what it changed.
@@ -126,11 +126,11 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
             Applied::Nothing
         }
         Event::State { state } => Applied::Link(state.clone()),
-        Event::TunnelState { state, detail, .. } => {
+        Event::TunnelState { state, detail, blocking } => {
             if let Some(d) = detail {
                 logs.push(format!("[tunnel] {d}"));
             }
-            Applied::Tunnel(state.clone(), detail.clone())
+            Applied::Tunnel(state.clone(), detail.clone(), *blocking)
         }
         // Deliberately not pushed to the log buffer: the ring is 500 lines
         // and one line a second would evict the user's whole log in eight
@@ -242,6 +242,21 @@ impl EngineHost {
         if self.writer.is_some() {
             let _ = self.send(&Command::TunnelStop);
         }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.writer.is_some()
+    }
+
+    /// Restore network. An engine that is not running is launched — one
+    /// prompt — and purges every leftover as its first act, then reports the
+    /// kill switch down, which deletes the marker. One that is running is
+    /// asked to stop the tunnel, which lowers its guard.
+    pub fn restore(&mut self, app: &AppHandle) -> Result<(), String> {
+        if self.writer.is_none() {
+            return self.spawn_engine(app);
+        }
+        self.send(&Command::TunnelStop)
     }
 
     pub fn set_verbose(&mut self, on: bool) {
@@ -379,16 +394,24 @@ impl EngineHost {
                             Applied::Traffic(up, down) => {
                                 let _ = handle.emit("traffic", (up, down));
                             }
-                            Applied::Tunnel(state, detail) => {
+                            Applied::Tunnel(state, detail, blocking) => {
                                 if state == "fault" {
                                     // The tunnel is gone; the proxy pointing
                                     // at it must not outlive it.
                                     let _ = crate::sysproxy::clear();
                                 }
+                                // The engine says the kill switch is down,
+                                // so a crash from here on leaves nothing to
+                                // recover (spec §12.7). The state's name
+                                // alone cannot say it: a TUN core that exits
+                                // reports `fault` with the switch still up.
+                                if !blocking && (state == "offline" || state == "fault") {
+                                    crate::tunnel::tun::remove_marker();
+                                }
                                 *tunnel_state.lock().unwrap() = state.clone();
                                 let _ = handle.emit(
                                     "tunnel-state-changed",
-                                    serde_json::json!({ "state": state, "detail": detail }),
+                                    serde_json::json!({ "state": state, "detail": detail, "blocking": blocking }),
                                 );
                             }
                         }
@@ -405,9 +428,12 @@ impl EngineHost {
             // user loses their internet to this application.
             let _ = crate::sysproxy::clear();
             *tunnel_state.lock().unwrap() = "offline".into();
+            // The marker is deliberately not touched: an engine that died
+            // with TUN up left its kill switch in force, and this `offline`
+            // is ours, not the engine's report that the switch is down.
             let _ = handle.emit(
                 "tunnel-state-changed",
-                serde_json::json!({ "state": "offline", "detail": null }),
+                serde_json::json!({ "state": "offline", "detail": null, "blocking": false }),
             );
         });
 
@@ -512,7 +538,7 @@ mod tests {
         );
         assert_eq!(
             got,
-            Applied::Tunnel("fault".into(), Some("the SNI stage is not running".into()))
+            Applied::Tunnel("fault".into(), Some("the SNI stage is not running".into()), false)
         );
     }
 
@@ -565,5 +591,14 @@ mod tests {
         let ev = Event::Traffic { up: 10, down: 20 };
         assert_eq!(apply_event(&ev, &logs), Applied::Traffic(10, 20));
         assert_eq!(logs.snapshot().len(), 0, "traffic must not enter the log ring");
+    }
+
+    #[test]
+    fn a_tunnel_state_carries_whether_the_kill_switch_is_up() {
+        let applied = apply_event(
+            &Event::TunnelState { state: "fault".into(), detail: None, blocking: true },
+            &logs(),
+        );
+        assert!(matches!(applied, Applied::Tunnel(ref s, None, true) if s == "fault"));
     }
 }

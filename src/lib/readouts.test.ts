@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeRoute,
   endpointLabel,
+  tunnelInbound,
   listenAddress,
   logBufferLabel,
   middleTruncate,
@@ -10,7 +11,7 @@ import {
   tunnelSni,
   upstreamAddress,
 } from "@/lib/readouts";
-import type { Profile, Store, TunnelProfile } from "@/types";
+import type { Profile, Store, TunnelProfile, TunnelStore } from "@/types";
 
 const profile: Profile = {
   id: "p1",
@@ -178,5 +179,28 @@ describe("endpointLabel", () => {
     // would collapse the row; a dash keeps the layout and states the
     // absence.
     expect(endpointLabel(null)).toBe("—");
+  });
+});
+
+describe("tunnelInbound", () => {
+  const base: Omit<TunnelStore, "mode"> = {
+    tunnels: [],
+    active_id: null,
+    proxy_host: "127.0.0.1",
+    proxy_port: 2080,
+    routing: { block: [], bypass: [], proxy: [], raw: null, default_route: "proxy", block_quic: true, allow_lan: true },
+  };
+
+  it("names the port the proxy modes open", () => {
+    expect(tunnelInbound({ ...base, mode: "manual" })).toBe("127.0.0.1:2080");
+    expect(tunnelInbound({ ...base, mode: "system_proxy" })).toBe("127.0.0.1:2080");
+  });
+
+  it("does not claim a port in TUN, which opens none", () => {
+    expect(tunnelInbound({ ...base, mode: "tun" })).toBe("virtual interface");
+  });
+
+  it("has nothing to say before the store loads", () => {
+    expect(tunnelInbound(null)).toBeNull();
   });
 });

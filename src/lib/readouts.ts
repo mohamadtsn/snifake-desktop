@@ -1,4 +1,4 @@
-import type { Profile, Store, TunnelProfile } from "@/types";
+import type { Profile, Store, TunnelProfile, TunnelStore } from "@/types";
 
 /** Mirrors `tunnel::download::CoreStatus`. */
 export interface CoreStatus {
@@ -94,4 +94,15 @@ export function logBufferLabel(count: number): string {
 /** A footer endpoint slot. The slot is fixed; what fills it is not. */
 export function endpointLabel(address: string | null): string {
   return address ?? "—";
+}
+
+/**
+ * Where the tunnel takes traffic in. The proxy modes open a port; TUN opens
+ * none — it is a network interface — and showing `proxy_port` there would be
+ * a reading of a listener that does not exist.
+ */
+export function tunnelInbound(tunnels: TunnelStore | null): string | null {
+  if (!tunnels) return null;
+  if (tunnels.mode === "tun") return "virtual interface";
+  return `${tunnels.proxy_host}:${tunnels.proxy_port}`;
 }

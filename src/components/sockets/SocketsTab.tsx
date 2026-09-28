@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { parseRawRules } from "@/lib/rawRules";
+import { tunnelInbound } from "@/lib/readouts";
 import { validateRuleList } from "@/lib/rules";
 import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import type { Routing, TunnelMode, TunnelStore } from "@/types";
@@ -26,6 +27,7 @@ export function SocketsTab({
   saving,
   onDraftChange,
   systemProxyBlocked,
+  tunBlocked,
 }: {
   store: TunnelStore | null;
   /** Resolves once saved; rejects, after the shell has shown why, if not. */
@@ -41,6 +43,8 @@ export function SocketsTab({
   onDraftChange: (report: DraftReport | null, owner: DraftOwner) => void;
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked: string | null;
+  /** `tun_support()`: `null` when TUN can run here. */
+  tunBlocked: string | null;
 }) {
   const [list, setList] = useState<ListName>("block");
   const [mode, setMode] = useState<TunnelMode>(store?.mode ?? "manual");
@@ -164,7 +168,8 @@ export function SocketsTab({
           </h1>
         </div>
         <span className="mono flex shrink-0 items-center gap-2 rounded-sm border border-hairline bg-inset px-[9px] py-[4px] text-note text-t2">
-          {store.proxy_host}:{store.proxy_port}
+          {/* The draft's mode, so the chip changes with the card. */}
+          {tunnelInbound({ ...store, mode })}
           <StatusDot tone={mode === "tun" ? "ok" : "off"} size={6} />
         </span>
       </header>
@@ -174,6 +179,7 @@ export function SocketsTab({
         bound={`port ${store.proxy_port}`}
         onChange={setMode}
         systemProxyBlocked={systemProxyBlocked}
+        tunBlocked={tunBlocked}
       />
 
       <SafeguardList

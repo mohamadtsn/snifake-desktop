@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { MODES, MODE_ORDER } from "@/lib/modes";
+import { MODES, MODE_ORDER, modeBlockedReason } from "@/lib/modes";
 import type { TunnelMode } from "@/types";
 
 /**
@@ -20,13 +20,14 @@ import type { TunnelMode } from "@/types";
  * desktop with neither `gsettings` nor `kwriteconfig` cannot have its proxy
  * written, and a mode that silently does nothing is the exact failure this
  * round of feedback reported - so it is refused on the card's face, in the
- * same shape TUN already uses.
+ * and TUN is refused the same way, with `tun_support()`'s sentence.
  */
 export function ModeCards({
   mode,
   bound,
   onChange,
   systemProxyBlocked,
+  tunBlocked,
 }: {
   mode: TunnelMode;
   /** `proxy_host:proxy_port`, the address the first two modes are about. */
@@ -34,6 +35,8 @@ export function ModeCards({
   onChange: (mode: TunnelMode) => void;
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked?: string | null;
+  /** `tun_support()`: `null` when TUN can run on this machine. */
+  tunBlocked?: string | null;
 }) {
   return (
     <section>
@@ -54,8 +57,10 @@ export function ModeCards({
         {MODE_ORDER.map((key) => {
           const m = MODES[key];
           const selected = m.value === mode;
-          const blocked =
-            m.value === "system_proxy" ? (systemProxyBlocked ?? null) : m.blocked;
+          const blocked = modeBlockedReason(m.value, {
+            systemProxy: systemProxyBlocked ?? null,
+            tun: tunBlocked ?? null,
+          });
           return (
             <Card
               key={m.value}
@@ -75,7 +80,7 @@ export function ModeCards({
                   <span className="flex items-center justify-between gap-2">
                     <Icon name={m.icon} size={16} className={selected ? "text-ok" : "text-t3"} />
                     {blocked ? (
-                      <Badge tone="warn">{m.value === "tun" ? "not yet" : "unsupported"}</Badge>
+                      <Badge tone="warn">unsupported</Badge>
                     ) : selected ? (
                       <span className="flex items-center gap-[5px]">
                         <StatusDot tone="ok" size={6} glow />

@@ -59,13 +59,22 @@ export function chainStep(link: ProxyState): ChainStep {
  * engine owns every other transition; this covers only the coupling
  * between the two stages, which the frontend sees first.
  *
- * `holding` is fail-closed and deliberate: the tunnel stays up with its
- * traffic held rather than coming down and letting everything out around
- * it. `starting` is left alone because it owns its own outcome, and
- * `fault` is left alone because it is a state a person has to clear.
+ * `holding` is fail-closed and deliberate: the tunnel's traffic is held —
+ * in TUN by a kill switch that outlives the core — rather than coming down
+ * and letting everything out around it. `starting` is left alone because it
+ * owns its own outcome, and `fault` is left alone because it is a state a
+ * person has to clear.
  */
 export function nextTunnelState(current: TunnelState, link: ProxyState): TunnelState {
   if (current === "active" && link !== "running") return "holding";
-  if (current === "holding" && link === "running") return "active";
   return current;
+}
+
+/**
+ * A holding tunnel is resumed by starting it again, not by relabelling it:
+ * the engine stopped its core when the link changed, and the new link may
+ * listen elsewhere, so the config has to be generated afresh.
+ */
+export function shouldResumeTunnel(link: ProxyState, tunnel: TunnelState): boolean {
+  return link === "running" && tunnel === "holding";
 }

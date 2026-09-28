@@ -3,19 +3,32 @@ import { MODES, modeBlockedReason } from "@/lib/modes";
 import type { TunnelMode } from "@/types";
 
 describe("interception modes", () => {
-  // `generate.rs`'s `inbounds()` returns Err for TunnelMode::Tun:
-  // "TUN mode arrives in a later phase. Choose System Proxy or Manual for
-  // now." Offering it as selectable means the user reads a guarantee about
-  // failing closed and then cannot start the tunnel at all.
-  it("reports TUN as not yet available", () => {
-    const reason = modeBlockedReason("tun");
-    expect(reason).toBeTruthy();
-    expect(reason).toMatch(/later phase/i);
+  const none = { systemProxy: null, tun: null };
+
+  it("offers TUN wherever the platform supports it", () => {
+    expect(modeBlockedReason("tun", none)).toBeNull();
+  });
+
+  it("carries the platform's own sentence when it does not", () => {
+    const why = "Install the nftables package to use TUN.";
+    expect(modeBlockedReason("tun", { systemProxy: null, tun: why })).toBe(why);
+    expect(modeBlockedReason("system_proxy", { systemProxy: "no gsettings", tun: null })).toBe("no gsettings");
+  });
+
+  it("never blocks manual", () => {
+    expect(modeBlockedReason("manual", { systemProxy: "x", tun: "y" })).toBeNull();
+  });
+
+  it("gives TUN the one guarantee that is a containment claim", () => {
+    expect(MODES.tun.guarantee).toBe(
+      "Captures every application. If anything fails, traffic is blocked — never sent around the tunnel.",
+    );
+    expect(MODES.tun.tone).toBe("ok");
   });
 
   it("reports the two modes the generator implements as available", () => {
-    expect(modeBlockedReason("manual")).toBeNull();
-    expect(modeBlockedReason("system_proxy")).toBeNull();
+    expect(modeBlockedReason("manual", none)).toBeNull();
+    expect(modeBlockedReason("system_proxy", none)).toBeNull();
   });
 
   it("gives every mode a name and a guarantee", () => {
@@ -24,12 +37,6 @@ describe("interception modes", () => {
       expect(MODES[mode].guarantee.length).toBeGreaterThan(0);
       expect(MODES[mode].does.length).toBeGreaterThan(0);
     }
-  });
-
-  // The guarantee is the most consequential sentence in the application.
-  // A mode that cannot run must not claim one.
-  it("does not let an unavailable mode claim a containment guarantee", () => {
-    expect(MODES.tun.tone).not.toBe("ok");
   });
 
   it("says plainly that neither available mode guarantees anything", () => {

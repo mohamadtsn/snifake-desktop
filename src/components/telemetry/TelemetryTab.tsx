@@ -8,6 +8,7 @@ import { activeTunnel, type ProxyState, type Store, type TunnelMode, type Tunnel
 import { activeProfile } from "@/types";
 import { ActuatorCard } from "./ActuatorCard";
 import { ChannelRow } from "./ChannelRow";
+import { RecoveryBanner } from "./RecoveryBanner";
 import { StagePipeline } from "./StagePipeline";
 import { StatusStrip } from "./StatusStrip";
 
@@ -18,11 +19,19 @@ function strip(
   tunnelState: TunnelState,
   hasTunnel: boolean,
   coreInstalled: boolean,
+  mode: TunnelMode,
 ): { tone: "ok" | "warn" | "bad" | "off"; message: string; badge?: string } {
   if (state === "error")
     return { tone: "bad", message: "The SNI link faulted. Nothing is being relayed.", badge: "fault" };
   if (tunnelState === "fault")
-    return { tone: "bad", message: "The tunnel faulted. The SNI link is still running.", badge: "fault" };
+    return {
+      tone: "bad",
+      message:
+        mode === "tun"
+          ? "The tunnel faulted. Traffic stays blocked until you stop or restart it."
+          : "The tunnel faulted. The SNI link is still running.",
+      badge: "fault",
+    };
   // Holding is checked before "nothing is running", because holding is
   // precisely the case where the link is down and the tunnel is not: it is
   // fail-closed, and saying nothing is running would hide the one thing
@@ -30,7 +39,10 @@ function strip(
   if (tunnelState === "holding")
     return {
       tone: "warn",
-      message: "The tunnel is holding traffic: it will not relay while the SNI link it dials is down.",
+      message:
+        mode === "tun"
+          ? "The link is down. Traffic is held, not leaked."
+          : "The tunnel is holding traffic: it will not relay while the SNI link it dials is down.",
       badge: "hold",
     };
   if (state !== "running")
@@ -70,6 +82,12 @@ export function TelemetryTab({
   total,
   frozenSince,
   systemProxyBlocked,
+  tunBlocked,
+  tunnelMode,
+  recovery,
+  restoring,
+  onRestoreNetwork,
+  onResumeTunnel,
   coreInstalled,
   blockedReason,
   activityOpen,
@@ -95,6 +113,16 @@ export function TelemetryTab({
   frozenSince: number | null;
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked: string | null;
+  /** `tun_support()`: `null` when TUN can run on this machine. */
+  tunBlocked: string | null;
+  /** The stored routing mode, which decides what holding and fault mean. */
+  tunnelMode: TunnelMode;
+  /** `showRecovery`: a previous session left the kill switch up. */
+  recovery: boolean;
+  /** Restore network is in flight. */
+  restoring: boolean;
+  onRestoreNetwork: () => void;
+  onResumeTunnel: () => void;
   coreInstalled: boolean;
   /** `canStartTunnel`'s sentence, or null when the tunnel may start. A
    *  stopped link is not one of its reasons; see `tunnelStartPlan`. */
@@ -127,10 +155,13 @@ export function TelemetryTab({
   const tunnel = tunnels ? activeTunnel(tunnels) : undefined;
   const hasTunnel = (tunnels?.tunnels.length ?? 0) > 0;
   const tunnelRunning = tunnelState !== "offline";
-  const note = strip(state, tunnelState, hasTunnel, coreInstalled);
+  const note = strip(state, tunnelState, hasTunnel, coreInstalled, tunnelMode);
 
   return (
     <div className="flex flex-col gap-4 px-5 py-5">
+      {recovery ? (
+        <RecoveryBanner restoring={restoring} onRestore={onRestoreNetwork} onResume={onResumeTunnel} />
+      ) : null}
       <StagePipeline
         state={state}
         since={since}
@@ -219,6 +250,7 @@ export function TelemetryTab({
         linkRunning={state === "running"}
         tunnelRunning={tunnelRunning}
         systemProxyBlocked={systemProxyBlocked}
+        tunBlocked={tunBlocked}
         onSelectProfile={onSelectProfile}
         onSelectTunnel={onSelectTunnel}
         onModeChange={onModeChange}

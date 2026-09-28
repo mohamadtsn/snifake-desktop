@@ -1,7 +1,8 @@
 import { Card } from "@/components/ui/Card";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { MODES, MODE_ORDER } from "@/lib/modes";
+import { MODES, MODE_ORDER, modeBlockedReason } from "@/lib/modes";
+import { tunnelInbound } from "@/lib/readouts";
 import type { Store, TunnelMode, TunnelStore } from "@/types";
 import { ProfilePicker } from "./ProfilePicker";
 
@@ -15,6 +16,7 @@ export function ChannelRow({
   onSelectTunnel,
   onModeChange,
   systemProxyBlocked,
+  tunBlocked,
 }: {
   store: Store | null;
   tunnels: TunnelStore | null;
@@ -26,13 +28,15 @@ export function ChannelRow({
   onModeChange: (mode: TunnelMode) => void;
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked?: string | null;
+  /** `tun_support()`: `null` when TUN can run on this machine. */
+  tunBlocked?: string | null;
 }) {
   const mode = tunnels?.mode ?? "manual";
   const info = MODES[mode];
   /** One resolution, shared with `ModeCards`. A machine that cannot have
    *  its proxy written must not be offered the mode on either screen. */
   const modeBlocked = (m: TunnelMode): string | null =>
-    m === "system_proxy" ? (systemProxyBlocked ?? null) : MODES[m].blocked;
+    modeBlockedReason(m, { systemProxy: systemProxyBlocked ?? null, tun: tunBlocked ?? null });
   const blocked = modeBlocked(mode);
   const hasTunnels = (tunnels?.tunnels.length ?? 0) > 0;
   // The engine is the authority on whether the link is up; `runningId` only
@@ -81,21 +85,21 @@ export function ChannelRow({
             <h2 className="text-row font-semibold text-t1">Routing mode</h2>
             <span className="flex items-center gap-[6px]">
               <StatusDot tone={info.tone === "neutral" ? "off" : info.tone} size={6} />
-              {/* The word here is what the mode *guarantees*, which for both
-                  modes that exist is nothing. Saying "no guarantee" out loud
-                  is the point; an unavailable mode says so instead. */}
+              {/* The word here is what the mode *guarantees*: nothing for the
+                  two proxy modes, containment for TUN. Saying "no guarantee"
+                  out loud is the point; an unavailable mode says so instead. */}
               <span
                 className={`mono text-micro tracking-[0.04em] uppercase ${
                   info.tone === "ok" ? "text-ok" : info.tone === "warn" ? "text-warn" : "text-t3"
                 }`}
               >
                 {blocked
-                  ? mode === "tun"
-                    ? "not yet available"
-                    : "unsupported here"
-                  : info.tone === "warn"
-                    ? "best effort"
-                    : "port only"}
+                  ? "unsupported here"
+                  : info.tone === "ok"
+                    ? "fails closed"
+                    : info.tone === "warn"
+                      ? "best effort"
+                      : "port only"}
               </span>
             </span>
           </div>
@@ -123,7 +127,7 @@ export function ChannelRow({
               {blocked ?? info.guarantee}
             </p>
             <span className="mono shrink-0 text-note text-t3" dir="ltr">
-              {tunnels ? `${tunnels.proxy_host}:${tunnels.proxy_port}` : ""}
+              {tunnelInbound(tunnels) ?? ""}
             </span>
           </div>
         </div>

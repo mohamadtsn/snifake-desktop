@@ -25,13 +25,14 @@ import {
   type TunnelStore,
   TUNNEL_STATE_TEXT,
 } from "@/types";
-import { canStartTunnel, chainStep, nextTunnelState, tunnelStartPlan } from "@/lib/tunnelMachine";
+import { canStartTunnel, chainStep, nextTunnelState, shouldResumeTunnel, tunnelStartPlan } from "@/lib/tunnelMachine";
+import { showRecovery } from "@/lib/recovery";
 import { modeTransition, type Transition } from "@/lib/modeTransition";
 import { clearDraft, LEAVE_COPY, leaveDecision, QUIT_COPY } from "@/lib/leaveGuard";
 import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
-import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
+import { listenAddress, middleTruncate, tunnelInbound, type CoreStatus } from "@/lib/readouts";
 import type { Update } from "@tauri-apps/plugin-updater";
 
 export default function App() {
@@ -101,6 +102,11 @@ export default function App() {
   /** `sysproxy::support()`'s reason, or `null` when this desktop can have
    *  its proxy written. Asked once: it reports what is installed. */
   const [systemProxyBlocked, setSystemProxyBlocked] = useState<string | null>(null);
+  /** `tun_support()`: `null` when TUN can run on this machine. */
+  const [tunBlocked, setTunBlocked] = useState<string | null>(null);
+  /** A TUN session ended without reporting its kill switch down. */
+  const [tunLeftover, setTunLeftover] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   // Live throughput. The engine sends cumulative totals once a second; the
   // rate is derived from two of them, and every case where it cannot be
@@ -222,10 +228,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const un = listen<{ state: TunnelState; detail: string | null }>(
+    const un = listen<{ state: TunnelState; detail: string | null; blocking: boolean }>(
       "tunnel-state-changed",
       (e) => {
         setTunnelState(e.payload.state);
+        // The marker is deleted in Rust on the engine's word; this only
+        // re-reads it. `offline` is also what the host synthesises when the
+        // engine dies, which is exactly when the banner has to appear.
+        if (e.payload.state === "offline") refreshLeftover();
         // Started when the engine says it is up, not when we asked — the
         // same call App already makes for the link's clock.
         setTunnelSince(e.payload.state === "active" ? Date.now() : null);
@@ -249,6 +259,11 @@ export default function App() {
 
   useEffect(() => {
     void invoke<string | null>("sysproxy_support").then(setSystemProxyBlocked).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    void invoke<string | null>("tun_support").then(setTunBlocked).catch(() => {});
+    refreshLeftover();
   }, []);
 
   useEffect(() => {
@@ -289,6 +304,34 @@ export default function App() {
   useEffect(() => {
     setTunnelState((current) => nextTunnelState(current, state));
   }, [state]);
+
+  // The engine stops the core when the link changes (a profile switch, a
+  // restart) and reports `holding`. Once the link is back, start the tunnel
+  // again with a config generated against the new link — in TUN the kill
+  // switch has held the machine closed the whole time.
+  useEffect(() => {
+    if (shouldResumeTunnel(state, tunnelState)) void startTunnel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, tunnelState]);
+
+  /** Only calls a setter, so the once-mounted listener may call it. */
+  function refreshLeftover() {
+    void invoke<boolean>("tun_leftover_status").then(setTunLeftover).catch(() => {});
+  }
+
+  /** Launches the engine if it is not running — it purges leftovers as its
+   *  first act and reports the kill switch down, which deletes the marker. */
+  async function restoreNetwork() {
+    setRestoring(true);
+    try {
+      await invoke("restore_network");
+    } catch (e) {
+      fail("The network could not be restored")(e);
+    } finally {
+      setRestoring(false);
+      refreshLeftover();
+    }
+  }
 
   // Reads the ref, not `tunnels`: the chained start calls this from the
   // once-mounted `state-changed` listener, whose closure is the first render.
@@ -344,8 +387,10 @@ export default function App() {
    */
   async function reconcileMode(plan: Transition, activeId: string | null) {
     if (plan.clearProxy) await invoke("clear_system_proxy");
+    // One call, not stop-then-start: the engine replaces a running tunnel
+    // itself, and in TUN a separate stop would lift the kill switch for the
+    // gap between the two (spec §12.5).
     if (plan.restartTunnel && activeId) {
-      await invoke("stop_tunnel");
       await invoke("start_tunnel", { id: activeId });
     } else if (plan.applyProxy) {
       await invoke("apply_system_proxy");
@@ -416,7 +461,6 @@ export default function App() {
     setTunnels(next);
     if (tunnelState === "active" && wasActive !== id) {
       setTunnelSince(null);
-      await invoke("stop_tunnel");
       await invoke("start_tunnel", { id });
     }
   }
@@ -593,6 +637,12 @@ export default function App() {
             total={total}
             frozenSince={frozenSince}
             systemProxyBlocked={systemProxyBlocked}
+            tunBlocked={tunBlocked}
+            tunnelMode={tunnels?.mode ?? "system_proxy"}
+            recovery={showRecovery(tunLeftover, tunnelState)}
+            restoring={restoring}
+            onRestoreNetwork={() => void restoreNetwork()}
+            onResumeTunnel={() => void requestTunnelStart()}
             coreInstalled={coreInstalled}
             blockedReason={blockedReason}
             activityOpen={activityOpen}
@@ -634,6 +684,7 @@ export default function App() {
             saving={savingRouting}
             onDraftChange={reportDraft}
             systemProxyBlocked={systemProxyBlocked}
+            tunBlocked={tunBlocked}
             onSave={(patch) => {
               setSavingRouting(true);
               const plan = modeTransition(
@@ -714,7 +765,7 @@ export default function App() {
       <StatusFooter
         link={profile ? listenAddress(profile) : null}
         linkLive={state === "running"}
-        tunnel={tunnels ? `${tunnels.proxy_host}:${tunnels.proxy_port}` : null}
+        tunnel={tunnelInbound(tunnels)}
         tunnelLive={tunnelState === "active"}
         tunnelRemote={tunnels ? (activeTunnel(tunnels)?.remote_host ?? null) : null}
         rate={rate}

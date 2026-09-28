@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canStartTunnel, chainStep, nextTunnelState, tunnelStartPlan } from "./tunnelMachine";
+import { canStartTunnel, chainStep, nextTunnelState, shouldResumeTunnel, tunnelStartPlan } from "./tunnelMachine";
 
 describe("canStartTunnel", () => {
   it("allows a start when a core exists and a tunnel is selected", () => {
@@ -63,8 +63,8 @@ describe("nextTunnelState", () => {
     expect(nextTunnelState("active", "starting")).toBe("holding");
   });
 
-  it("lifts a holding tunnel back to active when the link returns", () => {
-    expect(nextTunnelState("holding", "running")).toBe("active");
+  it("keeps a holding tunnel holding when the link returns — the engine reports active after the restart", () => {
+    expect(nextTunnelState("holding", "running")).toBe("holding");
   });
 
   it("leaves an offline tunnel offline whatever the link does", () => {
@@ -79,5 +79,18 @@ describe("nextTunnelState", () => {
 
   it("does not put a starting tunnel into holding — starting owns its own outcome", () => {
     expect(nextTunnelState("starting", "stopped")).toBe("starting");
+  });
+});
+
+describe("shouldResumeTunnel", () => {
+  it("restarts the tunnel once the link it dials is back", () => {
+    expect(shouldResumeTunnel("running", "holding")).toBe(true);
+  });
+
+  it("does nothing otherwise", () => {
+    expect(shouldResumeTunnel("starting", "holding")).toBe(false);
+    expect(shouldResumeTunnel("running", "active")).toBe(false);
+    expect(shouldResumeTunnel("running", "fault")).toBe(false);
+    expect(shouldResumeTunnel("running", "offline")).toBe(false);
   });
 });

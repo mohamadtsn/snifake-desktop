@@ -7,12 +7,8 @@ import type { TunnelMode } from "@/types";
  * a user choosing "System proxy" is choosing a mode that guarantees nothing,
  * and there is no way to learn that from the words "system proxy".
  *
- * `blocked` mirrors `tunnel/generate.rs`'s `inbounds()`, which returns an
- * error for TUN. Duplicated in TypeScript for the same reason `rules.ts` is:
- * the interface has to answer before a round trip, and Rust stays the
- * authority. A mode the generator refuses must not be selectable here, and
- * it must certainly not display a containment guarantee - that would be the
- * interface making its largest claim about the one thing it cannot do.
+ * Availability is not decided here: Rust reports it per machine, and
+ * `modeBlockedReason` carries its sentence.
  */
 export interface ModeInfo {
   value: TunnelMode;
@@ -23,8 +19,9 @@ export interface ModeInfo {
   /** What it guarantees, in the user's words. */
   guarantee: string;
   tone: "ok" | "warn" | "neutral";
-  /** Why it cannot be chosen, or `null` when it can. */
-  blocked: string | null;
+  /** Always `null` now: whether a mode can run is a fact about this
+   *  machine, and Rust answers it (`sysproxy_support`, `tun_support`). */
+  blocked: null;
 }
 
 export const MODES: Record<TunnelMode, ModeInfo> = {
@@ -50,15 +47,26 @@ export const MODES: Record<TunnelMode, ModeInfo> = {
     value: "tun",
     icon: "hub",
     name: "TUN (virtual)",
-    does: "Would capture all operating-system traffic.",
-    guarantee: "Not yet available, so it guarantees nothing.",
-    tone: "neutral",
-    blocked: "TUN arrives in a later phase. Choose System proxy or Manual for now.",
+    does: "Captures all operating-system traffic through a virtual network interface.",
+    guarantee:
+      "Captures every application. If anything fails, traffic is blocked — never sent around the tunnel.",
+    tone: "ok",
+    blocked: null,
   },
 };
 
 export const MODE_ORDER: TunnelMode[] = ["manual", "system_proxy", "tun"];
 
-export function modeBlockedReason(mode: TunnelMode): string | null {
-  return MODES[mode].blocked;
+/**
+ * Why a mode cannot be chosen on this machine, or `null`. Both reasons come
+ * from Rust, which is the only side that can look: `gsettings`/`kwriteconfig`
+ * for the system proxy, `nft`/`ip` and the platform for TUN.
+ */
+export function modeBlockedReason(
+  mode: TunnelMode,
+  blocked: { systemProxy: string | null; tun: string | null },
+): string | null {
+  if (mode === "system_proxy") return blocked.systemProxy;
+  if (mode === "tun") return blocked.tun;
+  return null;
 }

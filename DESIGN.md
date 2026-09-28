@@ -360,6 +360,11 @@ duplicates `tunnel/rules.rs` on purpose and is tested against the same fixture
 table so the duplication cannot drift in silence. Rust re-validates on save and
 remains the authority.
 
+### 4.4 Telemetry's alert
+
+**`RecoveryBanner`** — the crash-recovery alert; see the 2026-09-28 TUN
+decision.
+
 ---
 
 ## 5. Accessibility
@@ -503,6 +508,25 @@ the reason is in the row.
 ---
 
 ## 8. Decision log
+
+**2026-09-28 — TUN: the recovery banner and the honest hold.**
+`RecoveryBanner` (Telemetry, first child) appears when a TUN session ended
+without its kill switch coming down. `warn` tone, not `bad`: nothing is
+broken, the machine is closed on purpose. One primary action (Restore
+network) and one secondary (Resume tunnel), because the user's two real
+intents are "give me my network" and "give me my protection" — a dismiss
+button would be a third that leaves them offline without knowing why. It
+reuses the blocked-row recipe `ActuatorCard` already has (`warn-line` border
+on `warn-soft`), not a new alert style. The TUN mode card now carries the
+only containment guarantee in the application and the only `ok` tone among
+the three; the Routing card's word for it is `fails closed`. It is refused
+with Rust's own sentence (`tun_support`) where it cannot run, under the same
+`unsupported` badge as System proxy. Holding and fault in TUN say that
+traffic is *blocked*, not merely that the tunnel is down, because that is
+the consequence the user feels. And TUN opens no port, so every slot that
+read `proxy_host:proxy_port` (the footer, the Routing card, the Sockets
+header chip) reads `virtual interface` in TUN, through `tunnelInbound`: a
+listener address in that slot would be a reading of a port nothing opened.
 
 **2026-09-28 — Routing mode is `md`.** The mode selector is the channel
 card's decision, and at `sm` it read as a filter beside the profile

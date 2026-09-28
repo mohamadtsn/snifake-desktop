@@ -7,6 +7,7 @@
 #   docker compose run --rm doctor          # verify the toolchain
 #   docker compose run --rm test            # cargo test (linux)
 #   docker compose run --rm check           # type-check linux + windows + macos
+#   docker compose run --rm tunnel-it       # TUN kill-switch integration tests (NET_ADMIN)
 #   docker compose run --rm build-linux     # -> target/release/bundle/
 #   docker compose run --rm build-windows   # -> target/x86_64-pc-windows-msvc/release/bundle/nsis/
 #   docker compose run --rm dev             # cargo tauri dev, X11 passthrough
@@ -89,6 +90,28 @@ services:
         echo "── macos ──"
         cargo check -p snifake-engine --all-targets --target aarch64-apple-darwin
         cargo check -p snifake-engine --all-targets --target x86_64-apple-darwin
+        chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
+
+  # The only tests that touch a real firewall. They need NET_ADMIN and a TUN
+  # device, run in the container's own network namespace (the host's rules
+  # are never touched), and need internet access to prove what is blocked.
+  tunnel-it:
+    <<: *common
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    command:
+      - sh
+      - -ec
+      - |
+        V=1.13.21
+        mkdir -p /tmp/core && cd /tmp/core
+        curl -fsSL -o core.tgz "https://github.com/SagerNet/sing-box/releases/download/v$$V/sing-box-$$V-linux-amd64.tar.gz"
+        echo "24f9ef8e7234e13e71e74c3598a4164c5fe07b7b67ccc6e96cf68b54789f72cd  core.tgz" | sha256sum -c -
+        tar xzf core.tgz --strip-components=1
+        cd /app/src-tauri
+        SINGBOX_CORE=/tmp/core/sing-box cargo test -p snifake-engine --test tun_it -- --ignored --test-threads=1
         chown -R ${HOST_UID:-1000}:${HOST_GID:-1000} /app/src-tauri/target
 
   build-linux:

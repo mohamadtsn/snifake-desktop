@@ -9,6 +9,7 @@ FROM rust:1-bookworm
 #   clang/lld  — the linker cargo-xwin drives for the MSVC target
 #   nsis       — the only Windows installer format that bundles off Windows
 #                (WiX/MSI needs a real Windows host)
+#   nftables/iproute2 — the TUN kill switch and route guard, for tunnel-it
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libwebkit2gtk-4.1-dev \
     libgtk-3-dev \
@@ -26,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lld \
     llvm \
     nsis \
+    nftables \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Windows: a real cross-compile target.

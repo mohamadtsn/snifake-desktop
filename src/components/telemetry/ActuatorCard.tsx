@@ -16,7 +16,8 @@ import { PowerButton } from "./PowerButton";
  *
  * `blocked` is a sentence, not a boolean: `canStartTunnel` returns the
  * reason, and showing the reason where the control is refused is the whole
- * difference between a disabled switch and a broken one.
+ * difference between a disabled switch and a broken one. `hint` is the
+ * opposite case: the control is live, and the line says what else it does.
  */
 export function ActuatorCard({
   icon,
@@ -28,6 +29,7 @@ export function ActuatorCard({
   blocked,
   status,
   action,
+  hint,
 }: {
   icon: string;
   title: string;
@@ -45,6 +47,10 @@ export function ActuatorCard({
   status: { label: string; tone: "ok" | "warn" | "bad" | "neutral" };
   /** The way out of `blocked`, e.g. "Set up core". */
   action?: ReactNode;
+  /** A quiet fact about what pressing the button will also do, e.g. that
+   *  the tunnel's button starts the link first. Not a warning: nothing is
+   *  wrong, so it takes no colour, no icon and no box. */
+  hint?: string | null;
 }) {
   // A running stage is always stoppable. Gating the switch on `blocked`
   // would leave a holding tunnel switched on with no way to switch it off,
@@ -87,6 +93,7 @@ export function ActuatorCard({
           <p className="mono mt-[2px] truncate text-note text-t3" dir="ltr">
             {detail}
           </p>
+          {hint ? <p className="mt-[2px] truncate text-note text-t3">{hint}</p> : null}
         </div>
         <PowerButton
           engaged={engaged}

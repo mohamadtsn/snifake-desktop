@@ -11,19 +11,47 @@ import type { ProxyState, TunnelState } from "@/types";
 
 /**
  * `null` means a start is allowed; a string is the reason it is not, in
- * the words shown under the disabled switch. One reason at a time, and
- * always the one furthest upstream: telling someone to install a core
- * while the link is down sends them to fix the wrong thing.
+ * the words shown on the tunnel's card. One reason at a time, upstream
+ * first.
+ *
+ * A stopped link is deliberately *not* a reason. The tunnel's button
+ * starts the link itself (`tunnelStartPlan`), because refusing with "start
+ * the other thing first" is the application telling the user to do a job
+ * it can do. What remains here are the two blocks only the user can clear.
  */
-export function canStartTunnel(
-  link: ProxyState,
-  coreInstalled: boolean,
-  hasTunnel: boolean,
-): string | null {
-  if (link !== "running") return "Start the SNI link first. The tunnel connects through it.";
+export function canStartTunnel(coreInstalled: boolean, hasTunnel: boolean): string | null {
   if (!coreInstalled) return "Download the tunnel core first.";
   if (!hasTunnel) return "Add a tunnel configuration first.";
   return null;
+}
+
+/** What pressing the tunnel's power button does, given the link. */
+export type StartPlan = "tunnel" | "link-then-tunnel" | "await-link";
+
+/**
+ * The tunnel dials the link's listener, so a tunnel start with the link
+ * down is a link start followed by a tunnel start. A link that is already
+ * `starting` is waited for, not started a second time — a second
+ * `start_proxy` would restart it and show a second elevation prompt.
+ */
+export function tunnelStartPlan(link: ProxyState): StartPlan {
+  if (link === "running") return "tunnel";
+  if (link === "starting") return "await-link";
+  return "link-then-tunnel";
+}
+
+/** What a pending chained start does when the link reports a new state. */
+export type ChainStep = "start-tunnel" | "wait" | "abandon";
+
+/**
+ * `stopped` and `error` both abandon: the link is not coming up, whether
+ * because it failed or because the user cancelled the password prompt, and
+ * a tunnel left in `starting` against a dead link would never resolve.
+ */
+export function chainStep(link: ProxyState): ChainStep {
+  if (link === "running") return "start-tunnel";
+  if (link === "starting") return "wait";
+  return "abandon";
 }
 
 /**

@@ -25,7 +25,7 @@ import {
   type TunnelStore,
   TUNNEL_STATE_TEXT,
 } from "@/types";
-import { canStartTunnel, nextTunnelState } from "@/lib/tunnelMachine";
+import { canStartTunnel, chainStep, nextTunnelState, tunnelStartPlan } from "@/lib/tunnelMachine";
 import { modeTransition, type Transition } from "@/lib/modeTransition";
 import { leaveDecision } from "@/lib/leaveGuard";
 import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
@@ -107,10 +107,17 @@ export default function App() {
   /** Read by the once-mounted listeners, which cannot see fresh state. */
   const tunnelStateRef = useRef<TunnelState>("offline");
   const tunnelsRef = useRef<TunnelStore | null>(null);
+  /** The link's state, for the once-mounted listeners. */
+  const stateRef = useRef<ProxyState>("stopped");
+  /** A tunnel start that is waiting for the link it dials to come up.
+   *  A ref, not state: it is read by the once-mounted `state-changed`
+   *  listener, and nothing renders it - the tunnel's own `starting` does. */
+  const tunnelAfterLink = useRef(false);
   storeRef.current = store;
   runningRef.current = runningId;
   tunnelStateRef.current = tunnelState;
   tunnelsRef.current = tunnels;
+  stateRef.current = state;
 
   useEffect(() => {
     void invoke<Store>("list_profiles").then(setStore);
@@ -145,6 +152,15 @@ export default function App() {
   useEffect(() => {
     const unlistenState = listen<ProxyState>("state-changed", (e) => {
       setState(e.payload);
+      if (tunnelAfterLink.current) {
+        const step = chainStep(e.payload);
+        if (step === "start-tunnel") {
+          tunnelAfterLink.current = false;
+          void startTunnel();
+        } else if (step === "abandon") {
+          abandonTunnelChain();
+        }
+      }
       // The clock starts when the engine reports it is up, not when we asked
       // it to start: elevation prompts can sit for a minute.
       if (e.payload === "running") {
@@ -248,17 +264,44 @@ export default function App() {
     setTunnelState((current) => nextTunnelState(current, state));
   }, [state]);
 
+  // Reads the ref, not `tunnels`: the chained start calls this from the
+  // once-mounted `state-changed` listener, whose closure is the first render.
   async function startTunnel() {
-    const id = tunnels?.active_id;
-    if (!id) return;
+    const id = tunnelsRef.current?.active_id;
+    if (!id) return abandonTunnelChain();
     try {
       await invoke("start_tunnel", { id });
     } catch (e) {
+      abandonTunnelChain();
       fail("The tunnel could not start")(e);
     }
   }
 
+  /**
+   * The tunnel's power button. With the link down this is a link start
+   * followed by a tunnel start: the tunnel shows `starting` for the whole
+   * wait, including the elevation prompt, so the press visibly took.
+   */
+  async function requestTunnelStart() {
+    const plan = tunnelStartPlan(stateRef.current);
+    if (plan === "tunnel") return startTunnel();
+    tunnelAfterLink.current = true;
+    setTunnelState("starting");
+    if (plan === "link-then-tunnel" && !(await start())) abandonTunnelChain();
+  }
+
+  /** The link is not coming up, or the tunnel's own start failed. A
+   *  `starting` the engine never confirmed goes back to `offline`; any
+   *  state the engine did report is left alone. */
+  function abandonTunnelChain() {
+    tunnelAfterLink.current = false;
+    setTunnelState((s) => (s === "starting" ? "offline" : s));
+  }
+
   async function stopTunnel() {
+    // A press while the chain waits on the link is a cancel: without this
+    // the tunnel would start after the user said stop.
+    tunnelAfterLink.current = false;
     await invoke("stop_tunnel");
     setTunnelState("offline");
     setTunnelSince(null);
@@ -298,15 +341,17 @@ export default function App() {
     setTunnels(next);
   }
 
-  async function start(id?: string) {
+  async function start(id?: string): Promise<boolean> {
     const current = storeRef.current;
     const target = id ?? current?.active_id;
-    if (!target) return;
+    if (!target) return false;
     try {
       await invoke("start_proxy", { id: target });
       setRunningId(target);
+      return true;
     } catch (e) {
       fail("The SNI link could not start")(e);
+      return false;
     }
   }
 
@@ -453,7 +498,7 @@ export default function App() {
   const downloading =
     !progress || progress.total === null || progress.received < progress.total;
 
-  const blockedReason = canStartTunnel(state, coreInstalled, tunnels?.active_id != null);
+  const blockedReason = canStartTunnel(coreInstalled, tunnels?.active_id != null);
   const tunnelRunning = tunnelState !== "offline";
 
   return (
@@ -493,7 +538,7 @@ export default function App() {
               if (tunnelRunning) setConfirmStopLink(true);
               else void stop();
             }}
-            onTunnelToggle={(on) => (on ? void startTunnel() : void stopTunnel())}
+            onTunnelToggle={(on) => (on ? void requestTunnelStart() : void stopTunnel())}
             onSelectProfile={(id) => requestActivate("sni", id)}
             onSelectTunnel={(id) => requestActivate("tunnel", id)}
             onModeChange={(mode) => {

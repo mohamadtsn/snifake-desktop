@@ -1,31 +1,58 @@
 import { describe, expect, it } from "vitest";
-import { canStartTunnel, nextTunnelState } from "./tunnelMachine";
+import { canStartTunnel, chainStep, nextTunnelState, tunnelStartPlan } from "./tunnelMachine";
 
 describe("canStartTunnel", () => {
-  it("allows a start only when the link is up, a core exists and a tunnel is selected", () => {
-    expect(canStartTunnel("running", true, true)).toBeNull();
+  it("allows a start when a core exists and a tunnel is selected", () => {
+    expect(canStartTunnel(true, true)).toBeNull();
   });
 
-  it("refuses while the link is not running, and says so", () => {
-    for (const link of ["stopped", "starting", "error"] as const) {
-      const reason = canStartTunnel(link, true, true);
-      expect(reason, link).not.toBeNull();
-      expect(reason!.toLowerCase()).toContain("link");
-    }
+  it("does not treat a stopped link as a block — the button starts it", () => {
+    // The link is no longer a reason: `tunnelStartPlan` starts it first.
+    // Nothing about the link appears in the signature at all.
+    expect(canStartTunnel.length).toBe(2);
   });
 
   it("refuses without a core, and says so", () => {
-    expect(canStartTunnel("running", false, true)!.toLowerCase()).toContain("core");
+    expect(canStartTunnel(false, true)!.toLowerCase()).toContain("core");
   });
 
   it("refuses with no tunnel selected, and says so", () => {
-    expect(canStartTunnel("running", true, false)!.toLowerCase()).toContain("tunnel");
+    expect(canStartTunnel(true, false)!.toLowerCase()).toContain("tunnel");
   });
 
-  it("reports the link first when several things are wrong", () => {
-    // One reason at a time, and the one furthest upstream: fixing the core
-    // while the link is down changes nothing the user can see.
-    expect(canStartTunnel("stopped", false, false)!.toLowerCase()).toContain("link");
+  it("reports the core first when both are missing", () => {
+    // Upstream first: a tunnel cannot be tried without a core to run it.
+    expect(canStartTunnel(false, false)!.toLowerCase()).toContain("core");
+  });
+});
+
+describe("tunnelStartPlan", () => {
+  it("starts the tunnel directly when the link is up", () => {
+    expect(tunnelStartPlan("running")).toBe("tunnel");
+  });
+
+  it("starts the link first when it is down or faulted", () => {
+    expect(tunnelStartPlan("stopped")).toBe("link-then-tunnel");
+    expect(tunnelStartPlan("error")).toBe("link-then-tunnel");
+  });
+
+  it("waits for a link that is already coming up rather than starting it twice", () => {
+    expect(tunnelStartPlan("starting")).toBe("await-link");
+  });
+});
+
+describe("chainStep", () => {
+  it("starts the tunnel the moment the link reports running", () => {
+    expect(chainStep("running")).toBe("start-tunnel");
+  });
+
+  it("keeps waiting while the link is starting", () => {
+    expect(chainStep("starting")).toBe("wait");
+  });
+
+  it("abandons when the link stops or faults — a cancelled prompt lands here", () => {
+    expect(chainStep("stopped")).toBe("abandon");
+    expect(chainStep("error")).toBe("abandon");
   });
 });
 

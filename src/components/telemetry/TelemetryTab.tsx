@@ -96,7 +96,8 @@ export function TelemetryTab({
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked: string | null;
   coreInstalled: boolean;
-  /** `canStartTunnel`'s sentence, or null when the tunnel may start. */
+  /** `canStartTunnel`'s sentence, or null when the tunnel may start. A
+   *  stopped link is not one of its reasons; see `tunnelStartPlan`. */
   blockedReason: string | null;
   activityOpen: boolean;
   onActivityOpenChange: (open: boolean) => void;
@@ -176,6 +177,13 @@ export function TelemetryTab({
               engaged={tunnelRunning}
               onChange={onTunnelToggle}
               blocked={blockedReason}
+              // The link is down but nothing else blocks: the button will
+              // start the link first. Said once, quietly, before the press.
+              hint={
+                !tunnelRunning && blockedReason === null && state !== "running"
+                  ? "starts the SNI link too"
+                  : null
+              }
               status={
                 tunnelState === "active"
                   ? { label: "engaged", tone: "ok" }

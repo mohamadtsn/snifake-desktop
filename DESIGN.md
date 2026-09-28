@@ -485,6 +485,21 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-28 — The tunnel's button starts the link.** The "Start the SNI
+link first" warning box is removed. With the link down and nothing else
+blocking, the tunnel's power button stays live, a quiet `text-t3` line under
+its detail reads `starts the SNI link too`, and a press starts the link and
+then the tunnel (`tunnelStartPlan`, `chainStep` in `lib/tunnelMachine.ts`).
+The tunnel reads `starting` for the whole wait, elevation prompt included; a
+cancelled prompt or a failed link puts it back to idle, and a second press
+while it waits cancels the chain. Rejected: a disabled button with a lock
+glyph (a dead control that still needs explaining) and a ping on the link's
+button (an extra click to do what the user already asked for). The
+core-missing and no-tunnel boxes stay: those need the user.
+`ActuatorCard` takes this as `hint`, which is the opposite of `blocked`: the
+control is live and the line says what else it does, so it gets no colour,
+no icon and no box.
+
 **2026-09-27 — The window is transparent and the root draws the frame.**
 `transparent: true` on the `main` window (plus `macOSPrivateApi` in the
 config *and* the `macos-private-api` cargo feature on `tauri`, or the build

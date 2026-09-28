@@ -55,7 +55,9 @@
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0",
           "libayatana-appindicator3-1",
-          "pkexec | policykit-1"
+          "pkexec | policykit-1",
+          "nftables",
+          "iproute2"
         ]
       },
       "rpm": {
@@ -66,7 +68,9 @@
           "webkit2gtk4.1",
           "gtk3",
           "libayatana-appindicator-gtk3",
-          "polkit"
+          "polkit",
+          "nftables",
+          "iproute"
         ]
       },
       "appimage": {

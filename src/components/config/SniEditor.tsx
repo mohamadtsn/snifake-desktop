@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { TextField } from "@/components/ui/TextField";
+import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import type { Profile } from "@/types";
 
 function isValidIp(value: string): boolean {
@@ -41,14 +42,18 @@ export function SniEditor({
   onSave,
   onDelete,
   saving,
+  onDraftChange,
 }: {
   /** `null` while creating a new one. */
   profile: Profile | null;
   isActive: boolean;
   isRunning: boolean;
-  onSave: (p: Profile) => void;
+  /** Resolves once saved; rejects, after the shell has shown why, if not. */
+  onSave: (p: Profile) => Promise<void>;
   onDelete: (id: string) => void;
   saving: boolean;
+  /** Reported up so the shell can guard every exit with one decision. */
+  onDraftChange: (report: DraftReport | null, owner: DraftOwner) => void;
 }) {
   const source = profile ?? blank();
   const [draft, setDraft] = useState(source);
@@ -81,6 +86,26 @@ export function SniEditor({
   };
   const valid = Object.values(errors).every((e) => e === null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(source);
+  const firstError = Object.values(errors).find((e) => e !== null) ?? null;
+
+  /** The draft as it is stored: every free-text field trimmed. */
+  const trimmed = (): Profile => ({
+    ...draft,
+    name: draft.name.trim(),
+    LISTEN_HOST: draft.LISTEN_HOST.trim(),
+    CONNECT_IP: draft.CONNECT_IP.trim(),
+    FAKE_SNI: draft.FAKE_SNI.trim(),
+  });
+
+  useEffect(() => {
+    onDraftChange(
+      { owner: "sni-editor", dirty, invalid: firstError, save: () => onSave(trimmed()) },
+      "sni-editor",
+    );
+    return () => onDraftChange(null, "sni-editor");
+    // `trimmed` reads `draft`, which is in the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, dirty, firstError, onDraftChange, onSave]);
 
   /** Shown only once the user has been in the field, or has tried to save. */
   const shown = (key: keyof Profile, message: string | null) =>
@@ -238,13 +263,8 @@ export function SniEditor({
               // said they are finished.
               setAttempted(true);
               if (!valid) return;
-              onSave({
-                ...draft,
-                name: draft.name.trim(),
-                LISTEN_HOST: draft.LISTEN_HOST.trim(),
-                CONNECT_IP: draft.CONNECT_IP.trim(),
-                FAKE_SNI: draft.FAKE_SNI.trim(),
-              });
+              // The shell has already shown why a save failed.
+              void onSave(trimmed()).catch(() => {});
             }}
           >
             <Icon name="check" size={14} />

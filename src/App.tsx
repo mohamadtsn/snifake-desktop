@@ -27,7 +27,8 @@ import {
 } from "@/types";
 import { canStartTunnel, chainStep, nextTunnelState, tunnelStartPlan } from "@/lib/tunnelMachine";
 import { modeTransition, type Transition } from "@/lib/modeTransition";
-import { leaveDecision } from "@/lib/leaveGuard";
+import { clearDraft, LEAVE_COPY, leaveDecision, QUIT_COPY } from "@/lib/leaveGuard";
+import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
 import { applyUpdate, findUpdate, type Progress } from "@/lib/updater";
 import { listenAddress, middleTruncate, type CoreStatus } from "@/lib/readouts";
@@ -49,12 +50,29 @@ export default function App() {
   const [activityOpen, setActivityOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  /** Sockets owns the only unsaved draft in the window; the shell owns every
-   *  way out of it. `leaveGuard` holds the decision so the tab bar, the
-   *  close glyph and tray Exit cannot answer it three different ways. */
-  const [socketsDirty, setSocketsDirty] = useState(false);
-  const [pendingTab, setPendingTab] = useState<Tab | null>(null);
-  const reportSocketsDirty = useCallback((d: boolean) => setSocketsDirty(d), []);
+  /** The one draft on screen, if any, as its owner last reported it. A
+   *  ref: owners report on every keystroke, and a re-render of the whole
+   *  shell per keystroke buys nothing - the decision is read only at the
+   *  moment of an exit. `draftDirty` mirrors just the flag, for the Quit
+   *  dialog's sentence, and changes only when the flag does. */
+  const draftRef = useRef<DraftReport | null>(null);
+  const [draftDirty, setDraftDirty] = useState<DraftOwner | null>(null);
+  const reportDraft = useCallback((report: DraftReport | null, owner: DraftOwner) => {
+    draftRef.current = report ?? clearDraft(draftRef.current, owner);
+    const dirtyOwner = draftRef.current?.dirty ? draftRef.current.owner : null;
+    setDraftDirty((prev) => (prev === dirtyOwner ? prev : dirtyOwner));
+  }, []);
+  /** An exit waiting on the unsaved-changes question. */
+  const [pendingLeave, setPendingLeave] = useState<{
+    proceed: () => void;
+    owner: DraftOwner;
+    saveBlocked: string | null;
+  } | null>(null);
+  const [savingDraft, setSavingDraft] = useState(false);
+  /** The owner the leave dialog last asked about, so its sentence does not
+   *  go blank during the close animation after `pendingLeave` clears. */
+  const leaveOwner = useRef<DraftOwner>("sockets");
+  if (pendingLeave) leaveOwner.current = pendingLeave.owner;
   /** A pending Activate that needs the restart warning answered first. */
   const [confirmActivate, setConfirmActivate] = useState<{
     kind: "sni" | "tunnel";
@@ -468,12 +486,33 @@ export default function App() {
    * because closing would otherwise stop an elevated proxy the user may not
    * realise is running.
    */
+  /** Every exit that could discard a draft goes through here. */
+  function guardLeave(proceed: () => void, staying = false) {
+    const decision = leaveDecision(draftRef.current, staying);
+    if (decision.kind === "go") return proceed();
+    setPendingLeave({ proceed, owner: decision.owner, saveBlocked: decision.saveBlocked });
+  }
+
   function requestTab(next: Tab) {
-    if (leaveDecision(socketsDirty, tab, next).kind === "go") {
-      setTab(next);
-      return;
+    guardLeave(() => setTab(next), next === tab);
+  }
+
+  async function saveAndLeave() {
+    const pending = pendingLeave;
+    const draft = draftRef.current;
+    if (!pending || !draft) return;
+    setSavingDraft(true);
+    try {
+      await draft.save();
+      setPendingLeave(null);
+      pending.proceed();
+    } catch {
+      // The save's own handler has already shown why. Stay, with the
+      // draft intact, so the user can fix it.
+      setPendingLeave(null);
+    } finally {
+      setSavingDraft(false);
     }
-    setPendingTab(next);
   }
 
   function closeWindow() {
@@ -564,7 +603,7 @@ export default function App() {
           <SocketsTab
             store={tunnels}
             saving={savingRouting}
-            onDirtyChange={reportSocketsDirty}
+            onDraftChange={reportDraft}
             systemProxyBlocked={systemProxyBlocked}
             onSave={(patch) => {
               setSavingRouting(true);
@@ -573,12 +612,15 @@ export default function App() {
                 patch.mode,
                 tunnelState === "active",
               );
-              void invoke<TunnelStore>("save_routing", patch)
+              return invoke<TunnelStore>("save_routing", patch)
                 .then(async (next) => {
                   setTunnels(next);
                   await reconcileMode(plan, next.active_id);
                 })
-                .catch(fail("The routing rules could not be saved"))
+                .catch((e) => {
+                  fail("The routing rules could not be saved")(e);
+                  throw e;
+                })
                 .finally(() => setSavingRouting(false));
             }}
           />
@@ -593,14 +635,26 @@ export default function App() {
             saving={savingProfile}
             onSaveProfile={(p) => {
               setSavingProfile(true);
-              void save(p).finally(() => setSavingProfile(false));
+              return save(p)
+                .catch((e) => {
+                  fail("The profile could not be saved")(e);
+                  throw e;
+                })
+                .finally(() => setSavingProfile(false));
             }}
             onDeleteProfile={(id) => void remove(id)}
             onSelectProfile={(id) => requestActivate("sni", id)}
             onSaveTunnel={(t) => {
               setSavingProfile(true);
-              void saveTunnel(t).finally(() => setSavingProfile(false));
+              return saveTunnel(t)
+                .catch((e) => {
+                  fail("The tunnel could not be saved")(e);
+                  throw e;
+                })
+                .finally(() => setSavingProfile(false));
             }}
+            onDraftChange={reportDraft}
+            guardLeave={guardLeave}
             onDeleteTunnel={(id) =>
               void invoke<TunnelStore>("delete_tunnel", { id })
                 .then(setTunnels)
@@ -698,7 +752,7 @@ export default function App() {
         // one decision, and two dialogs in a row is two chances to dismiss
         // the wrong one.
         description={
-          (socketsDirty ? "The routing rules on Sockets have unsaved changes, and quitting discards them. " : "") +
+          (draftDirty ? `${QUIT_COPY[draftDirty]} ` : "") +
           (state === "running" || tunnelRunning
             ? "Quitting stops both stages and closes the elevated engine. Closing the window instead leaves everything running in the tray."
             : "Nothing is running. Quitting closes the window and the tray icon.")
@@ -749,24 +803,31 @@ export default function App() {
         }}
       />
 
-      {/* Sockets is the only tab holding an unsaved draft, and this is the
-          only thing standing between a mis-aimed tab press and a lost set of
-          rules. Two answers, so "save and leave" is not offered: the user
-          can keep editing and press Save. */}
+      {/* Every exit that would discard a draft lands here. Three answers:
+          keep editing, discard, or save and go - the last set apart on the
+          leading edge because it is a different kind of answer. */}
       <ConfirmDialog
-        open={pendingTab !== null}
+        open={pendingLeave !== null}
         onOpenChange={(open) => {
-          if (!open) setPendingTab(null);
+          if (!open && !savingDraft) setPendingLeave(null);
         }}
         tone="danger"
         icon="warning"
         title="Leave without saving?"
-        description="The routing rules on this tab have changes that have not been saved. Leaving discards them."
+        description={`${LEAVE_COPY[leaveOwner.current]} Leaving discards them.`}
+        busy={savingDraft}
+        tertiary={{
+          label: savingDraft ? "Saving" : "Save and leave",
+          icon: "check",
+          disabledReason: pendingLeave?.saveBlocked ?? null,
+          onClick: () => void saveAndLeave(),
+        }}
         cancelLabel="Keep editing"
         confirmLabel="Discard changes"
         onConfirm={() => {
-          if (pendingTab) setTab(pendingTab);
-          setPendingTab(null);
+          const pending = pendingLeave;
+          setPendingLeave(null);
+          pending?.proceed();
         }}
       />
 

@@ -8,6 +8,7 @@ import { TextField } from "@/components/ui/TextField";
 import { Toggle } from "@/components/ui/Toggle";
 import { FieldRow } from "@/components/ui/FieldRow";
 import { listenAddress } from "@/lib/readouts";
+import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import type { Profile, Protocol, TunnelProfile } from "@/types";
 
 const blank = (): TunnelProfile => ({
@@ -36,6 +37,7 @@ export function TunnelEditorPane({
   onSave,
   onDelete,
   onCopyLink,
+  onDraftChange,
 }: {
   tunnel: TunnelProfile | null;
   /** The running SNI profile, read live for the ingress panel. */
@@ -43,9 +45,12 @@ export function TunnelEditorPane({
   isActive: boolean;
   isRunning: boolean;
   saving: boolean;
-  onSave: (t: TunnelProfile) => void;
+  /** Resolves once saved; rejects, after the shell has shown why, if not. */
+  onSave: (t: TunnelProfile) => Promise<void>;
   onDelete: (id: string) => void;
   onCopyLink: (id: string) => void;
+  /** Reported up so the shell can guard every exit with one decision. */
+  onDraftChange: (report: DraftReport | null, owner: DraftOwner) => void;
 }) {
   const source = tunnel ?? blank();
   const [draft, setDraft] = useState(source);
@@ -89,6 +94,27 @@ export function TunnelEditorPane({
   };
   const valid = Object.values(errors).every((e) => e === null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(source);
+  const firstError = Object.values(errors).find((e) => e !== null) ?? null;
+
+  /** The draft as it is stored: every free-text field trimmed. */
+  const trimmed = (): TunnelProfile => ({
+    ...draft,
+    name: draft.name.trim(),
+    credential: draft.credential.trim(),
+    remote_host: draft.remote_host.trim(),
+    sni: draft.sni.trim(),
+    fingerprint: draft.fingerprint.trim(),
+  });
+
+  useEffect(() => {
+    onDraftChange(
+      { owner: "tunnel-editor", dirty, invalid: firstError, save: () => onSave(trimmed()) },
+      "tunnel-editor",
+    );
+    return () => onDraftChange(null, "tunnel-editor");
+    // `trimmed` reads `draft`, which is in the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, dirty, firstError, onDraftChange, onSave]);
 
   const shown = (key: keyof TunnelProfile, message: string | null) =>
     attempted || touched.has(key) ? message : null;
@@ -329,14 +355,8 @@ export function TunnelEditorPane({
             onClick={() => {
               setAttempted(true);
               if (!valid) return;
-              onSave({
-                ...draft,
-                name: draft.name.trim(),
-                credential: draft.credential.trim(),
-                remote_host: draft.remote_host.trim(),
-                sni: draft.sni.trim(),
-                fingerprint: draft.fingerprint.trim(),
-              });
+              // The shell has already shown why a save failed.
+              void onSave(trimmed()).catch(() => {});
             }}
           >
             <Icon name="check" size={14} />

@@ -7,6 +7,14 @@ const VARIANTS = {
   /** Everything else that is a real action: Cancel, Restore Defaults, + New. */
   secondary:
     "bg-raised-dim border border-hairline text-t1 font-medium shadow-lift hover:bg-raised",
+  /** A safe answer that is not the surface's main one - "Save and leave".
+   *  Accent-tinted so it reads as positive, not solid so it does not
+   *  compete with the one `primary` a footer may have. A variant rather
+   *  than extra classes on `secondary`: Tailwind resolves conflicting
+   *  utilities by stylesheet order, not class order, so overriding
+   *  `bg-raised-dim` from outside is not reliable. */
+  tinted:
+    "bg-accent-soft border border-accent-line text-accent font-medium shadow-lift hover:brightness-110",
   /** A control that is mostly a glyph, or an action inside a dense row. */
   ghost: "text-t2 font-medium hover:bg-raised-dim hover:text-t1",
   /** Destructive, and only ever confirmed. */

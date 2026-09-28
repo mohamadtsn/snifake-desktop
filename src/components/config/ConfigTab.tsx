@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/Segmented";
 import { listenAddress, tunnelSignature } from "@/lib/readouts";
+import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import type { Profile, Store, TunnelProfile, TunnelStore } from "@/types";
 import { ProfileList, type ListItem } from "./ProfileList";
 import { SniEditor } from "./SniEditor";
@@ -29,19 +30,25 @@ export function ConfigTab({
   onDeleteTunnel,
   onSelectTunnel,
   onCopyTunnelLink,
+  onDraftChange,
+  guardLeave,
 }: {
   store: Store | null;
   tunnels: TunnelStore | null;
   runningId: string | null;
   tunnelRunningId: string | null;
   saving: boolean;
-  onSaveProfile: (p: Profile) => void;
+  onSaveProfile: (p: Profile) => Promise<void>;
   onDeleteProfile: (id: string) => void;
   onSelectProfile: (id: string) => void;
-  onSaveTunnel: (t: TunnelProfile) => void;
+  onSaveTunnel: (t: TunnelProfile) => Promise<void>;
   onDeleteTunnel: (id: string) => void;
   onSelectTunnel: (id: string) => void;
   onCopyTunnelLink: (id: string) => void;
+  onDraftChange: (report: DraftReport | null, owner: DraftOwner) => void;
+  /** Runs `proceed` now, or after the unsaved-changes question. Every
+   *  control here that would replace the editor goes through it. */
+  guardLeave: (proceed: () => void, staying?: boolean) => void;
 }) {
   const [kind, setKind] = useState<ConfigKind>("sni");
   const [selectedSni, setSelectedSni] = useState<string | null>(null);
@@ -99,11 +106,13 @@ export function ConfigTab({
           <Segmented
             label="Configuration kind"
             value={kind}
-            onChange={(k) => {
-              setKind(k);
-              setCreating(false);
-              setCreatingTunnel(false);
-            }}
+            onChange={(k) =>
+              guardLeave(() => {
+                setKind(k);
+                setCreating(false);
+                setCreatingTunnel(false);
+              }, k === kind)
+            }
             size="sm"
             options={[
               { value: "sni", label: "SNI links", badge: sniItems.length },
@@ -113,15 +122,17 @@ export function ConfigTab({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => {
-              if (kind === "sni") {
-                setCreating(true);
-                setSelectedSni(null);
-              } else {
-                setCreatingTunnel(true);
-                setSelectedTunnel(null);
-              }
-            }}
+            onClick={() =>
+              guardLeave(() => {
+                if (kind === "sni") {
+                  setCreating(true);
+                  setSelectedSni(null);
+                } else {
+                  setCreatingTunnel(true);
+                  setSelectedTunnel(null);
+                }
+              })
+            }
           >
             <Icon name="add" size={13} />
             New
@@ -132,7 +143,7 @@ export function ConfigTab({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => setImporting(true)}
+            onClick={() => guardLeave(() => setImporting(true))}
             disabled={kind !== "tunnel"}
             title={
               kind === "tunnel"
@@ -160,10 +171,12 @@ export function ConfigTab({
               // deliberate act on the row, not a side effect of looking at
               // one. CLAUDE.md records the same call about the chip rail
               // this list replaced.
-              onSelect={(id) => {
-                setCreating(false);
-                setSelectedSni(id);
-              }}
+              onSelect={(id) =>
+                guardLeave(() => {
+                  setCreating(false);
+                  setSelectedSni(id);
+                }, !creating && id === selectedSni)
+              }
               onActivate={onSelectProfile}
             />
             <SniEditor
@@ -171,11 +184,9 @@ export function ConfigTab({
               isActive={selectedProfile?.id === store?.active_id}
               isRunning={selectedProfile != null && selectedProfile.id === runningId}
               saving={saving}
-              onSave={(p) => {
-                setCreating(false);
-                onSaveProfile(p);
-              }}
+              onSave={(p) => onSaveProfile(p).then(() => setCreating(false))}
               onDelete={onDeleteProfile}
+              onDraftChange={onDraftChange}
             />
           </>
         ) : (
@@ -186,10 +197,12 @@ export function ConfigTab({
               activeId={tunnels?.active_id ?? null}
               runningId={tunnelRunningId}
               selectedId={creatingTunnel ? null : selectedTunnel}
-              onSelect={(id) => {
-                setCreatingTunnel(false);
-                setSelectedTunnel(id);
-              }}
+              onSelect={(id) =>
+                guardLeave(() => {
+                  setCreatingTunnel(false);
+                  setSelectedTunnel(id);
+                }, !creatingTunnel && id === selectedTunnel)
+              }
               onActivate={onSelectTunnel}
             />
             <TunnelEditorPane
@@ -200,12 +213,10 @@ export function ConfigTab({
                 selectedTunnelProfile != null && selectedTunnelProfile.id === tunnelRunningId
               }
               saving={saving}
-              onSave={(t) => {
-                setCreatingTunnel(false);
-                onSaveTunnel(t);
-              }}
+              onSave={(t) => onSaveTunnel(t).then(() => setCreatingTunnel(false))}
               onDelete={onDeleteTunnel}
               onCopyLink={onCopyTunnelLink}
+              onDraftChange={onDraftChange}
             />
           </>
         )}
@@ -217,7 +228,8 @@ export function ConfigTab({
         onImported={(t) => {
           setKind("tunnel");
           setCreatingTunnel(false);
-          onSaveTunnel(t);
+          // The shell has already shown why a save failed.
+          void onSaveTunnel(t).catch(() => {});
         }}
       />
     </div>

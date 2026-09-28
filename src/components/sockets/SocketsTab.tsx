@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { parseRawRules } from "@/lib/rawRules";
 import { validateRuleList } from "@/lib/rules";
+import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import type { Routing, TunnelMode, TunnelStore } from "@/types";
 import { AdvancedJson } from "./AdvancedJson";
 import { ModeCards } from "./ModeCards";
@@ -23,15 +24,21 @@ export function SocketsTab({
   store,
   onSave,
   saving,
-  onDirtyChange,
+  onDraftChange,
   systemProxyBlocked,
 }: {
   store: TunnelStore | null;
-  onSave: (patch: { mode: TunnelMode; proxy_host: string; proxy_port: number; routing: Routing }) => void;
+  /** Resolves once saved; rejects, after the shell has shown why, if not. */
+  onSave: (patch: {
+    mode: TunnelMode;
+    proxy_host: string;
+    proxy_port: number;
+    routing: Routing;
+  }) => Promise<void>;
   saving: boolean;
-  /** Reported up so the shell can guard a tab change, the close glyph and
-   *  tray Exit with one decision. Must be a stable callback. */
-  onDirtyChange: (dirty: boolean) => void;
+  /** Reported up so the shell can guard every exit with one decision. Must
+   *  be a stable callback. */
+  onDraftChange: (report: DraftReport | null, owner: DraftOwner) => void;
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked: string | null;
 }) {
@@ -76,26 +83,48 @@ export function SocketsTab({
   /** The draft as it would be saved. Computed above the loading return so
    *  `dirty` can be reported from a hook, which must not sit behind a
    *  conditional return. */
-  const next: Routing | null = routing && {
-    ...routing,
-    block: toList(text.block),
-    bypass: toList(text.bypass),
-    proxy: toList(text.proxy),
-    raw: rawParsed.value,
-  };
+  const next: Routing | null = useMemo(
+    () =>
+      routing && {
+        ...routing,
+        block: toList(text.block),
+        bypass: toList(text.bypass),
+        proxy: toList(text.proxy),
+        raw: rawParsed.value,
+      },
+    [routing, text, rawParsed.value],
+  );
 
   const dirty =
     store !== null &&
     next !== null &&
     (mode !== store.mode || JSON.stringify(next) !== JSON.stringify(store.routing));
 
-  // Reported up so the shell can guard a tab change, the close glyph and
-  // tray Exit with one decision. `false` on unmount, so a tab that is torn
-  // down cannot leave the guard armed forever.
+  /** Why the draft cannot be saved as it is, in the footer's own words, or
+   *  `null`. Above the loading return for the same reason as `next`. */
+  const blockedReason =
+    badLines.length > 0
+      ? `Fix the ${badLines.join(" and ")} list before saving.`
+      : rawParsed.error !== null
+        ? "Fix the raw JSON before saving."
+        : null;
+
+  // Reported up so the shell can guard every exit with one decision.
+  // Cleared on unmount, so a torn-down tab cannot leave the guard armed.
   useEffect(() => {
-    onDirtyChange(dirty);
-    return () => onDirtyChange(false);
-  }, [dirty, onDirtyChange]);
+    if (!store || !next) return onDraftChange(null, "sockets");
+    onDraftChange(
+      {
+        owner: "sockets",
+        dirty,
+        invalid: blockedReason,
+        save: () =>
+          onSave({ mode, proxy_host: store.proxy_host, proxy_port: store.proxy_port, routing: next }),
+      },
+      "sockets",
+    );
+    return () => onDraftChange(null, "sockets");
+  }, [store, next, mode, dirty, blockedReason, onDraftChange, onSave]);
 
   if (!store || !routing || !next) {
     return (
@@ -111,7 +140,7 @@ export function SocketsTab({
     proxy: toList(text.proxy).length,
   };
 
-  const blocked = badLines.length > 0 || rawParsed.error !== null;
+  const blocked = blockedReason !== null;
 
   function discard() {
     if (!store) return;
@@ -174,9 +203,7 @@ export function SocketsTab({
           <StatusDot tone={blocked ? "bad" : dirty ? "warn" : "ok"} size={8} />
           <span className="truncate text-note text-t2">
             {blocked
-              ? badLines.length > 0
-                ? `Fix the ${badLines.join(" and ")} list before saving.`
-                : "Fix the raw JSON before saving."
+              ? blockedReason
               : dirty
                 ? "Unsaved changes."
                 : "Saved. Rust re-checks every rule when it generates the config."}
@@ -190,12 +217,13 @@ export function SocketsTab({
             variant="primary"
             disabled={!dirty || blocked || saving}
             onClick={() =>
-              onSave({
+              // The shell has already shown why a save failed.
+              void onSave({
                 mode,
                 proxy_host: store.proxy_host,
                 proxy_port: store.proxy_port,
                 routing: next,
-              })
+              }).catch(() => {})
             }
           >
             <Icon name="save" size={14} />

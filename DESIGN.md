@@ -294,15 +294,29 @@ business, not `theme.css`'s.
 | `Badge` | mono uppercase tag in the state colours |
 | `StatusDot` | 6/8px pip, with its glow |
 | `FieldRow` / `TextField` | label + input + right-aligned hint, and the undo stack the editors need |
-| `Button` | primary, secondary, ghost, danger; the press state is a 1% scale |
+| `Button` | primary, secondary, tinted, ghost, danger; the press state is a 1% scale |
 | `ModalSheet` | Base UI `Dialog` in this language |
-| `ConfirmDialog` | Base UI `AlertDialog` in this language |
+| `ConfirmDialog` | Base UI `AlertDialog` in this language, with an optional `tertiary` answer |
 
 `ModalSheet` and `ConfirmDialog` are both Base UI rather than hand-rolled
 because focus trapping, `Esc`, scroll lock and the `aria` wiring are the part
 that is easy to get quietly wrong. The split between them is semantic: a sheet
 is a place you go, and `Esc`/backdrop dismissing it is correct; a dialog asks a
 question, and its two answers are buttons.
+
+**`tinted` is the safe answer that is not the main one.** Accent wash, accent
+line, accent text: it reads as positive without competing with the one
+`primary` a footer may hold. It exists as a variant because Tailwind resolves
+conflicting utilities by stylesheet order, not class order, so tinting a
+`secondary` from outside is not reliable.
+
+**`ConfirmDialog.tertiary` is a third answer of a different kind.** It sits
+alone on the leading edge in `tinted`, with the cancel/confirm pair on the
+trailing edge; the distance is what stops it reading as a third option in a
+row, and the dialog widens from 420px to 480px to make room for that
+distance. `disabledReason` disables it and puts the reason in a `title` on a
+wrapper, because a disabled button takes no pointer events and a title on it
+would never show. Only the unsaved-changes dialog uses it.
 
 **`GroupedList` separators belong to the row, not to the group.** The rule
 was `[&>*+*]:border-t` on the container, which draws full-bleed lines and
@@ -484,6 +498,20 @@ the reason is in the row.
 ---
 
 ## 8. Decision log
+
+**2026-09-28 — The unsaved-changes question covers every draft and offers
+Save.** Three owners (Sockets, the SNI editor, the tunnel editor), and every
+exit that could discard one asks: the tab bar, and inside Config the list,
+the kind switch, New and Import. The dialog names what would be lost and has
+three answers: `Save and leave` alone on the leading edge in the accent tint,
+then `Keep editing` and `Discard changes`. Save is disabled with the draft's
+own first validation message when the draft is invalid; a save that fails
+closes the dialog and leaves the user where they were, draft intact, with the
+error shown the usual way. Quit keeps its own dialog, whose sentence now
+names whichever draft is dirty; close-to-tray only hides the window, so it is
+not guarded. The earlier "two answers only" ruling is reversed at the
+author's request; the separation and the tint are what keep the third answer
+from reading as a third option in a row.
 
 **2026-09-28 — The tunnel's button starts the link.** The "Start the SNI
 link first" warning box is removed. With the link down and nothing else

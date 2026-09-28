@@ -16,7 +16,7 @@ use snifake_engine::transport::Stream;
 use snifake_engine::tun::{self, TunGuard};
 use snifake_engine::tunnel::{ExitFn, TunnelSupervisor};
 use snifake_engine::tunpin;
-use snifake_engine::validate::{validate, validate_tun, validate_upstream};
+use snifake_engine::validate::{spec_matches_link, validate, validate_tun, validate_upstream};
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
@@ -60,6 +60,9 @@ struct Running {
     /// outlive the counters it reads, and so a stopped stage emits nothing.
     traffic_stop: Arc<AtomicBool>,
     traffic: std::thread::JoinHandle<()>,
+    /// What this run is dialling. A `TunnelStart` is checked against it,
+    /// not trusted to name it (`validate::spec_matches_link`).
+    profile: Profile,
 }
 
 impl Running {
@@ -215,8 +218,12 @@ fn main() {
                 // The dependency is enforced here as well as in the UI:
                 // this process is the trust boundary, and a tunnel whose
                 // outbound has nothing to dial is worse than no tunnel.
-                if running.is_none() {
+                let Some(link) = running.as_ref() else {
                     tunnel_state(&out, "fault", Some("the SNI stage is not running".into()), guard.is_some());
+                    continue;
+                };
+                if let Err(e) = spec_matches_link(&spec, &link.profile) {
+                    tunnel_state(&out, "fault", Some(e), guard.is_some());
                     continue;
                 }
                 // A start while a tunnel runs replaces it: the core goes
@@ -463,5 +470,6 @@ fn start(
         sniffer,
         traffic_stop,
         traffic,
+        profile: profile.clone(),
     })
 }

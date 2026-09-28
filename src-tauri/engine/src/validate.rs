@@ -74,6 +74,20 @@ pub fn validate_upstream(ip: &str, port: u16) -> Result<Ipv4Addr, String> {
     Ok(ip)
 }
 
+/// A tunnel spec is built by the GUI from its *active* profile, and a save
+/// can change that without restarting the link. The engine knows which
+/// profile the link is actually running, so it refuses a spec that
+/// disagrees: the kill switch would permit the wrong upstream, and the
+/// generated loop guards would exclude the wrong address.
+pub fn spec_matches_link(s: &TunnelSpec, link: &Profile) -> Result<(), String> {
+    if s.connect_ip != link.connect_ip || s.connect_port != link.connect_port {
+        return Err(
+            "The SNI profile changed since the link started. Restart the link, then the tunnel.".into(),
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +193,31 @@ mod tests {
             assert!(validate_tun(&tun_spec(bad, 443)).is_err(), "{bad} must be refused");
         }
         assert!(validate_tun(&tun_spec("104.18.4.130", 0)).is_err());
+    }
+
+    fn link(ip: &str, port: u16) -> Profile {
+        Profile {
+            id: "p".into(),
+            name: "n".into(),
+            listen_host: "127.0.0.1".into(),
+            listen_port: 40443,
+            connect_ip: ip.into(),
+            connect_port: port,
+            fake_sni: "x.com".into(),
+        }
+    }
+
+    #[test]
+    fn a_spec_for_the_running_link_is_accepted() {
+        assert!(spec_matches_link(&tun_spec("104.18.4.130", 443), &link("104.18.4.130", 443)).is_ok());
+    }
+
+    #[test]
+    fn a_spec_built_for_another_profile_is_refused() {
+        // The GUI builds the spec from the *active* profile, which a save
+        // can change without restarting the link. Permitting that upstream
+        // would drop the one the link is really dialling.
+        assert!(spec_matches_link(&tun_spec("5.6.7.8", 443), &link("104.18.4.130", 443)).is_err());
+        assert!(spec_matches_link(&tun_spec("104.18.4.130", 8443), &link("104.18.4.130", 443)).is_err());
     }
 }

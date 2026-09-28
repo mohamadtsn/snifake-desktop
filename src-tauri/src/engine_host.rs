@@ -16,6 +16,7 @@ use crate::logbuf::LogBuffer;
 use snifake_engine::proto::{Command, Event, LogLevel, Profile, TunnelSpec};
 use snifake_engine::transport::{Listener, Stream};
 use std::io::{BufRead, BufReader, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -161,6 +162,11 @@ pub struct EngineHost {
     tunnel_state: Arc<Mutex<String>>,
     child: Option<EngineProcess>,
     writer: Option<Arc<Mutex<Stream>>>,
+    /// Cleared by the reader thread when the engine's connection closes.
+    /// `writer` alone cannot say it: the thread has no route back to
+    /// `&mut self`, so a dead engine would otherwise look connected until
+    /// something wrote to it and failed.
+    alive: Arc<AtomicBool>,
 }
 
 impl EngineHost {
@@ -171,6 +177,7 @@ impl EngineHost {
             tunnel_state: Arc::new(Mutex::new("offline".into())),
             child: None,
             writer: None,
+            alive: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -200,8 +207,17 @@ impl EngineHost {
         guard.flush().map_err(|e| e.to_string())
     }
 
+    /// Whether an engine is there to talk to, dropping the writer of one
+    /// whose connection has closed so the next call launches a new one.
+    fn connected(&mut self) -> bool {
+        if self.writer.is_some() && !self.alive.load(Ordering::SeqCst) {
+            self.writer = None;
+        }
+        self.writer.is_some()
+    }
+
     pub fn start(&mut self, app: &AppHandle, profile: &Profile) -> Result<(), String> {
-        if self.writer.is_none() {
+        if !self.connected() {
             self.set_state(app, "starting");
             if let Err(e) = self.spawn_engine(app) {
                 self.set_state(app, "error");
@@ -214,7 +230,7 @@ impl EngineHost {
     }
 
     pub fn stop(&mut self, app: &AppHandle) {
-        if self.writer.is_none() {
+        if !self.connected() {
             self.set_state(app, "stopped");
             return;
         }
@@ -232,20 +248,20 @@ impl EngineHost {
     /// Requires the engine to already be up: the tunnel's outbound dials
     /// the SNI listener, so there is nothing to start against.
     pub fn tunnel_start(&mut self, spec: TunnelSpec) -> Result<(), String> {
-        if self.writer.is_none() {
+        if !self.connected() {
             return Err("Start the SNI stage first.".into());
         }
         self.send(&Command::TunnelStart { spec })
     }
 
     pub fn tunnel_stop(&mut self) {
-        if self.writer.is_some() {
+        if self.connected() {
             let _ = self.send(&Command::TunnelStop);
         }
     }
 
     pub fn is_connected(&self) -> bool {
-        self.writer.is_some()
+        self.writer.is_some() && self.alive.load(Ordering::SeqCst)
     }
 
     /// Restore network. An engine that is not running is launched — one
@@ -253,7 +269,7 @@ impl EngineHost {
     /// kill switch down, which deletes the marker. One that is running is
     /// asked to stop the tunnel, which lowers its guard.
     pub fn restore(&mut self, app: &AppHandle) -> Result<(), String> {
-        if self.writer.is_none() {
+        if !self.connected() {
             return self.spawn_engine(app);
         }
         self.send(&Command::TunnelStop)
@@ -364,6 +380,10 @@ impl EngineHost {
         }
 
         self.writer = Some(Arc::new(Mutex::new(stream)));
+        // A fresh flag per engine, so a previous engine's reader thread
+        // finishing late cannot mark this one dead.
+        let alive = Arc::new(AtomicBool::new(true));
+        self.alive = alive.clone();
 
         let logs = self.logs.clone();
         let handle = app.clone();
@@ -419,6 +439,7 @@ impl EngineHost {
                     Err(e) => logs.push(format!("error: unparsable engine event: {e}")),
                 }
             }
+            alive.store(false, Ordering::SeqCst);
             logs.push("error: the engine connection closed".into());
             let _ = handle.emit("state-changed", "error");
             // The tunnel cannot outlive the engine that supervises it, so
@@ -600,5 +621,24 @@ mod tests {
             &logs(),
         );
         assert!(matches!(applied, Applied::Tunnel(ref s, None, true) if s == "fault"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_engine_whose_connection_closed_is_not_connected() {
+        // The reader thread sees EOF and clears `alive`; everything that
+        // asks "is the engine there?" must then answer no, so Restore
+        // network launches a new one instead of writing into a dead socket.
+        let listener = Listener::bind().unwrap();
+        let _client = Stream::connect(listener.endpoint().as_str()).unwrap();
+        let server = listener.accept_timeout(Duration::from_secs(2)).unwrap();
+        let mut host = EngineHost::new(logs());
+        host.writer = Some(Arc::new(Mutex::new(server)));
+        host.alive.store(true, Ordering::SeqCst);
+        assert!(host.is_connected());
+        host.alive.store(false, Ordering::SeqCst);
+        assert!(!host.is_connected());
+        assert!(!host.connected());
+        assert!(host.writer.is_none(), "a dead writer is dropped, not kept");
     }
 }

@@ -16,8 +16,12 @@ use crate::proto::{Endpoint, PassRoute, PassthroughStatus};
 use crate::sysbin;
 use std::net::Ipv4Addr;
 use std::process::Command;
-use crate::tunpin::{PASS_ENDPOINT_RULE, PASS_ROUTE_RULE};
+
+#[cfg(not(windows))]
 use std::path::{Path, PathBuf};
+use crate::tunpin::{PASS_ENDPOINT_RULE, PASS_ROUTE_RULE};
+#[cfg(windows)]
+use crate::tunpin::ROUTE_PROTO;
 
 pub fn parse_kind(link_json: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(link_json).ok()?;
@@ -87,6 +91,7 @@ fn output(bin: &std::path::Path, args: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+#[cfg(not(windows))]
 /// Call with a name `validate_interface` accepted.
 pub fn discover(name: &str) -> PassthroughStatus {
     let mut s = PassthroughStatus {
@@ -119,6 +124,96 @@ pub fn discover(name: &str) -> PassthroughStatus {
     s
 }
 
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::NO_ERROR;
+#[cfg(windows)]
+use windows_sys::Win32::NetworkManagement::IpHelper::{
+    CreateIpForwardEntry2, DeleteIpForwardEntry2, FreeMibTable, GetBestRoute2, GetIfTable2,
+    GetIpForwardTable2, MIB_IF_TABLE2, MIB_IPFORWARD_ROW2, MIB_IPFORWARD_TABLE2,
+};
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR_INET};
+
+#[cfg(windows)]
+pub fn discover(name: &str) -> PassthroughStatus {
+    let mut s = PassthroughStatus {
+        name: name.into(), present: false, kind: None,
+        endpoints: vec![], routes: vec![], problem: None,
+    };
+
+    let mut if_table_ptr: *mut MIB_IF_TABLE2 = std::ptr::null_mut();
+    let status = unsafe { GetIfTable2(&mut if_table_ptr) };
+    if status != NO_ERROR || if_table_ptr.is_null() {
+        s.problem = Some("Failed to query network interfaces.".into());
+        return s;
+    }
+
+    let mut matched_luid = None;
+    unsafe {
+        let table = &*if_table_ptr;
+        let entries = std::slice::from_raw_parts(table.Table.as_ptr(), table.NumEntries as usize);
+        for row in entries {
+            let alias_len = row.Alias.iter().position(|&c| c == 0).unwrap_or(row.Alias.len());
+            let alias = String::from_utf16_lossy(&row.Alias[..alias_len]);
+            if alias.eq_ignore_ascii_case(name) {
+                s.present = true;
+                matched_luid = Some(row.InterfaceLuid);
+                s.kind = Some("vpn".into());
+                break;
+            }
+        }
+        FreeMibTable(if_table_ptr as *const _);
+    }
+
+    let Some(luid) = matched_luid else {
+        return s; // not up yet
+    };
+
+    let mut fwd_table_ptr: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
+    let status = unsafe { GetIpForwardTable2(AF_INET as u16, &mut fwd_table_ptr) };
+    if status == NO_ERROR && !fwd_table_ptr.is_null() {
+        unsafe {
+            let table = &*fwd_table_ptr;
+            let entries = std::slice::from_raw_parts(table.Table.as_ptr(), table.NumEntries as usize);
+            let mut covered: u64 = 0;
+            let mut full = false;
+
+            for row in entries {
+                if row.InterfaceLuid.Value == luid.Value {
+                    let prefix_len = row.DestinationPrefix.PrefixLength;
+                    let ip = Ipv4Addr::from(u32::from_be(row.DestinationPrefix.Prefix.Ipv4.sin_addr.S_un.S_addr));
+                    if prefix_len <= 1 {
+                        full = true;
+                    }
+                    if prefix_len <= 32 {
+                        covered += 1u64 << (32 - prefix_len);
+                        s.routes.push(PassRoute {
+                            dst: format!("{ip}/{prefix_len}"),
+                            table: "main".into(),
+                        });
+                    }
+                }
+            }
+            if full || covered >= (1 << 31) {
+                s.routes.clear();
+                s.problem = Some(format!(
+                    "{name} sends all traffic through itself, so it cannot run beside TUN. Its routes are left to the tunnel."
+                ));
+            }
+            FreeMibTable(fwd_table_ptr as *const _);
+        }
+    }
+
+    if let Some(wg) = sysbin::find("wg") {
+        if let Some(out) = output(&wg, &["show", name, "endpoints"]) {
+            s.endpoints = parse_wg_endpoints(&out);
+        }
+    }
+
+    s
+}
+
+
 /// Servers resolve in `main`, which holds the physical default route;
 /// routes resolve in the table the VPN put them in, exactly as they would
 /// without the TUN. Both ahead of sing-box's own rules.
@@ -148,10 +243,12 @@ pub fn rule_args(found: &[PassthroughStatus]) -> Vec<Vec<String>> {
     out
 }
 
+#[cfg(not(windows))]
 pub struct PassRules {
     bin: PathBuf,
 }
 
+#[cfg(not(windows))]
 impl PassRules {
     pub fn locate() -> Result<PassRules, String> {
         sysbin::find("ip")
@@ -187,10 +284,12 @@ impl PassRules {
     }
 }
 
+#[cfg(not(windows))]
 /// More rules than any routing table a VPN installs; the delete loop's
 /// bound, so it outlasts whatever `replace` added.
 const MAX_RULES: usize = 65536;
 
+#[cfg(not(windows))]
 /// One `rule del` removes one rule; stop at the first failure (none left).
 pub fn clear_rules(bin: &Path) {
     for prio in [PASS_ENDPOINT_RULE, PASS_ROUTE_RULE] {
@@ -207,6 +306,86 @@ pub fn clear_rules(bin: &Path) {
         }
     }
 }
+
+#[cfg(windows)]
+pub struct PassRules;
+
+#[cfg(windows)]
+impl PassRules {
+    pub fn locate() -> Result<PassRules, String> {
+        Ok(PassRules)
+    }
+
+    pub fn replace(&self, found: &[PassthroughStatus]) -> Result<(), String> {
+        self.clear();
+        for s in found {
+            for e in &s.endpoints {
+                if let Ok(ip) = e.ip.parse::<Ipv4Addr>() {
+                    let mut dest: SOCKADDR_INET = unsafe { std::mem::zeroed() };
+                    dest.Ipv4.sin_family = AF_INET as u16;
+                    dest.Ipv4.sin_addr.S_un.S_addr = u32::from_ne_bytes(ip.octets());
+                    let mut best_route: MIB_IPFORWARD_ROW2 = unsafe { std::mem::zeroed() };
+                    let mut best_source: SOCKADDR_INET = unsafe { std::mem::zeroed() };
+                    if unsafe {
+                        GetBestRoute2(
+                            std::ptr::null(),
+                            0,
+                            std::ptr::null(),
+                            &dest,
+                            0,
+                            &mut best_route,
+                            &mut best_source,
+                        )
+                    } == NO_ERROR
+                    {
+                        let mut row: MIB_IPFORWARD_ROW2 = unsafe { std::mem::zeroed() };
+                        row.DestinationPrefix.Prefix.Ipv4.sin_family = AF_INET as u16;
+                        row.DestinationPrefix.Prefix.Ipv4.sin_addr.S_un.S_addr =
+                            u32::from_ne_bytes(ip.octets());
+                        row.DestinationPrefix.PrefixLength = 32;
+                        row.NextHop = best_route.NextHop;
+                        row.InterfaceLuid = best_route.InterfaceLuid;
+                        row.InterfaceIndex = best_route.InterfaceIndex;
+                        row.Metric = 1;
+                        row.Protocol = ROUTE_PROTO as i32;
+                        unsafe {
+                            let _ = CreateIpForwardEntry2(&row);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn clear(&self) {
+        clear_rules();
+    }
+}
+
+#[cfg(windows)]
+pub fn clear_rules() {
+    let mut table_ptr: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
+    let status = unsafe { GetIpForwardTable2(AF_INET as u16, &mut table_ptr) };
+    if status == NO_ERROR && !table_ptr.is_null() {
+        let table = unsafe { &*table_ptr };
+        let num_entries = table.NumEntries as usize;
+        let entries = unsafe {
+            std::slice::from_raw_parts(table.Table.as_ptr(), num_entries)
+        };
+        for entry in entries {
+            if entry.Protocol == ROUTE_PROTO as i32 {
+                unsafe {
+                    let _ = DeleteIpForwardEntry2(entry);
+                }
+            }
+        }
+        unsafe {
+            FreeMibTable(table_ptr as *const _);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

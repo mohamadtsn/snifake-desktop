@@ -33,6 +33,12 @@ pub fn parse_routes(route_json: &str) -> (Vec<PassRoute>, bool) {
     };
     let mut out = Vec::new();
     let mut full = false;
+    // Addresses claimed, summed. A VPN routing half of IPv4 or more is a
+    // full tunnel however it spells it: `0.0.0.0/0`, two `/1`s, or the
+    // AllowedIPs calculator's thirty prefixes for "everything but the LAN".
+    // ponytail: overlapping routes are counted twice, which only errs
+    // towards calling a VPN full-tunnel.
+    let mut covered: u64 = 0;
     for r in rows {
         let kind = r["type"].as_str().unwrap_or("unicast");
         let table = r["table"].as_str().unwrap_or("main");
@@ -48,16 +54,20 @@ pub fn parse_routes(route_json: &str) -> (Vec<PassRoute>, bool) {
         let (Ok(_), Ok(bits)) = (addr.parse::<Ipv4Addr>(), bits.parse::<u8>()) else {
             continue; // IPv6, or something we do not understand
         };
-        if bits <= 1 {
-            full = true;
+        if bits > 32 {
             continue;
         }
+        covered += 1u64 << (32 - bits);
         let table_ok = table == "main" || table.bytes().all(|b| b.is_ascii_digit());
         if table_ok {
             out.push(PassRoute { dst: dst.into(), table: table.into() });
         }
     }
-    (out, full)
+    if full || covered >= 1 << 31 {
+        // None of it may bypass the TUN: that would hand the VPN everything.
+        return (Vec::new(), true);
+    }
+    (out, false)
 }
 
 /// `wg show <if> endpoints`: `<public key>\t<ip:port | (none)>` per peer.
@@ -97,7 +107,7 @@ pub fn discover(name: &str) -> PassthroughStatus {
     s.routes = found;
     if full {
         s.problem = Some(format!(
-            "{name} sends all traffic through itself, so it cannot share the default route with TUN. Its own networks still pass."
+            "{name} sends all traffic through itself, so it cannot run beside TUN. Its routes are left to the tunnel."
         ));
     }
     if s.kind.as_deref() == Some("wireguard") {
@@ -117,15 +127,22 @@ pub fn rule_args(found: &[PassthroughStatus]) -> Vec<Vec<String>> {
         ["-4", "rule", "add", "to", &to, "lookup", table, "priority", &prio.to_string()]
             .iter().map(|s| s.to_string()).collect::<Vec<_>>()
     };
-    let mut out = Vec::new();
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut push = |args: Vec<String>| {
+        // `ip rule add` refuses an identical rule: two VPNs sharing a
+        // server, or one destination routed twice.
+        if !out.contains(&args) {
+            out.push(args);
+        }
+    };
     for s in found {
         for e in &s.endpoints {
-            out.push(rule(format!("{}/32", e.ip), "main", PASS_ENDPOINT_RULE));
+            push(rule(format!("{}/32", e.ip), "main", PASS_ENDPOINT_RULE));
         }
     }
     for s in found {
         for r in &s.routes {
-            out.push(rule(r.dst.clone(), &r.table, PASS_ROUTE_RULE));
+            push(rule(r.dst.clone(), &r.table, PASS_ROUTE_RULE));
         }
     }
     out
@@ -145,15 +162,24 @@ impl PassRules {
     /// Clear then add. A change leaves a sub-second gap in which that VPN's
     /// traffic reaches the TUN instead. ponytail: acceptable because it only
     /// happens when the VPN itself changed; per-rule diffing if it matters.
+    /// Every rule is attempted: one refusal must not leave the rest of a
+    /// VPN's routes to the TUN. The refusals come back together.
     pub fn replace(&self, found: &[PassthroughStatus]) -> Result<(), String> {
         clear_rules(&self.bin);
+        let mut failed = Vec::new();
         for args in rule_args(found) {
-            let out = Command::new(&self.bin).args(&args).output().map_err(|e| e.to_string())?;
-            if !out.status.success() {
-                return Err(format!("ip {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()));
+            match Command::new(&self.bin).args(&args).output() {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => {
+                    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    if !err.contains("File exists") {
+                        failed.push(format!("ip {}: {err}", args.join(" ")));
+                    }
+                }
+                Err(e) => failed.push(e.to_string()),
             }
         }
-        Ok(())
+        if failed.is_empty() { Ok(()) } else { Err(failed.join("; ")) }
     }
 
     pub fn clear(&self) {
@@ -161,12 +187,15 @@ impl PassRules {
     }
 }
 
+/// More rules than any routing table a VPN installs; the delete loop's
+/// bound, so it outlasts whatever `replace` added.
+const MAX_RULES: usize = 65536;
+
 /// One `rule del` removes one rule; stop at the first failure (none left).
-/// Bounded, because a VPN can own many routes but not unboundedly many.
 pub fn clear_rules(bin: &Path) {
     for prio in [PASS_ENDPOINT_RULE, PASS_ROUTE_RULE] {
         let p = prio.to_string();
-        for _ in 0..512 {
+        for _ in 0..MAX_RULES {
             let ok = Command::new(bin)
                 .args(["-4", "rule", "del", "priority", p.as_str()])
                 .output()
@@ -263,4 +292,37 @@ mod tests {
         s.routes.clear();
         assert!(rule_args(&[s]).is_empty());
     }
+
+    #[test]
+    fn a_full_tunnel_written_as_many_prefixes_is_still_full_tunnel() {
+        // The WireGuard AllowedIPs calculator's "0.0.0.0/0 minus the LAN
+        // ranges": no route shorter than /2, yet it claims nearly all of IPv4.
+        let dsts = [
+            "0.0.0.0/5", "8.0.0.0/7", "11.0.0.0/8", "12.0.0.0/6", "16.0.0.0/4", "32.0.0.0/3",
+            "64.0.0.0/2", "128.0.0.0/3", "160.0.0.0/5", "168.0.0.0/6", "172.0.0.0/12",
+            "172.32.0.0/11", "172.64.0.0/10", "172.128.0.0/9", "173.0.0.0/8", "174.0.0.0/7",
+            "176.0.0.0/4", "192.0.0.0/9", "192.128.0.0/11", "192.160.0.0/13", "192.169.0.0/16",
+            "192.170.0.0/15", "192.172.0.0/14", "192.176.0.0/12", "192.192.0.0/10",
+            "193.0.0.0/8", "194.0.0.0/7", "196.0.0.0/6", "200.0.0.0/5", "208.0.0.0/4", "224.0.0.0/3",
+        ];
+        let rows: Vec<String> = dsts
+            .iter()
+            .map(|d| format!(r#"{{"dst":"{d}","dev":"wg0","flags":[]}}"#))
+            .collect();
+        let (routes, full) = parse_routes(&format!("[{}]", rows.join(",")));
+        assert!(full);
+        assert!(routes.is_empty(), "none of it may bypass the TUN");
+    }
+
+    #[test]
+    fn a_shared_server_or_a_repeated_route_becomes_one_rule() {
+        // `ip rule add` refuses an identical rule, and one refusal must not
+        // cost the rules after it.
+        let mut other = priv_status();
+        other.name = "priv2".into();
+        other.routes.push(PassRoute { dst: "10.200.0.0/16".into(), table: "51820".into() });
+        let a = rule_args(&[priv_status(), other]);
+        assert_eq!(a.len(), 3, "{a:?}");
+    }
 }
+

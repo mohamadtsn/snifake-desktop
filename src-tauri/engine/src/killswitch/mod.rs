@@ -12,6 +12,8 @@ use std::net::Ipv4Addr;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 /// What may leave the machine other than through the TUN. Loopback, DHCP
 /// and the core's own marked sockets are always allowed, so they are not
@@ -80,7 +82,9 @@ pub trait KillSwitch: Send {
 pub fn open() -> Result<Box<dyn KillSwitch>, String> {
     #[cfg(target_os = "linux")]
     return Ok(Box::new(linux::Nft::locate()?));
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    return Ok(Box::new(windows::Wfp::open()?));
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     Err("TUN is not available on this platform yet".into())
 }
 
@@ -90,9 +94,12 @@ pub fn open() -> Result<Box<dyn KillSwitch>, String> {
 pub fn purge_leftovers() -> Result<(), String> {
     #[cfg(target_os = "linux")]
     return linux::purge();
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "windows")]
+    return windows::purge();
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     Ok(())
 }
+
 
 #[cfg(test)]
 mod tests {

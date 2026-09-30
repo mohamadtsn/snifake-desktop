@@ -36,6 +36,12 @@
     ],
     "strategy": "ipv4_only"
   },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "/var/cache/snifake/sing-box.db"
+    }
+  },
   "inbounds": [
     {
       "listen": "127.0.0.1",

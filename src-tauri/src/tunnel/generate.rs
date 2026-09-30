@@ -64,13 +64,26 @@ pub fn generate(
         route.insert("rule_set".into(), sets);
     }
 
-    Ok(json!({
+    let has_rule_sets = route.contains_key("rule_set");
+    let mut cfg = json!({
         "log": { "level": "warn", "timestamp": false },
         "dns": dns(&block, &bypass),
         "inbounds": inbounds(store, link)?,
         "outbounds": [ outbound(tunnel, link), { "type": "direct", "tag": "direct" } ],
         "route": Value::Object(route),
-    }))
+    });
+    if has_rule_sets {
+        // Without a cache, a remote rule set is downloaded at every start,
+        // and a failed download fails the start. With one, only the very
+        // first start depends on the network.
+        cfg["experimental"] = json!({
+            "cache_file": {
+                "enabled": true,
+                "path": snifake_engine::corepin::cache_file().to_string_lossy()
+            }
+        });
+    }
+    Ok(cfg)
 }
 
 fn parse_named(lines: &[String], list: &str) -> Result<Vec<RuleEntry>, String> {
@@ -705,6 +718,7 @@ mod tests {
         assert_eq!(sets[0]["download_detour"], json!("direct"));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn a_config_using_every_feature_matches_its_golden_snapshot() {
         // The two snapshots above are both `TunnelStore::default()`: empty
@@ -769,5 +783,19 @@ mod tests {
         let expected = std::fs::read_to_string(&path)
             .unwrap_or_else(|_| panic!("missing golden {name}; run with UPDATE_GOLDEN=1"));
         assert_eq!(pretty, expected, "golden {name} differs");
+    }
+
+    #[test]
+    fn rule_sets_turn_the_cache_on_and_nothing_else_does() {
+        let plain = generate(&tunnel(), &TunnelStore::default(), &link()).unwrap();
+        assert!(plain.get("experimental").is_none(), "no rule set, no cache");
+        let mut store = TunnelStore::default();
+        store.routing.bypass = vec!["ruleset:geoip-ir".into()];
+        let cfg = generate(&tunnel(), &store, &link()).unwrap();
+        assert_eq!(cfg["experimental"]["cache_file"]["enabled"], json!(true));
+        assert_eq!(
+            cfg["experimental"]["cache_file"]["path"],
+            json!(snifake_engine::corepin::cache_file().to_string_lossy())
+        );
     }
 }

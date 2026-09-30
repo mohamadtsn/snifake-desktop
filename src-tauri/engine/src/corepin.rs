@@ -39,3 +39,32 @@ pub fn archive_sha256() -> Option<&'static str> {
 pub fn binary_sha256() -> Option<&'static str> {
     PINS.iter().find(|(t, _, _)| *t == target()).map(|(_, _, b)| *b)
 }
+
+/// Where the core keeps its cache (downloaded rule sets). Writable by the
+/// elevated core, outside every user's home, and the same constant on both
+/// sides of the privilege boundary.
+pub fn cache_file() -> std::path::PathBuf {
+    #[cfg(target_os = "linux")]
+    return "/var/cache/snifake/sing-box.db".into();
+    #[cfg(target_os = "macos")]
+    return "/Library/Caches/io.github.mohamadtsn.snifake/sing-box.db".into();
+    #[cfg(windows)]
+    return std::path::PathBuf::from(
+        std::env::var_os("ProgramData").unwrap_or_else(|| "C:\\ProgramData".into()),
+    )
+    .join("snifake")
+    .join("sing-box.db");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_cache_lives_outside_any_users_home() {
+        let p = cache_file();
+        assert!(p.is_absolute());
+        assert!(!p.to_string_lossy().contains("/home/"));
+        assert!(p.file_name().is_some());
+    }
+}

@@ -55,6 +55,11 @@ pub struct TunnelSupervisor {
 
 impl TunnelSupervisor {
     pub fn start(spec: &TunnelSpec, log: LogFn, on_exit: ExitFn) -> Result<TunnelSupervisor, String> {
+        // The core writes its rule-set cache here and does not create the
+        // directory itself.
+        if let Some(parent) = crate::corepin::cache_file().parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let core = Path::new(&spec.core_path);
         verify_core(core)?;
 
@@ -245,6 +250,16 @@ fn ready(probe: &ReadyProbe) -> bool {
     }
 }
 
+/// sing-box aborts when a remote rule set has no cached copy and its first
+/// download fails. Its message names the tag; this turns it into a sentence.
+pub fn rule_set_failure(line: &str) -> Option<String> {
+    let rest = line.split("initial rule-set: ").nth(1)?;
+    let tag = rest.split(':').next()?.trim();
+    Some(format!(
+        "The rule set \"{tag}\" could not be downloaded, and there is no cached copy yet. Check its URL or switch its download to Direct."
+    ))
+}
+
 /// One thread per stream, each line prefixed so `Activity` can show both
 /// stages interleaved and still say which is which.
 fn pump<R: std::io::Read + Send + 'static>(
@@ -255,7 +270,11 @@ fn pump<R: std::io::Read + Send + 'static>(
     let Some(stream) = stream else { return };
     std::thread::spawn(move || {
         for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            let failure = rule_set_failure(&line);
             log(level, format!("[tunnel] {line}"));
+            if let Some(msg) = failure {
+                log(LogLevel::Error, format!("[tunnel] {msg}"));
+            }
         }
     });
 }
@@ -445,5 +464,15 @@ mod tests {
         let stopping = Arc::new(AtomicBool::new(true));
         watch(spawn("exit 0"), stopping, Box::new(move || tx.send(()).unwrap()));
         assert!(rx.recv_timeout(Duration::from_secs(1)).is_err(), "a requested stop was reported as a crash");
+    }
+
+    #[test]
+    fn a_failed_first_download_names_the_rule_set() {
+        let line = "FATAL[0000] start service: initialize rule-set[0]: initial rule-set: geoip-ir: Get \"https://…\": dial tcp: i/o timeout";
+        assert_eq!(
+            rule_set_failure(line).as_deref(),
+            Some("The rule set \"geoip-ir\" could not be downloaded, and there is no cached copy yet. Check its URL or switch its download to Direct.")
+        );
+        assert_eq!(rule_set_failure("some other line"), None);
     }
 }

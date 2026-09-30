@@ -137,6 +137,14 @@ fn guards(store: &TunnelStore, link: &Profile) -> Vec<Value> {
         }));
     }
 
+    // Local / private domain suffixes (.test, .local, localhost, etc.)
+    // must always go direct, never through the remote proxy.
+    out.push(json!({
+        "domain": ["localhost"],
+        "domain_suffix": [".test", ".local", ".localhost", ".internal", ".home.arpa", ".lan"],
+        "outbound": "direct"
+    }));
+
     out.push(json!({
         "process_name": ["snifake", "snifake-engine", "sing-box"],
         "outbound": "direct"
@@ -221,10 +229,16 @@ fn dns_domain_rule(entries: &[RuleEntry], outcome: (&str, &str)) -> Option<Value
 
 fn dns(block: &[RuleEntry], bypass: &[RuleEntry]) -> Value {
     let mut rules = Vec::new();
-    if let Some(r) = dns_domain_rule(bypass, ("server", "local")) {
+    if let Some(r) = dns_domain_rule(block, ("action", "reject")) {
         rules.push(r);
     }
-    if let Some(r) = dns_domain_rule(block, ("action", "reject")) {
+    // Local / private domain suffixes must be resolved by the system resolver (which reads /etc/hosts).
+    rules.push(json!({
+        "domain": ["localhost"],
+        "domain_suffix": [".test", ".local", ".localhost", ".internal", ".home.arpa", ".lan"],
+        "server": "local"
+    }));
+    if let Some(r) = dns_domain_rule(bypass, ("server", "local")) {
         rules.push(r);
     }
     json!({
@@ -249,22 +263,42 @@ fn inbounds(store: &TunnelStore, link: &Profile) -> Result<Value, String> {
     match store.mode {
         // Every value here is a `tunpin` constant, because the engine builds
         // its kill switch from the same constants and the two must agree.
-        TunnelMode::Tun => Ok(json!([{
-            "type": "tun",
-            "tag": "tun-in",
-            "interface_name": tunpin::INTERFACE_NAME,
-            "address": [tunpin::ADDRESS_V4, tunpin::ADDRESS_V6],
-            "mtu": tunpin::MTU,
-            "auto_route": true,
-            "strict_route": true,
-            "stack": "system",
-            // Pinned so the engine's startup purge can find the policy rules
-            // `strict_route` leaves behind a killed core (tunpin).
-            "iproute2_table_index": tunpin::IPROUTE2_TABLE,
-            "iproute2_rule_index": tunpin::IPROUTE2_RULE,
-            // Layer 1 of the four loop guards (design §6).
-            "route_exclude_address": [format!("{}/32", link.connect_ip)]
-        }])),
+        TunnelMode::Tun => {
+            let mut route_exclude_address = vec![format!("{}/32", link.connect_ip)];
+            if !link.listen_host.starts_with("127.") && link.listen_host != "localhost" {
+                let cidr = format!("{}/32", link.listen_host);
+                if !route_exclude_address.contains(&cidr) {
+                    route_exclude_address.push(cidr);
+                }
+            }
+            if store.routing.allow_lan {
+                route_exclude_address.extend([
+                    "10.0.0.0/8".to_string(),
+                    "172.16.0.0/12".to_string(),
+                    "192.168.0.0/16".to_string(),
+                    "169.254.0.0/16".to_string(),
+                    "127.0.0.0/8".to_string(),
+                ]);
+            } else {
+                route_exclude_address.push("127.0.0.0/8".to_string());
+            }
+            Ok(json!([{
+                "type": "tun",
+                "tag": "tun-in",
+                "interface_name": tunpin::INTERFACE_NAME,
+                "address": [tunpin::ADDRESS_V4, tunpin::ADDRESS_V6],
+                "mtu": tunpin::MTU,
+                "auto_route": true,
+                "strict_route": true,
+                "stack": "system",
+                // Pinned so the engine's startup purge can find the policy rules
+                // `strict_route` leaves behind a killed core (tunpin).
+                "iproute2_table_index": tunpin::IPROUTE2_TABLE,
+                "iproute2_rule_index": tunpin::IPROUTE2_RULE,
+                // Layer 1 of the four loop guards (design §6).
+                "route_exclude_address": route_exclude_address
+            }]))
+        }
         // No `sniff` / `sniff_override_destination` here: those inbound
         // fields were *removed* in sing-box 1.13.0, not merely deprecated,
         // and the config is refused outright if they appear. Sniffing is a
@@ -611,9 +645,39 @@ mod tests {
     }
 
     #[test]
-    fn the_sni_upstream_is_excluded_from_the_tun() {
+    fn the_sni_upstream_and_lan_are_excluded_from_the_tun() {
         let cfg = generate(&tunnel(), &tun_store(), &link()).unwrap();
-        assert_eq!(cfg["inbounds"][0]["route_exclude_address"], json!(["103.160.204.34/32"]));
+        let excluded = cfg["inbounds"][0]["route_exclude_address"].as_array().unwrap();
+        assert!(excluded.contains(&json!("103.160.204.34/32")));
+        assert!(excluded.contains(&json!("10.0.0.0/8")));
+        assert!(excluded.contains(&json!("172.16.0.0/12")));
+        assert!(excluded.contains(&json!("192.168.0.0/16")));
+        assert!(excluded.contains(&json!("127.0.0.0/8")));
+
+        let mut no_lan = tun_store();
+        no_lan.routing.allow_lan = false;
+        let cfg_no_lan = generate(&tunnel(), &no_lan, &link()).unwrap();
+        let excluded_no_lan = cfg_no_lan["inbounds"][0]["route_exclude_address"].as_array().unwrap();
+        assert!(excluded_no_lan.contains(&json!("103.160.204.34/32")));
+        assert!(excluded_no_lan.contains(&json!("127.0.0.0/8")));
+        assert!(!excluded_no_lan.contains(&json!("10.0.0.0/8")));
+        assert!(!excluded_no_lan.contains(&json!("172.16.0.0/12")));
+        assert!(!excluded_no_lan.contains(&json!("192.168.0.0/16")));
+    }
+
+    #[test]
+    fn local_domains_are_routed_direct() {
+        let cfg = generate(&tunnel(), &TunnelStore::default(), &link()).unwrap();
+        let r = rules(&cfg);
+        assert!(r.iter().any(|x| x.get("domain_suffix") == Some(&json!([".test", ".local", ".localhost", ".internal", ".home.arpa", ".lan"])) && x["outbound"] == json!("direct")));
+        assert!(r.iter().any(|x| x.get("domain") == Some(&json!(["localhost"])) && x["outbound"] == json!("direct")));
+    }
+
+    #[test]
+    fn local_domains_are_resolved_locally_in_dns() {
+        let cfg = generate(&tunnel(), &TunnelStore::default(), &link()).unwrap();
+        let dns = cfg["dns"]["rules"].as_array().unwrap();
+        assert!(dns.iter().any(|r| r.get("domain_suffix") == Some(&json!([".test", ".local", ".localhost", ".internal", ".home.arpa", ".lan"])) && r["server"] == json!("local")));
     }
 
     #[test]
@@ -700,7 +764,8 @@ mod tests {
         let mut store = TunnelStore::default();
         store.routing.bypass = vec!["port:8080".into(), "process:curl".into()];
         let cfg = generate(&tunnel(), &store, &link()).unwrap();
-        assert!(cfg["dns"]["rules"].as_array().unwrap().is_empty());
+        let rules = cfg["dns"]["rules"].as_array().unwrap();
+        assert!(!rules.iter().any(|r| r.get("port").is_some() || r.get("process_name").is_some()));
     }
 
     #[test]

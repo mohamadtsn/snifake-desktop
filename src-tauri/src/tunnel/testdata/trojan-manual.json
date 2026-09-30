@@ -1,7 +1,22 @@
 {
   "dns": {
     "final": "remote",
-    "rules": [],
+    "rules": [
+      {
+        "domain": [
+          "localhost"
+        ],
+        "domain_suffix": [
+          ".test",
+          ".local",
+          ".localhost",
+          ".internal",
+          ".home.arpa",
+          ".lan"
+        ],
+        "server": "local"
+      }
+    ],
     "servers": [
       {
         "detour": "proxy",
@@ -76,6 +91,20 @@
       {
         "ip_cidr": [
           "103.160.204.34/32"
+        ],
+        "outbound": "direct"
+      },
+      {
+        "domain": [
+          "localhost"
+        ],
+        "domain_suffix": [
+          ".test",
+          ".local",
+          ".localhost",
+          ".internal",
+          ".home.arpa",
+          ".lan"
         ],
         "outbound": "direct"
       },

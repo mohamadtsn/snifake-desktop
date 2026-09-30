@@ -86,6 +86,21 @@ pub fn generate(
     Ok(cfg)
 }
 
+/// A loopback inbound the GUI's exit probe dials. Its rule precedes the
+/// process guard, which would otherwise send the GUI's own request direct
+/// and report the user's real address as the tunnel's exit.
+pub fn add_probe(cfg: &mut Value, port: u16) {
+    if let Some(inbounds) = cfg["inbounds"].as_array_mut() {
+        inbounds.push(json!({
+            "type": "mixed", "tag": "probe-in", "listen": "127.0.0.1", "listen_port": port
+        }));
+    }
+    if let Some(rules) = cfg["route"]["rules"].as_array_mut() {
+        // Index 1: right after `sniff`, which is always first.
+        rules.insert(1, json!({ "inbound": ["probe-in"], "outbound": "proxy" }));
+    }
+}
+
 fn parse_named(lines: &[String], list: &str) -> Result<Vec<RuleEntry>, String> {
     parse_list(lines).map_err(|errs| {
         let (i, msg) = &errs[0];
@@ -797,5 +812,20 @@ mod tests {
             cfg["experimental"]["cache_file"]["path"],
             json!(snifake_engine::corepin::cache_file().to_string_lossy())
         );
+    }
+
+    #[test]
+    fn the_probe_inbound_goes_through_the_proxy_before_the_process_guard() {
+        let mut cfg = generate(&tunnel(), &tun_store(), &link()).unwrap();
+        add_probe(&mut cfg, 47000);
+        let probe = cfg["inbounds"].as_array().unwrap().iter()
+            .find(|i| i["tag"] == json!("probe-in")).expect("probe inbound");
+        assert_eq!(probe["listen"], json!("127.0.0.1"));
+        assert_eq!(probe["listen_port"], json!(47000));
+        let r = rules(&cfg);
+        let at = r.iter().position(|x| x["inbound"] == json!(["probe-in"])).unwrap();
+        let guard = r.iter().position(|x| x.get("process_name").is_some()).unwrap();
+        assert_eq!(r[at]["outbound"], json!("proxy"));
+        assert!(at > 0 && at < guard, "after sniff, before the process guard");
     }
 }

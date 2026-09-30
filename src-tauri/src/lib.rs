@@ -22,6 +22,8 @@ pub(crate) struct AppState {
     pub(crate) store: Mutex<Store>,
     pub(crate) tunnels: Mutex<tunnel::model::TunnelStore>,
     pub(crate) logs: Arc<LogBuffer>,
+    /// The running tunnel's `probe-in` port; 0 when there is none.
+    pub(crate) probe_port: std::sync::atomic::AtomicU16,
 }
 
 #[tauri::command]
@@ -425,7 +427,15 @@ fn start_tunnel(
         }
     }
 
-    let config = tunnel::generate::generate(&profile, &tunnels, &link)?;
+    let mut config = tunnel::generate::generate(&profile, &tunnels, &link)?;
+    // Bind and release on loopback for a free port. The gap before the core
+    // binds it is real but tiny, and a clash only costs the exit readout.
+    let probe_port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .map_err(|e| format!("no free loopback port for the exit probe: {e}"))?;
+    tunnel::generate::add_probe(&mut config, probe_port);
+    state.probe_port.store(probe_port, std::sync::atomic::Ordering::Relaxed);
     let ready_probe = if is_tun {
         snifake_engine::proto::ReadyProbe::Interface {
             name: snifake_engine::tunpin::INTERFACE_NAME.into(),
@@ -485,7 +495,18 @@ fn stop_tunnel(state: tauri::State<AppState>) {
     if let Err(e) = sysproxy::clear() {
         state.logs.push(format!("the system proxy could not be restored: {e}"));
     }
+    state.probe_port.store(0, std::sync::atomic::Ordering::Relaxed);
     state.engine.lock().unwrap().tunnel_stop();
+}
+
+/// The tunnel's exit address and location, asked through its own inbound.
+#[tauri::command]
+async fn probe_exit(state: tauri::State<'_, AppState>) -> Result<tunnel::exit::ExitInfo, String> {
+    let port = state.probe_port.load(std::sync::atomic::Ordering::Relaxed);
+    if port == 0 {
+        return Err("The tunnel is not running.".into());
+    }
+    tunnel::exit::probe(port).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -531,6 +552,7 @@ pub fn run() {
             store: Mutex::new(store),
             tunnels: Mutex::new(tunnel::model::load()),
             logs: logs.clone(),
+            probe_port: std::sync::atomic::AtomicU16::new(0),
         })
         .invoke_handler(tauri::generate_handler![
             list_profiles,
@@ -545,6 +567,7 @@ pub fn run() {
             shutdown_engine,
             list_interfaces,
             import_rule_set,
+            probe_exit,
             sysproxy_support,
             apply_system_proxy,
             clear_system_proxy,

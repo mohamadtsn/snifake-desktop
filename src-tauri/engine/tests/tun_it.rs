@@ -234,3 +234,65 @@ fn a_purge_opens_a_machine_a_crashed_run_left_closed() {
         "sing-box's policy rules must be purged too"
     );
 }
+
+const VPN_NET: &str = "198.51.100.0/24";
+const VPN_HOST: Ipv4Addr = Ipv4Addr::new(198, 51, 100, 7);
+
+fn with_dummy_vpn(f: impl FnOnce()) {
+    let ip = |a: &[&str]| assert!(Command::new("ip").args(a).status().unwrap().success(), "ip {a:?}");
+    ip(&["link", "add", "snifake-it0", "type", "dummy"]);
+    ip(&["link", "set", "snifake-it0", "up"]);
+    ip(&["route", "add", VPN_NET, "dev", "snifake-it0"]);
+    f();
+    let _ = Command::new("ip").args(["link", "del", "snifake-it0"]).status();
+}
+
+fn route_dev(ip: Ipv4Addr) -> String {
+    let out = Command::new("ip").args(["-j", "route", "get", &ip.to_string()]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    v[0]["dev"].as_str().unwrap_or_default().to_string()
+}
+
+#[test]
+#[ignore]
+fn a_coexisting_vpns_routes_bypass_the_running_tun() {
+    with_dummy_vpn(|| {
+        let mut a = allow(UPSTREAM);
+        a.interfaces = vec!["snifake-it0".into()];
+        purge_leftovers().unwrap();
+        let mut g = TunGuard::raise(a).unwrap();
+        let sup = TunnelSupervisor::start(&spec(UPSTREAM), quiet(), Box::new(|| {})).unwrap();
+        g.permit_interface(tunpin::INTERFACE_NAME).unwrap();
+        assert_eq!(route_dev(VPN_HOST), tunpin::INTERFACE_NAME, "without refresh the TUN claims it");
+        let items = g.refresh(true).unwrap().unwrap();
+        assert!(items[0].present);
+        assert_eq!(route_dev(VPN_HOST), "snifake-it0", "after refresh the VPN keeps its own route");
+        sup.stop();
+        g.lower().unwrap();
+        let rules = Command::new("ip").args(["rule", "show", "priority", "5341"]).output().unwrap();
+        assert!(rules.stdout.is_empty(), "lowering clears the passthrough rules");
+    });
+}
+
+#[test]
+#[ignore]
+fn with_the_kill_switch_off_the_route_is_pinned_and_nothing_is_dropped() {
+    purge_leftovers().unwrap();
+    let mut a = allow(UPSTREAM);
+    a.enforce = false;
+    let mut g = TunGuard::raise(a).unwrap();
+    assert!(!nft_has_our_table(), "no table when the kill switch is off");
+    assert_ne!(routes_with_our_proto(), "", "the upstream route is still pinned");
+    assert!(answers(OTHER), "nothing is dropped");
+    g.lower().unwrap();
+    assert_eq!(routes_with_our_proto(), "");
+}
+
+#[test]
+#[ignore]
+fn a_purge_clears_passthrough_rules_a_crash_left() {
+    Command::new("ip").args(["-4", "rule", "add", "to", "198.51.100.0/24", "lookup", "main", "priority", "5341"]).status().unwrap();
+    purge_leftovers().unwrap();
+    let rules = Command::new("ip").args(["rule", "show", "priority", "5341"]).output().unwrap();
+    assert!(rules.stdout.is_empty());
+}

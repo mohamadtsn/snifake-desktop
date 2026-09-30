@@ -43,6 +43,10 @@ RUN rustup target add \
 RUN cargo install tauri-cli --version "^2.0.0" --locked \
  && cargo install cargo-xwin --locked
 
+# Debian 12 ships NSIS 3.08, which lacks RestartManager.nsh required by Tauri v2.12+.
+RUN curl -sSL https://raw.githubusercontent.com/kichik/nsis/master/Include/Win/RestartManager.nsh \
+    -o /usr/share/nsis/Include/Win/RestartManager.nsh
+
 # cargo-xwin downloads the Windows SDK+CRT headers here. Compose mounts a
 # named volume over it so that ~1GB download happens once, not per build.
 ENV XWIN_CACHE_DIR=/root/.cache/cargo-xwin

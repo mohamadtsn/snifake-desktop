@@ -3,5 +3,8 @@
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": ""
+  },
+  "bundle": {
+    "createUpdaterArtifacts": false
   }
 }

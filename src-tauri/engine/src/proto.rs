@@ -63,6 +63,48 @@ pub struct TunSpec {
     /// Mirrors `Routing::allow_lan`: private and link-local IPv4 may leave
     /// directly.
     pub allow_lan: bool,
+    /// Whether the drop-everything table is installed at all. Off keeps the
+    /// pinned upstream route and gives up the fail-closed guarantee. Absent
+    /// from an older GUI's spec, which always meant on.
+    #[serde(default = "on")]
+    pub kill_switch: bool,
+    /// Interfaces of other VPNs that must keep working beside the TUN. The
+    /// engine discovers their routes and servers itself (`passthrough.rs`).
+    #[serde(default)]
+    pub passthrough: Vec<String>,
+}
+
+fn on() -> bool {
+    true
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Endpoint {
+    pub ip: String,
+    pub port: u16,
+}
+
+/// A route a coexisting VPN owns, and the table it lives in.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PassRoute {
+    pub dst: String,
+    pub table: String,
+}
+
+/// What the engine found for one named interface, sent whenever it changes.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct PassthroughStatus {
+    pub name: String,
+    /// Absent is not an error: the VPN may simply not be up yet.
+    pub present: bool,
+    /// `linkinfo.info_kind`: `wireguard`, `tun`, …
+    pub kind: Option<String>,
+    /// Its own servers: the outer flow, which leaves by the physical link.
+    pub endpoints: Vec<Endpoint>,
+    /// What it routes: the inner flow, kept out of the TUN.
+    pub routes: Vec<PassRoute>,
+    /// A sentence for the user when something could not be done.
+    pub problem: Option<String>,
 }
 
 /// Readiness is probed, never matched against a log line: a core upgrade
@@ -133,6 +175,9 @@ pub enum Event {
     /// from two samples and the wall clock. A delta stream loses bytes
     /// permanently the first time a line does not arrive.
     Traffic { up: u64, down: u64 },
+    /// Coexisting VPNs as last discovered. Sent after a TUN start and
+    /// whenever a re-discovery finds something different.
+    Passthrough { items: Vec<PassthroughStatus> },
 }
 
 #[cfg(test)]
@@ -249,10 +294,10 @@ mod tests {
     #[test]
     fn a_tun_spec_round_trips() {
         let mut s = spec();
-        s.tun = Some(TunSpec { allow_lan: false });
+        s.tun = Some(TunSpec { allow_lan: false, kill_switch: true, passthrough: vec![] });
         let line = serde_json::to_string(&Command::TunnelStart { spec: s }).unwrap();
         match serde_json::from_str::<Command>(&line).unwrap() {
-            Command::TunnelStart { spec } => assert_eq!(spec.tun, Some(TunSpec { allow_lan: false })),
+            Command::TunnelStart { spec } => assert_eq!(spec.tun, Some(TunSpec { allow_lan: false, kill_switch: true, passthrough: vec![] })),
             other => panic!("wrong variant: {other:?}"),
         }
     }
@@ -265,4 +310,26 @@ mod tests {
             other => panic!("wrong variant: {other:?}"),
         }
     }
+
+    #[test]
+    fn an_older_guis_tun_spec_keeps_the_kill_switch_on() {
+        let t: TunSpec = serde_json::from_str(r#"{"allow_lan":true}"#).unwrap();
+        assert!(t.kill_switch);
+        assert!(t.passthrough.is_empty());
+    }
+
+    #[test]
+    fn a_passthrough_event_round_trips() {
+        let ev = Event::Passthrough { items: vec![PassthroughStatus {
+            name: "priv".into(), present: true, kind: Some("wireguard".into()),
+            endpoints: vec![Endpoint { ip: "37.191.85.82".into(), port: 51820 }],
+            routes: vec![PassRoute { dst: "10.200.0.0/16".into(), table: "51820".into() }],
+            problem: None,
+        }] };
+        let line = serde_json::to_string(&ev).unwrap();
+        assert!(line.contains(r#""ev":"passthrough""#));
+        let back: Event = serde_json::from_str(&line).unwrap();
+        assert!(matches!(back, Event::Passthrough { items } if items[0].name == "priv"));
+    }
 }
+

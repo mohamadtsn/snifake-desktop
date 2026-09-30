@@ -418,6 +418,8 @@ fn start_tunnel(
         listen_host: link.listen_host.clone(),
         tun: is_tun.then(|| snifake_engine::proto::TunSpec {
             allow_lan: tunnels.routing.allow_lan,
+            kill_switch: true,
+            passthrough: vec![],
         }),
     };
 

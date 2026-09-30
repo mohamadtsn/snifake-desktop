@@ -3,6 +3,7 @@
 
 use crate::proto::Profile;
 use crate::proto::TunnelSpec;
+use crate::tunpin;
 use std::net::Ipv4Addr;
 
 const MAX_SNI: usize = 219;
@@ -55,7 +56,35 @@ fn validate_sni(sni: &str) -> Result<(), String> {
 /// the unprivileged side the firewall trusts, so it is held to "one real,
 /// routable IPv4 host and a port".
 pub fn validate_tun(s: &TunnelSpec) -> Result<(), String> {
-    validate_upstream(&s.connect_ip, s.connect_port).map(|_| ())
+    validate_upstream(&s.connect_ip, s.connect_port)?;
+    if let Some(t) = &s.tun {
+        if t.passthrough.len() > MAX_PASSTHROUGH {
+            return Err(format!("At most {MAX_PASSTHROUGH} VPNs can run beside the tunnel."));
+        }
+        for name in &t.passthrough {
+            validate_interface(name)?;
+        }
+    }
+    Ok(())
+}
+
+/// How many coexisting VPNs a spec may name. A bound, not a policy.
+pub const MAX_PASSTHROUGH: usize = 8;
+
+/// A name is written into an nft script and an `ip` argument verbatim, so
+/// this is the line between a name and an injected rule. IFNAMSIZ is 16
+/// including the NUL.
+pub fn validate_interface(name: &str) -> Result<(), String> {
+    let ok = !name.is_empty()
+        && name.len() <= 15
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b));
+    if !ok {
+        return Err(format!("\"{name}\" is not an interface name."));
+    }
+    if name == tunpin::INTERFACE_NAME || name == "lo" {
+        return Err(format!("\"{name}\" cannot be a coexisting VPN."));
+    }
+    Ok(())
 }
 
 /// `validate_tun`'s rule for a bare address, for the link's own Start: a
@@ -175,7 +204,7 @@ mod tests {
             connect_ip: ip.into(),
             connect_port: port,
             listen_host: "127.0.0.1".into(),
-            tun: Some(crate::proto::TunSpec { allow_lan: true }),
+            tun: Some(crate::proto::TunSpec { allow_lan: true, kill_switch: true, passthrough: vec![] }),
         }
     }
 
@@ -219,5 +248,34 @@ mod tests {
         // would drop the one the link is really dialling.
         assert!(spec_matches_link(&tun_spec("5.6.7.8", 443), &link("104.18.4.130", 443)).is_err());
         assert!(spec_matches_link(&tun_spec("104.18.4.130", 8443), &link("104.18.4.130", 443)).is_err());
+    }
+
+    #[test]
+    fn a_real_interface_name_is_accepted() {
+        for n in ["wg0", "priv", "tun-home.1", "a_b", "throne-tun"] {
+            assert!(validate_interface(n).is_ok(), "{n}");
+        }
+    }
+
+    #[test]
+    fn an_interface_name_cannot_smuggle_nft_syntax() {
+        for n in ["wg0\" accept", "wg0\naccept", "wg*", "", "a-name-longer-than-15", "wg 0"] {
+            assert!(validate_interface(n).is_err(), "{n:?}");
+        }
+    }
+
+    #[test]
+    fn our_own_interface_and_loopback_are_not_passthrough() {
+        assert!(validate_interface(crate::tunpin::INTERFACE_NAME).is_err());
+        assert!(validate_interface("lo").is_err());
+    }
+
+    #[test]
+    fn a_tun_spec_with_a_bad_or_oversized_passthrough_is_refused() {
+        let mut s = tun_spec("104.18.4.130", 443);
+        s.tun.as_mut().unwrap().passthrough = vec!["wg0\"".into()];
+        assert!(validate_tun(&s).is_err());
+        s.tun.as_mut().unwrap().passthrough = vec!["wg0".into(); MAX_PASSTHROUGH + 1];
+        assert!(validate_tun(&s).is_err());
     }
 }

@@ -37,6 +37,13 @@ pub const IPROUTE2_TABLE: u32 = 5346;
 pub const IPROUTE2_RULE: u32 = 5346;
 pub const RULE_SPAN: u32 = 16;
 
+/// Policy-rule priorities for coexisting VPNs, just ahead of sing-box's
+/// (`IPROUTE2_RULE`) so their traffic is decided before the TUN can claim
+/// it. Servers first: a WireGuard server can also be one of its own routes,
+/// and its outer packets must go out physically, not into itself.
+pub const PASS_ENDPOINT_RULE: u32 = 5340;
+pub const PASS_ROUTE_RULE: u32 = 5341;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,5 +58,11 @@ mod tests {
     fn the_mark_is_the_one_the_probe_measured() {
         // Linux plan Task 1 ran with `default_mark: 21326`.
         assert_eq!(ROUTING_MARK, 21326);
+    }
+
+    #[test]
+    fn passthrough_rules_run_before_sing_boxs() {
+        assert!(PASS_ENDPOINT_RULE < PASS_ROUTE_RULE);
+        assert!(PASS_ROUTE_RULE < IPROUTE2_RULE);
     }
 }

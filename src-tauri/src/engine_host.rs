@@ -137,6 +137,8 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
         // and one line a second would evict the user's whole log in eight
         // minutes. This is instrument data, not a log.
         Event::Traffic { up, down } => Applied::Traffic(*up, *down),
+        // ponytail: surfaced to the frontend in Task 8.
+        Event::Passthrough { .. } => Applied::Nothing,
     }
 }
 

@@ -111,7 +111,7 @@ fn spec(upstream: Ipv4Addr) -> TunnelSpec {
         connect_ip: upstream.to_string(),
         connect_port: 443,
         listen_host: "127.0.0.1".into(),
-        tun: Some(TunSpec { allow_lan: true }),
+        tun: Some(TunSpec { allow_lan: true, kill_switch: true, passthrough: vec![] }),
     }
 }
 

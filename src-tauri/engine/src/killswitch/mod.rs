@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn a_tun_spec_becomes_an_allowlist() {
-        let a = Allowlist::from_spec(&spec(Some(TunSpec { allow_lan: false }))).unwrap();
+        let a = Allowlist::from_spec(&spec(Some(TunSpec { allow_lan: false, kill_switch: true, passthrough: vec![] }))).unwrap();
         assert_eq!(a.connect, (Ipv4Addr::new(104, 18, 4, 130), 443));
         assert!(!a.allow_lan);
     }

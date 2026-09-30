@@ -23,7 +23,7 @@ pub fn support() -> Option<String> {
 
 pub fn support_with(linux: bool, windows: bool, has: impl Fn(&str) -> bool) -> Option<String> {
     if windows {
-        return Some("TUN on Windows arrives in the next release.".into());
+        return None;
     }
     if !linux {
         return Some("TUN is not available on macOS yet.".into());
@@ -95,11 +95,12 @@ mod tests {
     }
 
     #[test]
-    fn windows_and_macos_say_why_not() {
-        assert_eq!(
-            support_with(false, true, |_| true).as_deref(),
-            Some("TUN on Windows arrives in the next release.")
-        );
+    fn windows_supports_tun() {
+        assert_eq!(support_with(false, true, |_| false), None);
+    }
+
+    #[test]
+    fn macos_says_why_not() {
         assert_eq!(
             support_with(false, false, |_| true).as_deref(),
             Some("TUN is not available on macOS yet.")

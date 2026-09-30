@@ -29,7 +29,7 @@ import {
 } from "@/types";
 import { canStartTunnel, chainStep, nextTunnelState, shouldResumeTunnel, tunnelStartPlan } from "@/lib/tunnelMachine";
 import { showRecovery } from "@/lib/recovery";
-import { modeTransition, type Transition } from "@/lib/modeTransition";
+import { modeTransition, tunGuardChanged, type Transition } from "@/lib/modeTransition";
 import { clearDraft, LEAVE_COPY, leaveDecision, QUIT_COPY } from "@/lib/leaveGuard";
 import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import { rateBetween, type Rate, type Sample } from "@/lib/traffic";
@@ -712,11 +712,16 @@ export default function App() {
             tunActive={tunnelState === "active" && tunnels?.mode === "tun"}
             onSave={(patch) => {
               setSavingRouting(true);
-              const plan = modeTransition(
+              const moved = modeTransition(
                 tunnels?.mode ?? "manual",
                 patch.mode,
                 tunnelState === "active",
               );
+              const plan =
+                tunnels &&
+                tunGuardChanged(tunnels.routing, patch.routing, patch.mode, tunnelState === "active")
+                  ? { ...moved, restartTunnel: true }
+                  : moved;
               return invoke<TunnelStore>("save_routing", patch)
                 .then(async (next) => {
                   setTunnels(next);

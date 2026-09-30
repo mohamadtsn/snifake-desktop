@@ -1,4 +1,4 @@
-import type { TunnelMode } from "@/types";
+import type { Routing, TunnelMode } from "@/types";
 
 /**
  * What a routing-mode change actually requires.
@@ -40,4 +40,25 @@ export function modeTransition(
     applyProxy: to === "system_proxy" && tunnelRunning,
     clearProxy,
   };
+}
+
+/**
+ * Whether a save changes what the engine's TUN guard enforces, while it is
+ * enforcing it. The engine only reads the kill switch and the coexisting
+ * VPNs from a `TunnelStart`; without one the switch would read "on" while
+ * nothing is dropped. The restart retargets the guard in place, so the
+ * drop never lifts in between.
+ */
+export function tunGuardChanged(
+  from: Routing,
+  to: Routing,
+  mode: TunnelMode,
+  tunnelRunning: boolean,
+): boolean {
+  return (
+    tunnelRunning &&
+    mode === "tun" &&
+    (from.kill_switch !== to.kill_switch ||
+      JSON.stringify(from.passthrough) !== JSON.stringify(to.passthrough))
+  );
 }

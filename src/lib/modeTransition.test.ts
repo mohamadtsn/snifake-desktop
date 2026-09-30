@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { modeTransition } from "@/lib/modeTransition";
+import { modeTransition, tunGuardChanged } from "@/lib/modeTransition";
+import type { Routing } from "@/types";
 
 describe("modeTransition", () => {
   it("does nothing when the mode did not change", () => {
@@ -59,5 +60,23 @@ describe("modeTransition", () => {
     // machine pointed at a port that never opened. `tunnelRunning` is passed
     // `state === "active"`, never `"starting"`.
     expect(modeTransition("manual", "system_proxy", false).applyProxy).toBe(false);
+  });
+});
+
+describe("tunGuardChanged", () => {
+  const base = {
+    block: [], bypass: [], proxy: [], raw: null, default_route: "proxy", block_quic: true,
+    allow_lan: true, kill_switch: true, passthrough: [], rule_sets: [],
+  } as Routing;
+
+  it("restarts a running TUN when the kill switch or the coexisting VPNs change", () => {
+    expect(tunGuardChanged(base, { ...base, kill_switch: false }, "tun", true)).toBe(true);
+    expect(tunGuardChanged(base, { ...base, passthrough: ["wg0"] }, "tun", true)).toBe(true);
+  });
+
+  it("leaves everything else alone", () => {
+    expect(tunGuardChanged(base, { ...base, kill_switch: false }, "tun", false)).toBe(false);
+    expect(tunGuardChanged(base, { ...base, kill_switch: false }, "system_proxy", true)).toBe(false);
+    expect(tunGuardChanged(base, { ...base, block: ["x.com"] }, "tun", true)).toBe(false);
   });
 });

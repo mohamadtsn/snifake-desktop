@@ -10,6 +10,7 @@ pub mod forward;
 pub mod hello;
 pub mod killswitch;
 pub mod netpkt;
+pub mod passthrough;
 pub mod proto;
 pub mod route_guard;
 pub mod sniffer;

@@ -443,6 +443,20 @@ And one clock changed meaning: a **faulted** stage freezes its uptime and
 shows `STOPPED AT hh:mm:ss` instead of resetting to zero. "It ran for two
 minutes and then died" is the useful fact; `00:00:00` is not.
 
+A second measured readout arrived on 2026-09-30: the tunnel's **exit**. A
+few seconds after each run turns active, the GUI asks ipinfo.io where it
+comes from, through a loopback inbound routed to the tunnel ahead of the
+process guard (which would otherwise send the GUI's own request direct and
+report the user's real address). The tunnel tile shows `IP · City, CC ·
+Org`; in TUN the footer's tunnel slot shows `exit IP · CC` in place of
+`virtual interface`, since TUN opens no port to show. Its absent cases are
+words: `checking exit…` while it waits, `exit unknown` once it gives up, and
+nothing at all when the preference is off. A failed periodic refresh keeps
+the last good reading; a new run never shows the previous run's exit. The
+country is its two-letter code, not a flag: WebKitGTK has no guaranteed
+emoji font, and a flag drawn as two letters in a box is worse than the two
+letters.
+
 ---
 
 ## 7. Where the numbers came from

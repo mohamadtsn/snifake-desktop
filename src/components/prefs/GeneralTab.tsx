@@ -87,6 +87,17 @@ export function GeneralTab({
               />
             }
           />
+          <GroupedList.Row
+            title="Show exit IP and location"
+            subtitle="Asks ipinfo.io through the tunnel a few seconds after it connects. Nothing is sent outside the tunnel."
+            control={
+              <Toggle
+                checked={prefs.exitProbe}
+                onChange={(on) => onChange({ exitProbe: on })}
+                aria-label="Show the tunnel's exit IP and location"
+              />
+            }
+          />
         </GroupedList>
       </Section>
 

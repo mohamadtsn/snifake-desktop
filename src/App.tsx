@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ConfigTab } from "@/components/config/ConfigTab";
 import { CoreSetupModal } from "@/components/core/CoreSetupModal";
+import { useExitProbe } from "@/components/telemetry/useExitProbe";
 import { SocketsTab } from "@/components/sockets/SocketsTab";
 import { TelemetryTab } from "@/components/telemetry/TelemetryTab";
 import { TitleBar } from "@/components/shell/TitleBar";
@@ -124,6 +125,12 @@ export default function App() {
   const coreInstalled = core?.installed ?? false;
   const [tab, setTab] = useState<Tab>("telemetry");
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
+  /** Where the tunnel comes out, asked a few seconds after each run starts. */
+  const { probe: exit, recheck: recheckExit } = useExitProbe(
+    tunnelState === "active",
+    tunnelSince,
+    prefs.exitProbe,
+  );
   const [confirmStopLink, setConfirmStopLink] = useState(false);
   const [coreSetupOpen, setCoreSetupOpen] = useState(false);
   const [savingRouting, setSavingRouting] = useState(false);
@@ -650,6 +657,8 @@ export default function App() {
             rate={rate}
             total={total}
             frozenSince={frozenSince}
+            exit={exit}
+            onRecheckExit={recheckExit}
             systemProxyBlocked={systemProxyBlocked}
             tunBlocked={tunBlocked}
             tunnelMode={tunnels?.mode ?? "system_proxy"}
@@ -781,7 +790,7 @@ export default function App() {
       <StatusFooter
         link={profile ? listenAddress(profile) : null}
         linkLive={state === "running"}
-        tunnel={tunnelInbound(tunnels)}
+        tunnel={tunnelInbound(tunnels, exit.status === "ok" ? exit.info : null)}
         tunnelLive={tunnelState === "active"}
         tunnelRemote={tunnels ? (activeTunnel(tunnels)?.remote_host ?? null) : null}
         rate={rate}

@@ -1,5 +1,5 @@
 /**
- * The five frontend-owned preferences. Not engine configuration: none of
+ * The six frontend-owned preferences. Not engine configuration: none of
  * these reaches the privileged process, and two of them (`launchAtLogin`,
  * `colorizeTray`) are mirrored into Rust by whoever changes them.
  *
@@ -18,6 +18,8 @@ export interface Prefs {
   launchAtLogin: boolean;
   /** Per-packet engine logging, the `set_verbose` flag. */
   verbose: boolean;
+  /** Ask ipinfo.io, through the tunnel, where it comes out. */
+  exitProbe: boolean;
 }
 
 /** Today's behaviour, so an install that has never opened Preferences
@@ -28,6 +30,7 @@ export const DEFAULT_PREFS: Prefs = {
   silentUpdateChecks: true,
   launchAtLogin: false,
   verbose: false,
+  exitProbe: true,
 };
 
 const KEY = "snifake.prefs";

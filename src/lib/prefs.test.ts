@@ -36,6 +36,7 @@ describe("prefs", () => {
       silentUpdateChecks: false,
       launchAtLogin: true,
       verbose: true,
+      exitProbe: false,
     };
     savePrefs(p, s);
     expect(loadPrefs(s)).toEqual(p);
@@ -77,5 +78,10 @@ describe("prefs", () => {
 
   it("ignores a stored array, which parses as an object but is not one", () => {
     expect(loadPrefs(fakeStorage("[true]"))).toEqual(DEFAULT_PREFS);
+  });
+
+  it("shows the exit probe unless the user turned it off, even for a blob older than the key", () => {
+    expect(DEFAULT_PREFS.exitProbe).toBe(true);
+    expect(loadPrefs(fakeStorage(JSON.stringify({ closeToTray: false }))).exitProbe).toBe(true);
   });
 });

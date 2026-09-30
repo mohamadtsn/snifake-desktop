@@ -1,4 +1,5 @@
-import type { Profile, Store, TunnelProfile, TunnelStore } from "@/types";
+import type { ExitProbe } from "./exitProbe";
+import type { ExitInfo, Profile, Store, TunnelProfile, TunnelStore } from "@/types";
 
 /** Mirrors `tunnel::download::CoreStatus`. */
 export interface CoreStatus {
@@ -99,10 +100,30 @@ export function endpointLabel(address: string | null): string {
 /**
  * Where the tunnel takes traffic in. The proxy modes open a port; TUN opens
  * none — it is a network interface — and showing `proxy_port` there would be
- * a reading of a listener that does not exist.
+ * a reading of a listener that does not exist. Once the exit probe has
+ * answered, TUN shows where traffic comes out instead.
  */
-export function tunnelInbound(tunnels: TunnelStore | null): string | null {
+export function tunnelInbound(tunnels: TunnelStore | null, exit?: ExitInfo | null): string | null {
   if (!tunnels) return null;
-  if (tunnels.mode === "tun") return "virtual interface";
+  if (tunnels.mode === "tun") return exit ? `exit ${exit.ip} · ${exit.country}` : "virtual interface";
   return `${tunnels.proxy_host}:${tunnels.proxy_port}`;
+}
+
+/** The tunnel's exit, in two lines. Country as its code: WebKitGTK has no
+ *  guaranteed emoji font, and a flag that renders as two letters in a box
+ *  is worse than the two letters. */
+export function exitReadout(p: ExitProbe): { primary: string; secondary: string | null } | null {
+  switch (p.status) {
+    case "off":
+      return null;
+    case "checking":
+      return { primary: "checking exit…", secondary: null };
+    case "failed":
+      return { primary: "exit unknown", secondary: p.reason };
+    case "ok": {
+      const place = [p.info.city, p.info.country].filter(Boolean).join(", ");
+      const org = p.info.org.replace(/^AS\d+\s+/, "");
+      return { primary: p.info.ip, secondary: [place, org].filter(Boolean).join(" · ") || null };
+    }
+  }
 }

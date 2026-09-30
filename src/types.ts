@@ -193,3 +193,12 @@ export interface RuleSetDef {
   format: "binary" | "source";
   source: RuleSetSource;
 }
+
+/** Mirrors `tunnel::exit::ExitInfo`. */
+export interface ExitInfo {
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  org: string;
+}

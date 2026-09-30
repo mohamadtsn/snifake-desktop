@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ExitProbe } from "@/lib/exitProbe";
 import { ActivitySection } from "@/components/ActivitySection";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -81,6 +82,8 @@ export function TelemetryTab({
   rate,
   total,
   frozenSince,
+  exit,
+  onRecheckExit,
   systemProxyBlocked,
   tunBlocked,
   tunnelMode,
@@ -111,6 +114,8 @@ export function TelemetryTab({
   rate: Rate;
   total: { up: number; down: number } | null;
   frozenSince: number | null;
+  exit: ExitProbe;
+  onRecheckExit: () => void;
   /** `sysproxy_support()`: `null` when this desktop can be written to. */
   systemProxyBlocked: string | null;
   /** `tun_support()`: `null` when TUN can run on this machine. */
@@ -174,6 +179,8 @@ export function TelemetryTab({
         rate={rate}
         total={total}
         frozenSince={frozenSince}
+        exit={exit}
+        onRecheckExit={onRecheckExit}
       />
 
       <Card>

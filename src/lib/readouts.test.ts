@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeRoute,
   endpointLabel,
+  exitReadout,
   tunnelInbound,
   listenAddress,
   logBufferLabel,
@@ -203,4 +204,22 @@ describe("tunnelInbound", () => {
   it("has nothing to say before the store loads", () => {
     expect(tunnelInbound(null)).toBeNull();
   });
+});
+
+describe("exitReadout", () => {
+  const info = { ip: "185.1.2.3", city: "Frankfurt am Main", region: "Hesse", country: "DE", org: "AS24940 Hetzner Online GmbH" };
+  it("says nothing when off", () => expect(exitReadout({ status: "off" })).toBeNull());
+  it("says it is checking", () => expect(exitReadout({ status: "checking" })?.primary).toBe("checking exit…"));
+  it("shows address, place and network without the AS number", () =>
+    expect(exitReadout({ status: "ok", info })).toEqual({
+      primary: "185.1.2.3", secondary: "Frankfurt am Main, DE · Hetzner Online GmbH",
+    }));
+  it("admits it does not know", () =>
+    expect(exitReadout({ status: "failed", reason: "x" })).toEqual({ primary: "exit unknown", secondary: "x" }));
+});
+
+it("TUN's footer slot shows the exit once known", () => {
+  const t = { mode: "tun", proxy_host: "127.0.0.1", proxy_port: 2080 } as never;
+  expect(tunnelInbound(t)).toBe("virtual interface");
+  expect(tunnelInbound(t, { ip: "185.1.2.3", city: "", region: "", country: "DE", org: "" })).toBe("exit 185.1.2.3 · DE");
 });

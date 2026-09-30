@@ -2,6 +2,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
+import type { ExitProbe } from "@/lib/exitProbe";
+import { exitReadout } from "@/lib/readouts";
 import { formatRate, formatTotal, type Rate } from "@/lib/traffic";
 import { formatUptime } from "@/types";
 import type { ProxyState, TunnelState } from "@/types";
@@ -41,6 +43,9 @@ function StageTile({
   meterLabel,
   meterTitle,
   badge,
+  sub,
+  subTitle,
+  onSub,
 }: {
   index: 1 | 2;
   tone: Tone;
@@ -55,6 +60,11 @@ function StageTile({
   meterLabel?: string;
   meterTitle?: string;
   badge?: string;
+  /** A second fact under the name: the tunnel's exit. */
+  sub?: string | null;
+  subTitle?: string;
+  /** Makes `sub` a button: check again. */
+  onSub?: () => void;
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3 rounded-md border border-hairline bg-inset px-[14px] py-[11px]">
@@ -65,6 +75,22 @@ function StageTile({
           <Badge tone={badge ? "warn" : "neutral"}>{badge ?? `Stage ${index}`}</Badge>
         </div>
         <p className="mt-[1px] truncate text-body text-t2">{name}</p>
+        {sub ? (
+          onSub ? (
+            <button
+              type="button"
+              onClick={onSub}
+              title={subTitle}
+              className="mono mt-[1px] block max-w-full truncate text-left text-note text-t2 hover:text-t1"
+            >
+              {sub}
+            </button>
+          ) : (
+            <p className="mono mt-[1px] truncate text-note text-t2" title={subTitle}>
+              {sub}
+            </p>
+          )
+        ) : null}
       </div>
       <div className="shrink-0 text-right">
         <p className="mono truncate text-note text-t3">{detail}</p>
@@ -113,6 +139,8 @@ export function StagePipeline({
   rate,
   total,
   frozenSince,
+  exit,
+  onRecheckExit,
 }: {
   state: ProxyState;
   since: number | null;
@@ -128,7 +156,11 @@ export function StagePipeline({
   total: { up: number; down: number } | null;
   /** How long the link had been up when it faulted, in ms. */
   frozenSince: number | null;
+  /** Where the tunnel comes out, as ipinfo.io saw it through the tunnel. */
+  exit: ExitProbe;
+  onRecheckExit: () => void;
 }) {
+  const exitLine = exitReadout(exit);
   const linkTone: Tone =
     state === "running" ? "ok" : state === "starting" ? "warn" : state === "error" ? "bad" : "off";
 
@@ -218,6 +250,13 @@ export function StagePipeline({
             // would be a second source that can disagree with this one.
             meterTitle="Total bytes relayed since the SNI link started. The tunnel dials that listener, so its traffic is counted here."
             badge={!hasTunnel ? "no tunnel" : !coreInstalled ? "core required" : undefined}
+            sub={exitLine ? [exitLine.primary, exitLine.secondary].filter(Boolean).join(" · ") : null}
+            subTitle={
+              exit.status === "failed"
+                ? exit.reason
+                : "Seen by ipinfo.io through the tunnel. Click to check again."
+            }
+            onSub={exit.status === "ok" || exit.status === "failed" ? onRecheckExit : undefined}
           />
         </div>
       </div>

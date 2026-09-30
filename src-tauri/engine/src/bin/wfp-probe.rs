@@ -1,22 +1,25 @@
-//! Standalone diagnostic probe for Windows Filtering Platform (WFP) and TUN.
-//! Run elevated: `wfp-probe.exe run` or `wfp-probe.exe purge`
-
-#![cfg(windows)]
-
-use std::ptr;
-use windows_sys::core::GUID;
-use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HANDLE};
-use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::*;
-use windows_sys::Win32::System::Rpc::RPC_C_AUTHN_DEFAULT;
-
-pub const PROBE_SUBLAYER_GUID: GUID = GUID {
-    data1: 0x534e4946,
-    data2: 0x5455,
-    data3: 0x4e00,
-    data4: [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x01],
-};
-
+#[cfg(not(windows))]
 fn main() {
+    eprintln!("wfp-probe is Windows-only");
+}
+
+#[cfg(windows)]
+mod win {
+    use std::ptr;
+    use windows_sys::core::GUID;
+    use windows_sys::Win32::Foundation::{ERROR_SUCCESS, HANDLE};
+    use windows_sys::Win32::NetworkManagement::WindowsFilteringPlatform::*;
+    use windows_sys::Win32::System::Rpc::RPC_C_AUTHN_DEFAULT;
+
+    pub const PROBE_SUBLAYER_GUID: GUID = GUID {
+        data1: 0x534e4946,
+        data2: 0x5455,
+        data3: 0x4e00,
+        data4: [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x01],
+    };
+
+    pub fn main() {
+
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("help");
 
@@ -139,3 +142,11 @@ fn purge_probe() {
         }
     }
 }
+}
+
+#[cfg(windows)]
+fn main() {
+    win::main();
+}
+
+

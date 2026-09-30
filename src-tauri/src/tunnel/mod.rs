@@ -7,6 +7,7 @@ pub mod core;
 pub mod download;
 pub mod generate;
 pub mod import;
+pub mod interfaces;
 pub mod model;
 pub mod rules;
 pub mod tun;

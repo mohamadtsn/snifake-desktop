@@ -104,6 +104,7 @@ pub enum Applied {
     Traffic(u64, u64),
     Link(String),
     Tunnel(String, Option<String>, bool),
+    Passthrough(Vec<snifake_engine::proto::PassthroughStatus>),
 }
 
 /// Folds one engine event into the log buffer and says what it changed.
@@ -137,8 +138,7 @@ fn apply_event(ev: &Event, logs: &Arc<LogBuffer>) -> Applied {
         // and one line a second would evict the user's whole log in eight
         // minutes. This is instrument data, not a log.
         Event::Traffic { up, down } => Applied::Traffic(*up, *down),
-        // ponytail: surfaced to the frontend in Task 8.
-        Event::Passthrough { .. } => Applied::Nothing,
+        Event::Passthrough { items } => Applied::Passthrough(items.clone()),
     }
 }
 
@@ -416,6 +416,9 @@ impl EngineHost {
                             Applied::Traffic(up, down) => {
                                 let _ = handle.emit("traffic", (up, down));
                             }
+                            Applied::Passthrough(items) => {
+                                let _ = handle.emit("passthrough-status", items);
+                            }
                             Applied::Tunnel(state, detail, blocking) => {
                                 if state == "fault" {
                                     // The tunnel is gone; the proxy pointing
@@ -643,4 +646,10 @@ mod tests {
         assert!(!host.connected());
         assert!(host.writer.is_none(), "a dead writer is dropped, not kept");
     }
-}
+
+    #[test]
+    fn a_passthrough_report_is_relayed() {
+        let logs = Arc::new(LogBuffer::new());
+        let got = apply_event(&Event::Passthrough { items: vec![] }, &logs);
+        assert_eq!(got, Applied::Passthrough(vec![]));
+    }}

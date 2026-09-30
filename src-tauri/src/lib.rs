@@ -252,6 +252,12 @@ fn set_active_tunnel(
     Ok(store.clone())
 }
 
+/// VPN-shaped interfaces the Sockets picker offers as coexisting VPNs.
+#[tauri::command]
+fn list_interfaces() -> Vec<tunnel::interfaces::Candidate> {
+    tunnel::interfaces::list()
+}
+
 /// Mode, proxy port and the three lists, saved as one unit — they are
 /// edited on one screen and validated together.
 ///
@@ -279,6 +285,15 @@ fn save_routing(
             let (i, msg) = &errs[0];
             return Err(format!("{name} list, line {}: {msg}", i + 1));
         }
+    }
+    if routing.passthrough.len() > snifake_engine::validate::MAX_PASSTHROUGH {
+        return Err(format!(
+            "At most {} VPNs can run beside the tunnel.",
+            snifake_engine::validate::MAX_PASSTHROUGH
+        ));
+    }
+    for name in &routing.passthrough {
+        tunnel::interfaces::validate_interface(name)?;
     }
     let mut store = state.tunnels.lock().unwrap();
     store.mode = mode;
@@ -418,8 +433,8 @@ fn start_tunnel(
         listen_host: link.listen_host.clone(),
         tun: is_tun.then(|| snifake_engine::proto::TunSpec {
             allow_lan: tunnels.routing.allow_lan,
-            kill_switch: true,
-            passthrough: vec![],
+            kill_switch: tunnels.routing.kill_switch,
+            passthrough: tunnels.routing.passthrough.clone(),
         }),
     };
 
@@ -516,6 +531,7 @@ pub fn run() {
             set_verbose,
             get_log_buffer,
             shutdown_engine,
+            list_interfaces,
             sysproxy_support,
             apply_system_proxy,
             clear_system_proxy,

@@ -1,0 +1,16 @@
+{
+  "_comment": "Interface-name parity: src/lib/passthrough.test.ts and src-tauri/src/tunnel/interfaces.rs. ok=false must be REJECTED.",
+  "names": [
+    { "value": "wg0", "ok": true },
+    { "value": "priv", "ok": true },
+    { "value": "tun-home.1", "ok": true },
+    { "value": "throne-tun", "ok": true },
+    { "value": "", "ok": false },
+    { "value": "wg*", "ok": false },
+    { "value": "wg 0", "ok": false },
+    { "value": "wg0\"", "ok": false },
+    { "value": "a-name-longer-than-15", "ok": false },
+    { "value": "snifake-tun0", "ok": false },
+    { "value": "lo", "ok": false }
+  ]
+}

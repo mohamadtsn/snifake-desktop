@@ -97,6 +97,12 @@ pub struct Routing {
     /// Allow LAN/link-local straight out. On by default so the home
     /// router and the printer keep working.
     pub allow_lan: bool,
+    /// TUN only. Off: nothing is dropped, so traffic the TUN does not carry
+    /// leaves directly and a failed tunnel can leak.
+    pub kill_switch: bool,
+    /// TUN only. Interfaces of VPNs that must keep working beside it. The
+    /// engine discovers their routes and servers.
+    pub passthrough: Vec<String>,
 }
 
 impl Default for Routing {
@@ -109,6 +115,8 @@ impl Default for Routing {
             default_route: DefaultRoute::Proxy,
             block_quic: true,
             allow_lan: true,
+            kill_switch: true,
+            passthrough: Vec::new(),
         }
     }
 }
@@ -218,4 +226,10 @@ mod tests {
         let store: TunnelStore = serde_json::from_str(stored).unwrap();
         assert_eq!(store.mode, TunnelMode::Manual, "an existing choice must not be overwritten");
     }
-}
+
+    #[test]
+    fn an_old_tunnels_json_keeps_the_kill_switch_on() {
+        let s: TunnelStore = serde_json::from_str(r#"{"routing":{"allow_lan":true}}"#).unwrap();
+        assert!(s.routing.kill_switch);
+        assert!(s.routing.passthrough.is_empty());
+    }}

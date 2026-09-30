@@ -265,6 +265,14 @@ fn ready(probe: &ReadyProbe) -> bool {
             Err(_) => false,
         },
         #[cfg(windows)]
+        ReadyProbe::Interface { name } => {
+            use windows_sys::Win32::Foundation::NO_ERROR;
+            use windows_sys::Win32::NetworkManagement::IpHelper::ConvertInterfaceAliasToLuid;
+            let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            let mut luid = unsafe { std::mem::zeroed() };
+            unsafe { ConvertInterfaceAliasToLuid(wide.as_ptr(), &mut luid) == NO_ERROR }
+        }
+        #[cfg(all(not(unix), not(windows)))]
         ReadyProbe::Interface { .. } => false,
     }
 }
@@ -391,6 +399,15 @@ mod tests {
     fn an_interface_probe_finds_loopback_and_gives_up_on_a_name_that_cannot_exist() {
         let ok = ReadyProbe::Interface { name: "lo".into() };
         assert!(wait_ready(&ok, Duration::from_secs(1), || false).is_ok());
+        let nope = ReadyProbe::Interface {
+            name: "snifake-nope0".into(),
+        };
+        assert!(wait_ready(&nope, Duration::from_millis(200), || false).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_interface_probe_gives_up_on_a_name_that_cannot_exist() {
         let nope = ReadyProbe::Interface {
             name: "snifake-nope0".into(),
         };

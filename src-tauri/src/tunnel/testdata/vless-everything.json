@@ -91,6 +91,13 @@
     "final": "direct",
     "rule_set": [
       {
+        "download_detour": "direct",
+        "format": "source",
+        "tag": "my-list",
+        "type": "remote",
+        "url": "https://example.org/my-list.json"
+      },
+      {
         "download_detour": "proxy",
         "format": "binary",
         "tag": "geoip-ir",
@@ -197,6 +204,12 @@
         "outbound": "proxy",
         "port": [
           8080
+        ]
+      },
+      {
+        "outbound": "proxy",
+        "rule_set": [
+          "my-list"
         ]
       },
       {

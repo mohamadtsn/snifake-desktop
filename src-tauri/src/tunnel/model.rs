@@ -78,6 +78,33 @@ impl TunnelProfile {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum RuleSetFormat {
+    /// `.srs`
+    Binary,
+    /// `.json`
+    Source,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum RuleSetSource {
+    /// Downloaded by the core, through `detour`, and cached (Task 12).
+    Remote { url: String, detour: DefaultRoute },
+    /// A file `import_rule_set` copied into `rulesets::dir()`. Absolute, so
+    /// generation stays a pure function of the store.
+    Local { path: String },
+}
+
+/// A rule set the user added. Its tag is what a `ruleset:` line names.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct RuleSetDef {
+    pub tag: String,
+    pub format: RuleSetFormat,
+    pub source: RuleSetSource,
+}
+
 /// Routing policy. Global rather than per-tunnel: users change servers
 /// often and policy rarely, so binding them means every server switch
 /// silently changes the rules.
@@ -103,6 +130,10 @@ pub struct Routing {
     /// TUN only. Interfaces of VPNs that must keep working beside it. The
     /// engine discovers their routes and servers.
     pub passthrough: Vec<String>,
+    /// Rule sets the user added, by URL or file. A `ruleset:` line names
+    /// one by tag; an undefined `geosite-*`/`geoip-*` tag falls back to
+    /// SagerNet's.
+    pub rule_sets: Vec<RuleSetDef>,
 }
 
 impl Default for Routing {
@@ -117,6 +148,7 @@ impl Default for Routing {
             allow_lan: true,
             kill_switch: true,
             passthrough: Vec::new(),
+            rule_sets: Vec::new(),
         }
     }
 }

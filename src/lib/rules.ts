@@ -99,9 +99,9 @@ function validate(kind: RuleKind, value: string): string | null {
         ? null
         : `Network must be "tcp" or "udp", not "${value}".`;
     case "rule_set":
-      return value.startsWith("geosite-") || value.startsWith("geoip-")
+      return isRuleSetTag(value)
         ? null
-        : `Unknown rule set "${value}". Tags must start with "geosite-" or "geoip-".`;
+        : `"${value}" is not a rule set tag. Use letters, digits and . _ @ ! -`;
     default:
       return null;
   }
@@ -125,4 +125,9 @@ export function validateRuleList(lines: string[]): (string | null)[] {
     const got = parseRuleLine(line);
     return got.ok ? null : got.error;
   });
+}
+
+/** Same as `rules::valid_tag`. */
+export function isRuleSetTag(v: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._@!-]{0,63}$/.test(v);
 }

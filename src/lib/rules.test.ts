@@ -69,9 +69,10 @@ describe("parseRuleLine", () => {
     expect(parseRuleLine("network:tcp").ok).toBe(true);
   });
 
-  it("rejects a rule set outside the two official repositories", () => {
-    expect(parseRuleLine("ruleset:my-own-set").ok).toBe(false);
+  it("accepts any well-formed rule set tag; whether it resolves is checked at save", () => {
+    expect(parseRuleLine("ruleset:my-own-set").ok).toBe(true);
     expect(parseRuleLine("ruleset:geoip-ir").ok).toBe(true);
+    expect(parseRuleLine("ruleset:bad tag").ok).toBe(false);
   });
 });
 

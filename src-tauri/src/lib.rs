@@ -286,6 +286,11 @@ fn save_routing(
             return Err(format!("{name} list, line {}: {msg}", i + 1));
         }
     }
+    tunnel::rulesets::validate(
+        &routing.rule_sets,
+        &[&routing.block, &routing.bypass, &routing.proxy],
+        &tunnel::rulesets::dir(),
+    )?;
     if routing.passthrough.len() > snifake_engine::validate::MAX_PASSTHROUGH {
         return Err(format!(
             "At most {} VPNs can run beside the tunnel.",

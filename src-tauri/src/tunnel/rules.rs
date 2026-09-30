@@ -135,9 +135,9 @@ fn validate(kind: RuleKind, value: &str) -> Result<(), String> {
             }
         }
         RuleKind::RuleSet => {
-            if rule_set_source(value).is_none() {
+            if !valid_tag(value) {
                 return Err(format!(
-                    "Unknown rule set \"{value}\". Tags must start with \"geosite-\" or \"geoip-\"."
+                    "\"{value}\" is not a rule set tag. Use letters, digits and . _ @ ! -"
                 ));
             }
         }
@@ -228,6 +228,16 @@ pub fn to_rule_objects(entries: &[RuleEntry], action: RuleAction) -> Vec<Value> 
 /// The `route.rule_set` source entry for a tag. Only the two official
 /// SagerNet repositories can be resolved to a URL, so anything else is
 /// rejected at parse time rather than failing at start.
+/// Tag syntax only. Whether it resolves depends on the user's definitions;
+/// that is `rulesets::validate`'s question.
+pub fn valid_tag(tag: &str) -> bool {
+    let b = tag.as_bytes();
+    !b.is_empty()
+        && b.len() <= 64
+        && b[0].is_ascii_alphanumeric()
+        && b.iter().all(|c| c.is_ascii_alphanumeric() || b"._@!-".contains(c))
+}
+
 pub fn rule_set_source(tag: &str) -> Option<Value> {
     let repo = if tag.starts_with("geosite-") {
         "sing-geosite"

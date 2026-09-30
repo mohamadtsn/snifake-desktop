@@ -8,7 +8,7 @@
 //! Three of them are what stop the tunnel from swallowing the SNI engine's
 //! own upstream connection; see the design spec §6.
 
-use super::model::{DefaultRoute, Protocol, TunnelMode, TunnelProfile, TunnelStore};
+use super::model::{DefaultRoute, Protocol, Routing, TunnelMode, TunnelProfile, TunnelStore};
 use super::rules::{parse_list, rule_set_source, to_rule_objects, RuleAction, RuleEntry, RuleKind};
 use serde_json::{json, Map, Value};
 use snifake_engine::proto::Profile;
@@ -60,7 +60,7 @@ pub fn generate(
         "default_domain_resolver".into(),
         json!({ "server": "local" }),
     );
-    if let Some(sets) = rule_sets(&[&block, &bypass, &proxy]) {
+    if let Some(sets) = rule_sets(&store.routing, &[&block, &bypass, &proxy])? {
         route.insert("rule_set".into(), sets);
     }
 
@@ -129,21 +129,29 @@ fn guards(store: &TunnelStore, link: &Profile) -> Vec<Value> {
     out
 }
 
-fn rule_sets(lists: &[&Vec<RuleEntry>]) -> Option<Value> {
-    let mut tags: Vec<String> = lists
+/// Every user definition (the raw block may use one no list names), then
+/// the SagerNet fallback for each named tag no definition covers.
+fn rule_sets(routing: &Routing, lists: &[&Vec<RuleEntry>]) -> Result<Option<Value>, String> {
+    let defs = &routing.rule_sets;
+    let mut out: Vec<Value> = defs.iter().map(super::rulesets::source_of).collect();
+    let mut tags: Vec<&str> = lists
         .iter()
         .flat_map(|l| l.iter())
         .filter(|e| e.kind == RuleKind::RuleSet)
-        .map(|e| e.value.clone())
+        .map(|e| e.value.as_str())
         .collect();
     tags.sort();
     tags.dedup();
-    if tags.is_empty() {
-        return None;
+    for tag in tags {
+        if defs.iter().any(|d| d.tag == tag) {
+            continue;
+        }
+        match rule_set_source(tag) {
+            Some(src) => out.push(src),
+            None => return Err(super::rulesets::unresolved(tag, defs).unwrap_or_default()),
+        }
     }
-    Some(Value::Array(
-        tags.iter().filter_map(|t| rule_set_source(t)).collect(),
-    ))
+    Ok((!out.is_empty()).then_some(Value::Array(out)))
 }
 
 /// Only domain-shaped entries can be decided at DNS time; a port or a
@@ -681,6 +689,23 @@ mod tests {
     }
 
     #[test]
+    fn a_user_definition_overrides_the_sagernet_fallback() {
+        use crate::tunnel::model::{RuleSetDef, RuleSetFormat, RuleSetSource};
+        let mut store = TunnelStore::default();
+        store.routing.bypass = vec!["ruleset:geoip-ir".into()];
+        store.routing.rule_sets = vec![RuleSetDef {
+            tag: "geoip-ir".into(),
+            format: RuleSetFormat::Binary,
+            source: RuleSetSource::Remote { url: "https://example.org/geoip-ir.srs".into(), detour: DefaultRoute::Direct },
+        }];
+        let cfg = generate(&tunnel(), &store, &link()).unwrap();
+        let sets = cfg["route"]["rule_set"].as_array().unwrap();
+        assert_eq!(sets.len(), 1);
+        assert_eq!(sets[0]["url"], json!("https://example.org/geoip-ir.srs"));
+        assert_eq!(sets[0]["download_detour"], json!("direct"));
+    }
+
+    #[test]
     fn a_config_using_every_feature_matches_its_golden_snapshot() {
         // The two snapshots above are both `TunnelStore::default()`: empty
         // lists, no rule sets, no raw block. Those are the paths a real user
@@ -713,6 +738,15 @@ mod tests {
         store.routing.raw = Some(json!([
             { "domain_suffix": ["hand-written.example"], "outbound": "direct" }
         ]));
+        store.routing.rule_sets = vec![crate::tunnel::model::RuleSetDef {
+            tag: "my-list".into(),
+            format: crate::tunnel::model::RuleSetFormat::Source,
+            source: crate::tunnel::model::RuleSetSource::Remote {
+                url: "https://example.org/my-list.json".into(),
+                detour: DefaultRoute::Direct,
+            },
+        }];
+        store.routing.proxy.push("ruleset:my-list".into());
         assert_golden(
             "vless-everything.json",
             &generate(&tunnel(), &store, &link()).unwrap(),

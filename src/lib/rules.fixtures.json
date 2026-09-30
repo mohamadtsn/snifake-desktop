@@ -44,6 +44,10 @@
     { "line": "ip:not-an-ip",             "kind": null },
     { "line": "regex:[unclosed",          "kind": null },
     { "line": "network:sctp",             "kind": null },
-    { "line": "ruleset:my-custom-set",    "kind": null }
+    { "line": "ruleset:my-custom-set",    "kind": "rule_set" },
+    { "line": "ruleset:geosite-geolocation-!cn", "kind": "rule_set" },
+    { "line": "ruleset:geosite-google@cn",       "kind": "rule_set" },
+    { "line": "ruleset:bad tag",                 "kind": null },
+    { "line": "ruleset:-leading",                "kind": null }
   ]
 }

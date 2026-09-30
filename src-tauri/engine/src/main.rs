@@ -129,8 +129,44 @@ fn main() {
     // lowered after it stops, and kept across a core crash.
     let mut guard: Option<TunGuard> = None;
 
-    for line in reader.lines() {
-        let Ok(line) = line else { break };
+    enum Input {
+        Line(String),
+        Tick,
+        Closed,
+    }
+    let (tx, rx) = std::sync::mpsc::channel::<Input>();
+    {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            for line in reader.lines() {
+                let Ok(line) = line else { break };
+                if tx.send(Input::Line(line)).is_err() {
+                    return;
+                }
+            }
+            let _ = tx.send(Input::Closed);
+        });
+    }
+    // ponytail: a fixed 5 s poll of `ip`/`wg`, only while a TUN guard with
+    // named VPNs exists. Netlink monitoring would be instant but linked.
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        if tx.send(Input::Tick).is_err() {
+            return;
+        }
+    });
+
+    for input in rx {
+        let line = match input {
+            Input::Closed => break,
+            Input::Tick => {
+                if let Some(g) = guard.as_mut() {
+                    refresh_passthrough(g, &out, false);
+                }
+                continue;
+            }
+            Input::Line(line) => line,
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -250,7 +286,8 @@ fn main() {
                 // After the guard, never before it: the GUI deletes its
                 // crash marker on an event that says the guard is down.
                 tunnel_state(&out, "starting", None, guard.is_some());
-                let started = start_tunnel(&spec, &out, verbose.clone(), guard.is_some()).and_then(|t| {
+                let enforced = guard.as_ref().is_some_and(|g| g.allow().enforce);
+                let started = start_tunnel(&spec, &out, verbose.clone(), guard.is_some(), enforced).and_then(|t| {
                     if let Some(g) = guard.as_mut() {
                         if let Err(e) = g.permit_interface(tunpin::INTERFACE_NAME) {
                             t.stop();
@@ -262,6 +299,9 @@ fn main() {
                 match started {
                     Ok(t) => {
                         tunnel = Some(t);
+                        if let Some(g) = guard.as_mut() {
+                            refresh_passthrough(g, &out, true);
+                        }
                         tunnel_state(&out, "active", None, guard.is_some());
                     }
                     Err(e) => {
@@ -332,7 +372,8 @@ fn start_tunnel(
     spec: &TunnelSpec,
     out: &Out,
     verbose: Arc<AtomicBool>,
-    tun: bool,
+    guarded: bool,
+    enforced: bool,
 ) -> Result<TunnelSupervisor, String> {
     let sink = out.clone();
     let log: LogFn = Arc::new(move |level, msg| {
@@ -343,14 +384,29 @@ fn start_tunnel(
     });
     let exit_out = out.clone();
     let on_exit: ExitFn = Box::new(move || {
-        let detail = if tun {
+        let detail = if enforced {
             "The core exited. Traffic stays blocked until you stop or restart the tunnel."
         } else {
             "The core exited."
         };
-        tunnel_state(&exit_out, "fault", Some(detail.into()), tun);
+        // `guarded`, not `enforced`: `strict_route` rules can outlive a
+        // killed core, so Restore network is still the way out.
+        tunnel_state(&exit_out, "fault", Some(detail.into()), guarded);
     });
     TunnelSupervisor::start(spec, log, on_exit)
+}
+
+/// Re-discovers coexisting VPNs and reports what changed (or everything,
+/// when `force`d).
+fn refresh_passthrough(g: &mut TunGuard, out: &Out, force: bool) {
+    match g.refresh(force) {
+        Ok(Some(items)) => out.send(&Event::Passthrough { items }),
+        Ok(None) => {}
+        Err(e) => out.send(&Event::Log {
+            level: LogLevel::Warn,
+            msg: format!("[tunnel] coexisting VPNs: {e}"),
+        }),
+    }
 }
 
 fn raise_or_retarget(guard: &mut Option<TunGuard>, spec: &TunnelSpec) -> Result<(), String> {

@@ -252,6 +252,12 @@ fn set_active_tunnel(
     Ok(store.clone())
 }
 
+/// Copies a user's .srs/.json rule set into the app's own directory.
+#[tauri::command]
+fn import_rule_set(path: String, tag: String) -> Result<tunnel::model::RuleSetDef, String> {
+    tunnel::rulesets::import_into(std::path::Path::new(&path), &tag, &tunnel::rulesets::dir())
+}
+
 /// VPN-shaped interfaces the Sockets picker offers as coexisting VPNs.
 #[tauri::command]
 fn list_interfaces() -> Vec<tunnel::interfaces::Candidate> {
@@ -306,6 +312,7 @@ fn save_routing(
     store.proxy_port = proxy_port;
     store.routing = routing;
     tunnel::model::save(&store)?;
+    tunnel::rulesets::prune(&store.routing.rule_sets, &tunnel::rulesets::dir());
     Ok(store.clone())
 }
 
@@ -537,6 +544,7 @@ pub fn run() {
             get_log_buffer,
             shutdown_engine,
             list_interfaces,
+            import_rule_set,
             sysproxy_support,
             apply_system_proxy,
             clear_system_proxy,

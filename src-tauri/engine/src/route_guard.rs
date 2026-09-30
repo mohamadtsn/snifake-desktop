@@ -116,6 +116,7 @@ pub fn purge() -> Result<(), String> {
         let table = tunpin::IPROUTE2_TABLE.to_string();
         let _ = run(&bin, &[family, "route", "flush", "table", table.as_str()]);
     }
+    crate::passthrough::clear_rules(&bin);
     route
 }
 

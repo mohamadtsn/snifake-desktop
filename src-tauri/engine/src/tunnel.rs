@@ -88,14 +88,24 @@ impl TunnelSupervisor {
             format!("could not start the core: {e}")
         })?;
 
-        pump(child.stdout.take(), log.clone(), LogLevel::Info);
-        pump(child.stderr.take(), log.clone(), LogLevel::Warn);
+        // The sentence for a rule set whose first download failed, so a start
+        // that dies of it says so on the card rather than only in Activity.
+        let cause: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        pump(child.stdout.take(), log.clone(), LogLevel::Info, None);
+        let stderr = pump(child.stderr.take(), log.clone(), LogLevel::Warn, Some(cause.clone()));
 
-        if let Err(e) = wait_ready(&spec.ready_probe, READY_TIMEOUT) {
+        let ready = wait_ready(&spec.ready_probe, READY_TIMEOUT, || {
+            matches!(child.try_wait(), Ok(Some(_)))
+        });
+        if let Err(e) = ready {
             let _ = child.kill();
             let _ = child.wait();
             let _ = std::fs::remove_file(&config_path);
-            return Err(e);
+            // The pipe closed with the core, so the reader finishes promptly.
+            if let Some(h) = stderr {
+                let _ = h.join();
+            }
+            return Err(cause.lock().unwrap().take().unwrap_or(e));
         }
 
         let pid = child.id();
@@ -211,11 +221,20 @@ pub fn write_config(config: &Value, dir: &Path) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub fn wait_ready(probe: &ReadyProbe, timeout: Duration) -> Result<(), String> {
+/// `exited` says whether the core is already gone, so a start that died
+/// is reported at once and not as a readiness timeout.
+pub fn wait_ready(
+    probe: &ReadyProbe,
+    timeout: Duration,
+    mut exited: impl FnMut() -> bool,
+) -> Result<(), String> {
     let deadline = Instant::now() + timeout;
     loop {
         if ready(probe) {
             return Ok(());
+        }
+        if exited() {
+            return Err("the core exited during start; Activity has its last lines".into());
         }
         if Instant::now() > deadline {
             return Err(match probe {
@@ -266,17 +285,21 @@ fn pump<R: std::io::Read + Send + 'static>(
     stream: Option<R>,
     log: LogFn,
     level: LogLevel,
-) {
-    let Some(stream) = stream else { return };
-    std::thread::spawn(move || {
+    cause: Option<Arc<Mutex<Option<String>>>>,
+) -> Option<std::thread::JoinHandle<()>> {
+    let stream = stream?;
+    Some(std::thread::spawn(move || {
         for line in BufReader::new(stream).lines().map_while(Result::ok) {
             let failure = rule_set_failure(&line);
             log(level, format!("[tunnel] {line}"));
             if let Some(msg) = failure {
                 log(LogLevel::Error, format!("[tunnel] {msg}"));
+                if let Some(c) = &cause {
+                    *c.lock().unwrap() = Some(msg);
+                }
             }
         }
-    });
+    }))
 }
 
 #[cfg(test)]
@@ -343,7 +366,7 @@ mod tests {
             host: "127.0.0.1".into(),
             port,
         };
-        assert!(wait_ready(&probe, Duration::from_secs(2)).is_ok());
+        assert!(wait_ready(&probe, Duration::from_secs(2), || false).is_ok());
     }
 
     #[test]
@@ -358,7 +381,7 @@ mod tests {
             port,
         };
         let started = std::time::Instant::now();
-        let err = wait_ready(&probe, Duration::from_millis(300)).unwrap_err();
+        let err = wait_ready(&probe, Duration::from_millis(300), || false).unwrap_err();
         assert!(err.contains("did not become ready"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(3), "it must give up promptly");
     }
@@ -367,11 +390,11 @@ mod tests {
     #[test]
     fn an_interface_probe_finds_loopback_and_gives_up_on_a_name_that_cannot_exist() {
         let ok = ReadyProbe::Interface { name: "lo".into() };
-        assert!(wait_ready(&ok, Duration::from_secs(1)).is_ok());
+        assert!(wait_ready(&ok, Duration::from_secs(1), || false).is_ok());
         let nope = ReadyProbe::Interface {
             name: "snifake-nope0".into(),
         };
-        assert!(wait_ready(&nope, Duration::from_millis(200)).is_err());
+        assert!(wait_ready(&nope, Duration::from_millis(200), || false).is_err());
     }
 
     /// The one test that exercises the whole supervisor against the real
@@ -474,5 +497,17 @@ mod tests {
             Some("The rule set \"geoip-ir\" could not be downloaded, and there is no cached copy yet. Check its URL or switch its download to Direct.")
         );
         assert_eq!(rule_set_failure("some other line"), None);
+    }
+
+    #[test]
+    fn a_core_that_exits_during_start_is_reported_at_once() {
+        // A rule set that cannot be downloaded makes sing-box exit in under
+        // a second; waiting out the whole timeout would then blame the
+        // interface, which is the wrong cause.
+        let probe = ReadyProbe::Interface { name: "snifake-none0".into() };
+        let started = std::time::Instant::now();
+        let err = wait_ready(&probe, Duration::from_secs(10), || true).unwrap_err();
+        assert!(err.contains("exited"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 }

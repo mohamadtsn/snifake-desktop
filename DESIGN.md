@@ -452,10 +452,11 @@ Org`; in TUN the footer's tunnel slot shows `exit IP · CC` in place of
 `virtual interface`, since TUN opens no port to show. Its absent cases are
 words: `checking exit…` while it waits, `exit unknown` once it gives up, and
 nothing at all when the preference is off. A failed periodic refresh keeps
-the last good reading; a new run never shows the previous run's exit. The
-country is its two-letter code, not a flag: WebKitGTK has no guaranteed
-emoji font, and a flag drawn as two letters in a box is worse than the two
-letters.
+the last good reading; a new run never shows the previous run's exit. Rather
+than relying on system emoji fonts (which WebKitGTK renders as letters in a
+box), the GUI bundles vector SVG flags from `country-flag-icons` in
+`CountryFlag.tsx`, rendering crisp 3:2 flags with subtle dark-mode borders
+both in the Upstream stage tile and in TUN mode's footer endpoint.
 
 ---
 
@@ -522,6 +523,15 @@ the reason is in the row.
 ---
 
 ## 8. Decision log
+
+**2026-09-30 — Bundled SVG country flags for exit IP.** WebKitGTK has no
+guaranteed emoji flag font, so Unicode emoji flags previously failed to
+render. `CountryFlag` bundles vector SVG flags from `country-flag-icons` (3:2
+proportions, subtle hairline border to separate dark/white flags from the
+background, and `rounded-[2px]`). Displayed alongside the exit IP in the
+Upstream tunnel stage tile and in the TUN footer slot. `src/lib/countries.ts`
+provides region name resolution via `Intl.DisplayNames` and exports the full
+supported country list.
 
 **2026-09-30 — Rule editor suggestions.** A row of chips under the
 toolbar completes the prefix being typed, a rule set tag after `ruleset:`,

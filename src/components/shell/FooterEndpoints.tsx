@@ -1,4 +1,6 @@
+import { CountryFlag } from "@/components/ui/CountryFlag";
 import { Icon } from "@/components/ui/Icon";
+import { countryName } from "@/lib/countries";
 import { endpointLabel } from "@/lib/readouts";
 
 /**
@@ -21,13 +23,23 @@ export function FooterEndpoints({
   tunnel,
   tunnelLive,
   tunnelRemote,
+  exitCountry,
 }: {
   link: string | null;
   linkLive: boolean;
   tunnel: string | null;
   tunnelLive: boolean;
   tunnelRemote: string | null;
+  exitCountry?: string | null;
 }) {
+  const isExitReading = tunnel?.startsWith("exit ");
+  const countryFull = exitCountry ? countryName(exitCountry) : null;
+  const egressTitle = tunnelRemote
+    ? `Tunnel egress · ${tunnelRemote}${countryFull ? ` (${countryFull})` : ""}`
+    : countryFull
+      ? `Tunnel egress · ${countryFull}`
+      : "Tunnel egress";
+
   return (
     <div className="flex min-w-0 items-center gap-4">
       <span className="flex min-w-0 items-center gap-[6px]" title="SNI link inbound">
@@ -35,11 +47,11 @@ export function FooterEndpoints({
         <span className="mono truncate text-note text-t2">{endpointLabel(link)}</span>
       </span>
       <span className="h-[12px] w-px shrink-0 bg-hairline" aria-hidden />
-      <span
-        className="flex min-w-0 items-center gap-[6px]"
-        title={tunnelRemote ? `Tunnel egress · ${tunnelRemote}` : "Tunnel egress"}
-      >
+      <span className="flex min-w-0 items-center gap-[6px]" title={egressTitle}>
         <Icon name="vpn_lock" size={13} className={tunnelLive ? "text-ok" : "text-t3"} />
+        {isExitReading && exitCountry ? (
+          <CountryFlag code={exitCountry} size="xs" />
+        ) : null}
         <span className="mono truncate text-note text-t2">{endpointLabel(tunnel)}</span>
       </span>
     </div>

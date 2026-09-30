@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
+import { CountryFlag } from "@/components/ui/CountryFlag";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
 import type { ExitProbe } from "@/lib/exitProbe";
@@ -61,7 +63,7 @@ function StageTile({
   meterTitle?: string;
   badge?: string;
   /** A second fact under the name: the tunnel's exit. */
-  sub?: string | null;
+  sub?: ReactNode;
   subTitle?: string;
   /** Makes `sub` a button: check again. */
   onSub?: () => void;
@@ -81,14 +83,17 @@ function StageTile({
               type="button"
               onClick={onSub}
               title={subTitle}
-              className="mono mt-[1px] block max-w-full truncate text-left text-note text-t2 hover:text-t1"
+              className="mono mt-[1px] flex max-w-full items-center gap-[6px] truncate text-left text-note text-t2 hover:text-t1"
             >
               {sub}
             </button>
           ) : (
-            <p className="mono mt-[1px] truncate text-note text-t2" title={subTitle}>
+            <div
+              className="mono mt-[1px] flex max-w-full items-center gap-[6px] truncate text-note text-t2"
+              title={subTitle}
+            >
               {sub}
-            </p>
+            </div>
           )
         ) : null}
       </div>
@@ -161,6 +166,15 @@ export function StagePipeline({
   onRecheckExit: () => void;
 }) {
   const exitLine = exitReadout(exit);
+  const exitText = exitLine ? [exitLine.primary, exitLine.secondary].filter(Boolean).join(" · ") : null;
+  const exitSub = exitText ? (
+    <>
+      {exit.status === "ok" && exit.info.country ? (
+        <CountryFlag code={exit.info.country} size="sm" />
+      ) : null}
+      <span className="truncate">{exitText}</span>
+    </>
+  ) : null;
   const linkTone: Tone =
     state === "running" ? "ok" : state === "starting" ? "warn" : state === "error" ? "bad" : "off";
 
@@ -250,7 +264,7 @@ export function StagePipeline({
             // would be a second source that can disagree with this one.
             meterTitle="Total bytes relayed since the SNI link started. The tunnel dials that listener, so its traffic is counted here."
             badge={!hasTunnel ? "no tunnel" : !coreInstalled ? "core required" : undefined}
-            sub={exitLine ? [exitLine.primary, exitLine.secondary].filter(Boolean).join(" · ") : null}
+            sub={exitSub}
             subTitle={
               exit.status === "failed"
                 ? exit.reason

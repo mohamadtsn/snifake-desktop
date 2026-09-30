@@ -21,6 +21,7 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
+    "country-flag-icons": "^1.6.20",
     "material-symbols": "^0.47.5",
     "motion": "^13.1.1",
     "react": "^19.1.0",

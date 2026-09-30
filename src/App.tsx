@@ -798,6 +798,7 @@ export default function App() {
         tunnel={tunnelInbound(tunnels, exit.status === "ok" ? exit.info : null)}
         tunnelLive={tunnelState === "active"}
         tunnelRemote={tunnels ? (activeTunnel(tunnels)?.remote_host ?? null) : null}
+        exitCountry={exit.status === "ok" ? exit.info.country : null}
         rate={rate}
       />
 

@@ -212,10 +212,16 @@ describe("exitReadout", () => {
   it("says it is checking", () => expect(exitReadout({ status: "checking" })?.primary).toBe("checking exit…"));
   it("shows address, place and network without the AS number", () =>
     expect(exitReadout({ status: "ok", info })).toEqual({
-      primary: "185.1.2.3", secondary: "Frankfurt am Main, DE · Hetzner Online GmbH",
+      primary: "185.1.2.3",
+      secondary: "Frankfurt am Main, DE · Hetzner Online GmbH",
+      country: "DE",
     }));
   it("admits it does not know", () =>
-    expect(exitReadout({ status: "failed", reason: "x" })).toEqual({ primary: "exit unknown", secondary: "x" }));
+    expect(exitReadout({ status: "failed", reason: "x" })).toEqual({
+      primary: "exit unknown",
+      secondary: "x",
+      country: null,
+    }));
 });
 
 it("TUN's footer slot shows the exit once known", () => {

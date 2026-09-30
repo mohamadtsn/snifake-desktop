@@ -109,21 +109,29 @@ export function tunnelInbound(tunnels: TunnelStore | null, exit?: ExitInfo | nul
   return `${tunnels.proxy_host}:${tunnels.proxy_port}`;
 }
 
-/** The tunnel's exit, in two lines. Country as its code: WebKitGTK has no
- *  guaranteed emoji font, and a flag that renders as two letters in a box
- *  is worse than the two letters. */
-export function exitReadout(p: ExitProbe): { primary: string; secondary: string | null } | null {
+/** The tunnel's exit, in two lines plus country code for SVG flag resolution.
+ *  WebKitGTK has no guaranteed emoji font, so flags are rendered via bundled
+ *  SVG components rather than emoji characters. */
+export function exitReadout(p: ExitProbe): {
+  primary: string;
+  secondary: string | null;
+  country: string | null;
+} | null {
   switch (p.status) {
     case "off":
       return null;
     case "checking":
-      return { primary: "checking exit…", secondary: null };
+      return { primary: "checking exit…", secondary: null, country: null };
     case "failed":
-      return { primary: "exit unknown", secondary: p.reason };
+      return { primary: "exit unknown", secondary: p.reason, country: null };
     case "ok": {
       const place = [p.info.city, p.info.country].filter(Boolean).join(", ");
       const org = p.info.org.replace(/^AS\d+\s+/, "");
-      return { primary: p.info.ip, secondary: [place, org].filter(Boolean).join(" · ") || null };
+      return {
+        primary: p.info.ip,
+        secondary: [place, org].filter(Boolean).join(" · ") || null,
+        country: p.info.country || null,
+      };
     }
   }
 }

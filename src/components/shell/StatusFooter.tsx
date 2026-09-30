@@ -25,6 +25,7 @@ export function StatusFooter({
   tunnel,
   tunnelLive,
   tunnelRemote,
+  exitCountry,
   rate,
 }: {
   link: string | null;
@@ -32,6 +33,7 @@ export function StatusFooter({
   tunnel: string | null;
   tunnelLive: boolean;
   tunnelRemote: string | null;
+  exitCountry?: string | null;
   rate: Rate;
 }) {
   return (
@@ -45,6 +47,7 @@ export function StatusFooter({
         tunnel={tunnel}
         tunnelLive={tunnelLive}
         tunnelRemote={tunnelRemote}
+        exitCountry={exitCountry}
       />
       <FooterTraffic rate={rate} />
     </footer>

@@ -4,13 +4,14 @@ import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { parseRawRules } from "@/lib/rawRules";
 import { tunnelInbound } from "@/lib/readouts";
-import { validateRuleList } from "@/lib/rules";
+import { checkRuleList } from "@/lib/rules";
 import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
 import type { PassthroughStatus, Routing, TunnelMode, TunnelStore } from "@/types";
 import { AdvancedJson } from "./AdvancedJson";
 import { ModeCards } from "./ModeCards";
 import { PassthroughList } from "./PassthroughList";
 import { RuleEditor, type ListName } from "./RuleEditor";
+import { RuleSetList } from "./RuleSetList";
 import { SafeguardList } from "./SafeguardList";
 
 /** The stored lists are arrays; the editor is a textarea. One conversion,
@@ -83,12 +84,14 @@ export function SocketsTab({
 
   const rawParsed = useMemo(() => parseRawRules(raw), [raw]);
 
+  const definedTags = useMemo(() => routing?.rule_sets.map((d) => d.tag) ?? [], [routing]);
+
   const badLines = useMemo(
     () =>
       (["block", "bypass", "proxy"] as ListName[]).filter((name) =>
-        validateRuleList(text[name].split("\n")).some((e) => e !== null),
+        checkRuleList(text[name].split("\n"), definedTags).some((e) => e !== null),
       ),
-    [text],
+    [text, definedTags],
   );
 
   /** The draft as it would be saved. Computed above the loading return so
@@ -213,6 +216,12 @@ export function SocketsTab({
           bypass: badLines.includes("bypass"),
           proxy: badLines.includes("proxy"),
         }}
+        ruleSetTags={definedTags}
+      />
+
+      <RuleSetList
+        defs={routing.rule_sets}
+        onChange={(rule_sets) => setRouting({ ...routing, rule_sets })}
       />
 
       <AdvancedJson value={raw} onChange={setRaw} error={rawParsed.error} />

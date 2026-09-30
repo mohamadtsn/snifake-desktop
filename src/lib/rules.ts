@@ -131,3 +131,21 @@ export function validateRuleList(lines: string[]): (string | null)[] {
 export function isRuleSetTag(v: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9._@!-]{0,63}$/.test(v);
 }
+
+const SAGERNET = /^geo(site|ip)-/;
+
+/** Syntax errors, then tags neither defined nor covered by the SagerNet
+ *  fallback: the same refusal `rulesets::validate` makes at save. */
+export function checkRuleList(lines: string[], definedTags: string[]): (string | null)[] {
+  const known = new Set(definedTags);
+  return lines.map((line) => {
+    const got = parseRuleLine(line);
+    if (!got.ok) return got.error;
+    if (got.kind !== "rule_set") return null;
+    const text = line.trim();
+    const tag = text.slice(text.indexOf(":") + 1).trim();
+    return known.has(tag) || SAGERNET.test(tag)
+      ? null
+      : `Rule set "${tag}" is not defined. Add it under Rule sets.`;
+  });
+}

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { validateRuleList } from "@/lib/rules";
+import { checkRuleList } from "@/lib/rules";
 
 export type ListName = "block" | "bypass" | "proxy";
 
@@ -28,6 +28,7 @@ export function RuleEditor({
   onLinesChange,
   counts,
   invalid,
+  ruleSetTags,
 }: {
   list: ListName;
   onListChange: (list: ListName) => void;
@@ -37,12 +38,15 @@ export function RuleEditor({
   counts: Record<ListName, number>;
   /** Which lists have a line that does not parse, so the tab says so. */
   invalid: Record<ListName, boolean>;
+  /** Tags the user defined under Rule sets; a `ruleset:` line must name
+   *  one of them or a SagerNet `geosite-`/`geoip-` tag. */
+  ruleSetTags: string[];
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
 
   const rows = useMemo(() => lines.split("\n"), [lines]);
-  const errors = useMemo(() => validateRuleList(rows), [rows]);
+  const errors = useMemo(() => checkRuleList(rows, ruleSetTags), [rows, ruleSetTags]);
   const firstBad = errors.findIndex((e) => e !== null);
   const active = rows.filter((l) => l.trim() !== "" && !l.trim().startsWith("#")).length;
 

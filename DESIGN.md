@@ -509,6 +509,15 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-30 — User rule sets.** `RuleSetList` (Sockets, below the rule
+editor) adds rule sets by URL or by importing a `.srs`/`.json` file, which is
+copied into the app's own directory. A definition named like a SagerNet tag
+(`geoip-ir`) overrides the built-in download, which is how a regional list
+replaces it. Remote sets are cached at a root-owned path, so only the first
+start after adding one needs the network. The editor underlines a
+`ruleset:` line whose tag nothing defines, with the same sentence the save
+refuses with.
+
 **2026-09-30 — Coexisting VPNs, and the kill switch as a choice.**
 `PassthroughList` (Sockets, below the safeguards) names other VPNs by
 interface only: detected WireGuard/tun/tap/ppp interfaces are offered as

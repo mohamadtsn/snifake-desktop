@@ -95,6 +95,7 @@ export interface Routing {
   allow_lan: boolean;
   kill_switch: boolean;
   passthrough: string[];
+  rule_sets: RuleSetDef[];
 }
 
 /** Mirrors `tunnel::model::TunnelStore`. */
@@ -179,4 +180,16 @@ export interface InterfaceCandidate {
   name: string;
   kind: string | null;
   up: boolean;
+}
+
+/** Mirrors `tunnel::model::RuleSetSource`. */
+export type RuleSetSource =
+  | { type: "remote"; url: string; detour: DefaultRoute }
+  | { type: "local"; path: string };
+
+/** Mirrors `tunnel::model::RuleSetDef`. */
+export interface RuleSetDef {
+  tag: string;
+  format: "binary" | "source";
+  source: RuleSetSource;
 }

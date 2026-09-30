@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixtureTable from "./rules.fixtures.json";
-import { parseRuleLine, validateRuleList } from "./rules";
+import { checkRuleList, parseRuleLine, validateRuleList } from "./rules";
 
 describe("parseRuleLine", () => {
   it("infers a bare domain as a suffix", () => {
@@ -118,4 +118,16 @@ describe("the shared fixture table", () => {
       }
     });
   }
+});
+
+describe("checkRuleList", () => {
+  it("flags a ruleset line whose tag is not defined", () => {
+    expect(checkRuleList(["ruleset:mine"], [])[0]).toMatch(/"mine" is not defined/);
+  });
+  it("accepts a defined tag and any SagerNet tag", () => {
+    expect(checkRuleList(["ruleset:mine", "ruleset:geoip-ir"], ["mine"])).toEqual([null, null]);
+  });
+  it("still reports syntax errors first", () => {
+    expect(checkRuleList(["banana:x"], [])[0]).toMatch(/Unknown rule prefix/);
+  });
 });

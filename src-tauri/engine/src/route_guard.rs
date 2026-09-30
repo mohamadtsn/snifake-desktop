@@ -10,10 +10,15 @@
 //! switch runs `nft` (spec §12.2). Its routes carry `proto 177`, so a
 //! crashed run's route can be flushed without knowing the address.
 
-use crate::{sysbin, tunpin};
+use crate::tunpin;
+#[cfg(not(windows))]
+use crate::sysbin;
 use std::net::Ipv4Addr;
+#[cfg(not(windows))]
 use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
 use std::process::Command;
+
 
 #[derive(Debug, PartialEq)]
 pub struct Route {
@@ -51,11 +56,13 @@ pub fn replace_args(ip: Ipv4Addr, r: &Route) -> Vec<String> {
     a
 }
 
+#[cfg(not(windows))]
 pub struct RouteGuard {
     bin: PathBuf,
     pinned: Ipv4Addr,
 }
 
+#[cfg(not(windows))]
 impl RouteGuard {
     pub fn install(ip: Ipv4Addr) -> Result<RouteGuard, String> {
         let bin = sysbin::find("ip").ok_or("Install the iproute2 package to use TUN.")?;
@@ -86,6 +93,7 @@ impl RouteGuard {
     }
 }
 
+#[cfg(not(windows))]
 /// Our pinned route, and the policy rules and table sing-box's
 /// `strict_route` leaves behind when it is killed: they route everything
 /// into a table whose TUN no longer exists, so without this a crashed
@@ -120,13 +128,124 @@ pub fn purge() -> Result<(), String> {
     route
 }
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::NO_ERROR;
+#[cfg(windows)]
+use windows_sys::Win32::NetworkManagement::IpHelper::{
+    ConvertInterfaceAliasToLuid, CreateIpForwardEntry2, DeleteIpForwardEntry2, FreeMibTable,
+    GetBestRoute2, GetIpForwardTable2, MIB_IPFORWARD_ROW2, MIB_IPFORWARD_TABLE2,
+};
+#[cfg(windows)]
+use windows_sys::Win32::NetworkManagement::Ndis::NET_LUID_LH;
+#[cfg(windows)]
+use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR_INET};
+
+#[cfg(windows)]
+pub struct RouteGuard {
+    row: MIB_IPFORWARD_ROW2,
+}
+
+#[cfg(windows)]
+impl RouteGuard {
+    pub fn install(ip: Ipv4Addr) -> Result<RouteGuard, String> {
+        let mut dest: SOCKADDR_INET = unsafe { std::mem::zeroed() };
+        dest.Ipv4.sin_family = AF_INET as u16;
+        dest.Ipv4.sin_addr.S_un.S_addr = u32::from_ne_bytes(ip.octets());
+
+        let mut best_route: MIB_IPFORWARD_ROW2 = unsafe { std::mem::zeroed() };
+        let mut best_source: SOCKADDR_INET = unsafe { std::mem::zeroed() };
+
+        let status = unsafe {
+            GetBestRoute2(
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                &dest,
+                0,
+                &mut best_route,
+                &mut best_source,
+            )
+        };
+        if status != NO_ERROR {
+            return Err(format!("GetBestRoute2 failed for {ip}: {status:#x}"));
+        }
+
+        let wide: Vec<u16> = std::ffi::OsStr::new(tunpin::INTERFACE_NAME)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut tun_luid = NET_LUID_LH { Value: 0 };
+        if unsafe { ConvertInterfaceAliasToLuid(wide.as_ptr(), &mut tun_luid) } == NO_ERROR {
+            if unsafe { best_route.InterfaceLuid.Value == tun_luid.Value } {
+                return Err("the route to the SNI upstream already goes through the tunnel".into());
+            }
+        }
+
+        let mut row: MIB_IPFORWARD_ROW2 = unsafe { std::mem::zeroed() };
+        row.DestinationPrefix.Prefix.Ipv4.sin_family = AF_INET as u16;
+        row.DestinationPrefix.Prefix.Ipv4.sin_addr.S_un.S_addr = u32::from_ne_bytes(ip.octets());
+        row.DestinationPrefix.PrefixLength = 32;
+        row.NextHop = best_route.NextHop;
+        row.InterfaceLuid = best_route.InterfaceLuid;
+        row.InterfaceIndex = best_route.InterfaceIndex;
+        row.Metric = 1;
+        row.Protocol = tunpin::ROUTE_PROTO as i32;
+
+        let status = unsafe { CreateIpForwardEntry2(&row) };
+        if status != NO_ERROR && status != 0x5010 /* ERROR_OBJECT_ALREADY_EXISTS */ {
+            return Err(format!("CreateIpForwardEntry2 failed for {ip}/32: {status:#x}"));
+        }
+
+        Ok(RouteGuard { row })
+    }
+
+    pub fn remove(self) -> Result<(), String> {
+        let status = unsafe { DeleteIpForwardEntry2(&self.row) };
+        if status != NO_ERROR {
+            return Err(format!("DeleteIpForwardEntry2 failed: {status:#x}"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+pub fn purge() -> Result<(), String> {
+    let mut table_ptr: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
+    let status = unsafe { GetIpForwardTable2(AF_INET as u16, &mut table_ptr) };
+    if status == NO_ERROR && !table_ptr.is_null() {
+        let table = unsafe { &*table_ptr };
+        let num_entries = table.NumEntries as usize;
+        let entries = unsafe {
+            std::slice::from_raw_parts(table.Table.as_ptr(), num_entries)
+        };
+        for entry in entries {
+            if entry.Protocol == tunpin::ROUTE_PROTO as i32 {
+                unsafe {
+                    let _ = DeleteIpForwardEntry2(entry);
+                }
+            }
+        }
+        unsafe {
+            FreeMibTable(table_ptr as *const _);
+        }
+    }
+    Ok(())
+}
+
+
+
+#[cfg(not(windows))]
 /// More than sing-box has ever been seen to put at one priority.
 const RULES_PER_PRIORITY: usize = 8;
+
 
 pub fn rule_priorities() -> std::ops::Range<u32> {
     tunpin::IPROUTE2_RULE..tunpin::IPROUTE2_RULE + tunpin::RULE_SPAN
 }
 
+#[cfg(not(windows))]
 fn run<S: AsRef<std::ffi::OsStr>>(bin: &Path, args: &[S]) -> Result<(), String> {
     let out = Command::new(bin)
         .args(args)
@@ -138,6 +257,7 @@ fn run<S: AsRef<std::ffi::OsStr>>(bin: &Path, args: &[S]) -> Result<(), String> 
         Err(format!("ip refused the route: {}", String::from_utf8_lossy(&out.stderr).trim()))
     }
 }
+
 
 #[cfg(test)]
 mod tests {

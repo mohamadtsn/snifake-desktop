@@ -8,32 +8,70 @@
 
 use crate::killswitch::{self, Allowlist, KillSwitch};
 use crate::route_guard::{self, RouteGuard};
+use crate::passthrough::{self, PassRules};
+use crate::proto::PassthroughStatus;
+
+pub type Opener = Box<dyn Fn() -> Result<Box<dyn KillSwitch>, String> + Send>;
+pub type Discover = Box<dyn Fn(&str) -> PassthroughStatus + Send>;
 
 pub struct TunGuard {
-    ks: Box<dyn KillSwitch>,
+    /// `None` while the user has the kill switch off. The pinned route
+    /// still matters (ClientHello injection needs the physical egress).
+    ks: Option<Box<dyn KillSwitch>>,
     route: Option<RouteGuard>,
     allow: Allowlist,
+    open: Opener,
+    discover: Discover,
+    /// `None` in tests; the rules need root.
+    rules: Option<PassRules>,
+    found: Vec<PassthroughStatus>,
 }
 
 impl TunGuard {
-    /// Kill switch first, then the route (design §11.4, steps 3 and 4). A
-    /// route that cannot be pinned takes the kill switch back down: nothing
-    /// has started yet, so there is nothing to protect.
     pub fn raise(allow: Allowlist) -> Result<TunGuard, String> {
-        let mut ks = killswitch::open()?;
-        ks.install(&allow)?;
-        let route = match RouteGuard::install(allow.connect.0) {
+        let ks = if allow.enforce {
+            let mut ks = killswitch::open()?;
+            ks.install(&allow)?;
+            Some(ks)
+        } else {
+            None
+        };
+        let undo = |ks: Option<Box<dyn KillSwitch>>| {
+            if let Some(mut ks) = ks {
+                let _ = ks.remove();
+            }
+        };
+        let rules = match PassRules::locate() {
             Ok(r) => r,
             Err(e) => {
-                let _ = ks.remove();
+                undo(ks);
                 return Err(e);
             }
         };
-        Ok(TunGuard { ks, route: Some(route), allow })
+        let route = match RouteGuard::install(allow.connect.0) {
+            Ok(r) => r,
+            Err(e) => {
+                undo(ks);
+                return Err(e);
+            }
+        };
+        Ok(TunGuard {
+            ks, route: Some(route), allow,
+            open: Box::new(killswitch::open),
+            discover: Box::new(passthrough::discover),
+            rules: Some(rules),
+            found: Vec::new(),
+        })
     }
 
-    pub fn with_parts(ks: Box<dyn KillSwitch>, route: Option<RouteGuard>, allow: Allowlist) -> TunGuard {
-        TunGuard { ks, route, allow }
+    pub fn with_parts(
+        ks: Option<Box<dyn KillSwitch>>,
+        route: Option<RouteGuard>,
+        allow: Allowlist,
+        open: Opener,
+        discover: Discover,
+    ) -> TunGuard {
+        TunGuard { ks, route, allow, open, discover, rules: None, found: Vec::new() }
     }
 
     pub fn allow(&self) -> &Allowlist {
@@ -41,16 +79,40 @@ impl TunGuard {
     }
 
     pub fn permit_interface(&mut self, name: &str) -> Result<(), String> {
-        self.ks.permit_interface(name)
+        match self.ks.as_mut() {
+            Some(ks) => ks.permit_interface(name),
+            None => Ok(()),
+        }
     }
 
-    /// A profile switch. The drop never lifts: the kill switch is updated
-    /// in place, and only the route is replaced.
-    pub fn retarget(&mut self, allow: Allowlist) -> Result<(), String> {
-        self.ks.update(&allow)?;
+    /// Puts `allow` in force: table installed, updated or removed, as
+    /// `enforce` says. Never lifts an enabled drop.
+    fn apply(&mut self, allow: &Allowlist) -> Result<(), String> {
+        if allow.enforce {
+            match self.ks.as_mut() {
+                Some(ks) => ks.update(allow)?,
+                None => {
+                    let mut ks = (self.open)()?;
+                    ks.install(allow)?;
+                    self.ks = Some(ks);
+                }
+            }
+        } else if let Some(mut ks) = self.ks.take() {
+            if let Err(e) = ks.remove() {
+                self.ks = Some(ks);
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
+    /// A profile switch, a new interface list, or the kill switch toggled.
+    /// The servers found so far survive: the GUI never sends them.
+    pub fn retarget(&mut self, mut allow: Allowlist) -> Result<(), String> {
+        allow.endpoints = self.allow.endpoints.clone();
+        self.apply(&allow)?;
         let moved = allow.connect.0 != self.allow.connect.0;
         self.allow = allow;
-        // A guard built without a route (`with_parts`) stays without one.
         if moved {
             if let Some(old) = self.route.take() {
                 let _ = old.remove();
@@ -60,15 +122,45 @@ impl TunGuard {
         Ok(())
     }
 
-    /// Every step runs even when an earlier one fails, because a skipped
-    /// step leaves system state nothing else will clean up. `&mut self` so a
-    /// failure leaves the guard with its owner, to be retried.
+    /// Re-discovers every named interface. On a change (or when `force`d),
+    /// re-applies the servers to the kill switch and replaces the policy
+    /// rules, and returns what it found for the GUI.
+    pub fn refresh(&mut self, force: bool) -> Result<Option<Vec<PassthroughStatus>>, String> {
+        let found: Vec<PassthroughStatus> =
+            self.allow.interfaces.iter().map(|n| (self.discover)(n)).collect();
+        if !force && found == self.found {
+            return Ok(None);
+        }
+        let mut next = self.allow.clone();
+        next.endpoints = found
+            .iter()
+            .flat_map(|s| s.endpoints.iter())
+            .filter_map(|e| e.ip.parse().ok().map(|ip| (ip, e.port)))
+            .collect();
+        self.apply(&next)?;
+        self.allow = next;
+        if let Some(rules) = &self.rules {
+            rules.replace(&found)?;
+        }
+        self.found = found.clone();
+        Ok(Some(found))
+    }
+
     pub fn lower(&mut self) -> Result<(), String> {
+        if let Some(rules) = &self.rules {
+            rules.clear();
+        }
         let route = match self.route.take() {
             Some(r) => r.remove(),
             None => Ok(()),
         };
-        let ks = self.ks.remove();
+        let ks = match self.ks.as_mut() {
+            Some(ks) => ks.remove(),
+            None => Ok(()),
+        };
+        if ks.is_ok() {
+            self.ks = None;
+        }
         route.and(ks)
     }
 }
@@ -85,6 +177,7 @@ mod tests {
     use super::*;
     use std::net::Ipv4Addr;
     use std::sync::{Arc, Mutex};
+    use crate::proto::{Endpoint, PassthroughStatus};
 
     /// Records every call, and fails the ones it is told to.
     struct Fake {
@@ -118,10 +211,88 @@ mod tests {
         Allowlist { connect: (Ipv4Addr::new(10, 0, 0, last), 443), allow_lan: true, enforce: true, interfaces: vec![], endpoints: vec![] }
     }
 
-    fn guard(fail_update: bool) -> (TunGuard, Arc<Mutex<Vec<String>>>) {
+
+    fn status(name: &str, ep: Option<&str>) -> PassthroughStatus {
+        PassthroughStatus {
+            name: name.into(), present: ep.is_some(), kind: None,
+            endpoints: ep.map(|ip| vec![Endpoint { ip: ip.into(), port: 51820 }]).unwrap_or_default(),
+            routes: vec![], problem: None,
+        }
+    }
+
+    fn guard_with(enforce: bool, fail_update: bool, seen: Arc<Mutex<Option<String>>>)
+        -> (TunGuard, Arc<Mutex<Vec<String>>>)
+    {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let ks = Box::new(Fake { calls: calls.clone(), fail_update });
-        (TunGuard::with_parts(ks, None, allow(1)), calls)
+        let ks: Option<Box<dyn KillSwitch>> =
+            enforce.then(|| Box::new(Fake { calls: calls.clone(), fail_update }) as Box<dyn KillSwitch>);
+        let c = calls.clone();
+        let open: Opener = Box::new(move || Ok(Box::new(Fake { calls: c.clone(), fail_update: false })));
+        let discover: Discover = Box::new(move |n| status(n, seen.lock().unwrap().as_deref()));
+        let mut a = allow(1);
+        a.enforce = enforce;
+        a.interfaces = vec!["wg0".into()];
+        (TunGuard::with_parts(ks, None, a, open, discover), calls)
+    }
+
+    fn guard(fail_update: bool) -> (TunGuard, Arc<Mutex<Vec<String>>>) {
+        guard_with(true, fail_update, Arc::new(Mutex::new(None)))
+    }
+
+    #[test]
+    fn turning_the_kill_switch_off_removes_only_the_table() {
+        let (mut g, calls) = guard(false);
+        let mut next = g.allow().clone();
+        next.enforce = false;
+        g.retarget(next).unwrap();
+        assert_eq!(*calls.lock().unwrap(), ["remove"]);
+    }
+
+    #[test]
+    fn turning_it_back_on_installs_it() {
+        let (mut g, calls) = guard_with(false, false, Arc::new(Mutex::new(None)));
+        let mut next = g.allow().clone();
+        next.enforce = true;
+        g.retarget(next).unwrap();
+        assert_eq!(*calls.lock().unwrap(), ["install 10.0.0.1"]);
+    }
+
+    #[test]
+    fn a_vpn_that_appears_later_is_picked_up_on_the_next_tick() {
+        let seen = Arc::new(Mutex::new(None));
+        let (mut g, calls) = guard_with(true, false, seen.clone());
+        // The engine forces one right after the core starts (main.rs).
+        g.refresh(true).unwrap();
+        assert!(g.refresh(false).unwrap().is_none(), "nothing changed yet");
+        *seen.lock().unwrap() = Some("37.191.85.82".into());
+        let items = g.refresh(false).unwrap().expect("a change is reported");
+        assert_eq!(items[0].endpoints[0].ip, "37.191.85.82");
+        assert_eq!(g.allow().endpoints, [(Ipv4Addr::new(37, 191, 85, 82), 51820)]);
+        assert_eq!(calls.lock().unwrap().last().unwrap(), "update 10.0.0.1");
+        assert!(g.refresh(false).unwrap().is_none(), "unchanged again");
+    }
+
+    #[test]
+    fn a_forced_refresh_always_reports() {
+        let (mut g, _) = guard(false);
+        assert!(g.refresh(true).unwrap().is_some());
+    }
+
+    #[test]
+    fn a_retarget_keeps_the_discovered_servers() {
+        let seen = Arc::new(Mutex::new(Some("37.191.85.82".to_string())));
+        let (mut g, _) = guard_with(true, false, seen);
+        g.refresh(true).unwrap();
+        let next = Allowlist { endpoints: vec![], ..allow(2) };
+        g.retarget(Allowlist { enforce: true, interfaces: vec!["wg0".into()], ..next }).unwrap();
+        assert_eq!(g.allow().endpoints.len(), 1);
+    }
+
+    #[test]
+    fn lowering_without_a_kill_switch_touches_no_table() {
+        let (mut g, calls) = guard_with(false, false, Arc::new(Mutex::new(None)));
+        g.lower().unwrap();
+        assert!(calls.lock().unwrap().is_empty());
     }
 
     #[test]

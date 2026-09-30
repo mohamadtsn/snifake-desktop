@@ -282,7 +282,8 @@ fn inbounds(store: &TunnelStore, link: &Profile) -> Result<Value, String> {
             } else {
                 route_exclude_address.push("127.0.0.0/8".to_string());
             }
-            Ok(json!([{
+            #[allow(unused_mut)]
+            let mut inbound = json!({
                 "type": "tun",
                 "tag": "tun-in",
                 "interface_name": tunpin::INTERFACE_NAME,
@@ -291,13 +292,17 @@ fn inbounds(store: &TunnelStore, link: &Profile) -> Result<Value, String> {
                 "auto_route": true,
                 "strict_route": true,
                 "stack": "system",
-                // Pinned so the engine's startup purge can find the policy rules
-                // `strict_route` leaves behind a killed core (tunpin).
-                "iproute2_table_index": tunpin::IPROUTE2_TABLE,
-                "iproute2_rule_index": tunpin::IPROUTE2_RULE,
                 // Layer 1 of the four loop guards (design §6).
                 "route_exclude_address": route_exclude_address
-            }]))
+            });
+            #[cfg(target_os = "linux")]
+            {
+                // Pinned so the engine's startup purge can find the policy rules
+                // `strict_route` leaves behind a killed core (tunpin).
+                inbound["iproute2_table_index"] = json!(tunpin::IPROUTE2_TABLE);
+                inbound["iproute2_rule_index"] = json!(tunpin::IPROUTE2_RULE);
+            }
+            Ok(json!([inbound]))
         }
         // No `sniff` / `sniff_override_destination` here: those inbound
         // fields were *removed* in sing-box 1.13.0, not merely deprecated,
@@ -640,8 +645,16 @@ mod tests {
         assert_eq!(i["auto_route"], json!(true));
         assert_eq!(i["strict_route"], json!(true));
         assert_eq!(i["stack"], json!("system"));
-        assert_eq!(i["iproute2_table_index"], json!(5346));
-        assert_eq!(i["iproute2_rule_index"], json!(5346));
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(i["iproute2_table_index"], json!(5346));
+            assert_eq!(i["iproute2_rule_index"], json!(5346));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(i.get("iproute2_table_index").is_none());
+            assert!(i.get("iproute2_rule_index").is_none());
+        }
     }
 
     #[test]

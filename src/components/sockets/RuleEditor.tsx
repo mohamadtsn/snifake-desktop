@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { checkRuleList } from "@/lib/rules";
+import { PREFIX_HELP, applySuggestion, suggest } from "@/lib/ruleSuggest";
 
 export type ListName = "block" | "bypass" | "proxy";
 
@@ -29,6 +30,7 @@ export function RuleEditor({
   counts,
   invalid,
   ruleSetTags,
+  suggestTags,
 }: {
   list: ListName;
   onListChange: (list: ListName) => void;
@@ -41,9 +43,44 @@ export function RuleEditor({
   /** Tags the user defined under Rule sets; a `ruleset:` line must name
    *  one of them or a SagerNet `geosite-`/`geoip-` tag. */
   ruleSetTags: string[];
+  /** What `ruleset:` completes to: defined tags and every tag already used. */
+  suggestTags: string[];
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
+  const [caret, setCaret] = useState(0);
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  const lineStart = lines.lastIndexOf("\n", caret - 1) + 1;
+  const suggestions = dismissedAt === caret ? [] : suggest(lines.slice(lineStart, caret), suggestTags);
+
+  function track(e: React.SyntheticEvent<HTMLTextAreaElement>) {
+    setCaret(e.currentTarget.selectionStart);
+  }
+
+  function accept(insert: string) {
+    const next = applySuggestion(lines, caret, insert);
+    onLinesChange(next.text);
+    setCaret(next.caret);
+    // After React commits the new value, or the caret lands at the end.
+    requestAnimationFrame(() => {
+      areaRef.current?.focus();
+      areaRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Tab is taken only while a suggestion shows, so keyboard users still
+    // leave the field with Tab everywhere else.
+    if (suggestions.length > 0 && e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      accept(suggestions[0].insert);
+    } else if (suggestions.length > 0 && e.key === "Escape") {
+      e.preventDefault();
+      setDismissedAt(caret);
+    }
+  }
 
   const rows = useMemo(() => lines.split("\n"), [lines]);
   const errors = useMemo(() => checkRuleList(rows, ruleSetTags), [rows, ruleSetTags]);
@@ -112,6 +149,10 @@ export function RuleEditor({
             routing_table: {list} · {active} active {active === 1 ? "entry" : "entries"}
           </span>
           <span className="flex shrink-0 items-center gap-1">
+            <Button size="sm" variant="ghost" onClick={() => setGuideOpen(!guideOpen)} aria-expanded={guideOpen}>
+              <Icon name="help" size={13} />
+              Syntax
+            </Button>
             <Button size="sm" variant="ghost" onClick={() => void pasteBatch()}>
               <Icon name="content_paste" size={13} />
               Paste batch
@@ -122,6 +163,23 @@ export function RuleEditor({
             </Button>
           </span>
         </div>
+
+        {guideOpen ? (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 border-b border-hairline bg-inset px-3 py-2">
+            {PREFIX_HELP.map((p) => (
+              <button key={p.prefix} type="button" className="flex min-w-0 items-baseline gap-2 text-left"
+                onClick={() => accept(`${p.prefix}:`)}>
+                <span className="mono shrink-0 text-note text-accent">{p.example}</span>
+                <span className="truncate text-note text-t3">{p.detail}</span>
+              </button>
+            ))}
+            {suggestTags.length > 0 ? (
+              <p className="col-span-2 mt-1 truncate text-note text-t3">
+                Rule sets: <span className="mono">{suggestTags.join(", ")}</span>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="relative flex bg-inset">
           {/* The gutter scrolls with the text rather than with the page: it
@@ -170,7 +228,14 @@ export function RuleEditor({
             <textarea
               ref={areaRef}
               value={lines}
-              onChange={(e) => onLinesChange(e.target.value)}
+              onChange={(e) => {
+                onLinesChange(e.target.value);
+                track(e);
+              }}
+              onKeyDown={onKeyDown}
+              onSelect={track}
+              onClick={track}
+              onKeyUp={track}
               onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
               spellCheck={false}
               // No soft wrap. The gutter and the highlight layer render one
@@ -186,6 +251,20 @@ export function RuleEditor({
             />
           </div>
         </div>
+
+        {suggestions.length > 0 ? (
+          <div className="flex items-center gap-2 overflow-x-auto border-t border-hairline px-3 py-[6px]" role="listbox" aria-label="Suggestions">
+            {suggestions.map((s, i) => (
+              <button key={s.insert} type="button" role="option" aria-selected={i === 0} title={s.detail}
+                className={`mono shrink-0 rounded-xs px-[6px] text-note ${i === 0 ? "bg-accent-soft text-accent" : "text-t2"}`}
+                onMouseDown={(e) => e.preventDefault() /* keep the textarea's caret */}
+                onClick={() => accept(s.insert)}>
+                {s.label}
+              </button>
+            ))}
+            <span className="ml-auto shrink-0 text-note text-t4">Tab to accept · Esc to hide</span>
+          </div>
+        ) : null}
 
         <div
           className={`flex items-center justify-between gap-3 border-t px-3 py-[7px] ${

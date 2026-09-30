@@ -509,6 +509,14 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-30 — Rule editor suggestions.** A row of chips under the
+toolbar completes the prefix being typed, a rule set tag after `ruleset:`,
+and `tcp`/`udp` after `network:`. Tab accepts the first suggestion only while
+one is visible, so everywhere else Tab still leaves the field; Esc hides the
+row until the caret moves. The chips sit outside the mirrored gutter and
+highlight layers, so those stay aligned. A Syntax panel lists every prefix
+with an example, and clicking one starts the line with it.
+
 **2026-09-30 — User rule sets.** `RuleSetList` (Sockets, below the rule
 editor) adds rule sets by URL or by importing a `.srs`/`.json` file, which is
 copied into the app's own directory. A definition named like a SagerNet tag

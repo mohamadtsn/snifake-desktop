@@ -86,6 +86,16 @@ export function SocketsTab({
 
   const definedTags = useMemo(() => routing?.rule_sets.map((d) => d.tag) ?? [], [routing]);
 
+  const suggestTags = useMemo(() => {
+    const used = (["block", "bypass", "proxy"] as ListName[])
+      .flatMap((n) => text[n].split("\n"))
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith("ruleset:"))
+      .map((l) => l.slice("ruleset:".length).trim())
+      .filter(Boolean);
+    return [...new Set([...definedTags, ...used])].sort();
+  }, [text, definedTags]);
+
   const badLines = useMemo(
     () =>
       (["block", "bypass", "proxy"] as ListName[]).filter((name) =>
@@ -217,6 +227,7 @@ export function SocketsTab({
           proxy: badLines.includes("proxy"),
         }}
         ruleSetTags={definedTags}
+        suggestTags={suggestTags}
       />
 
       <RuleSetList

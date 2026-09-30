@@ -188,7 +188,7 @@ describe("tunnelInbound", () => {
     active_id: null,
     proxy_host: "127.0.0.1",
     proxy_port: 2080,
-    routing: { block: [], bypass: [], proxy: [], raw: null, default_route: "proxy", block_quic: true, allow_lan: true },
+    routing: { block: [], bypass: [], proxy: [], raw: null, default_route: "proxy", block_quic: true, allow_lan: true, kill_switch: true, passthrough: [] },
   };
 
   it("names the port the proxy modes open", () => {

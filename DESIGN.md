@@ -509,6 +509,15 @@ the reason is in the row.
 
 ## 8. Decision log
 
+**2026-09-30 — Coexisting VPNs, and the kill switch as a choice.**
+`PassthroughList` (Sockets, below the safeguards) names other VPNs by
+interface only: detected WireGuard/tun/tap/ppp interfaces are offered as
+switches, anything else can be typed. The engine discovers their routes and
+servers and reports back, and each row's subtitle says what it found, in
+words, including "not up" and the reason it could not. The user never types
+a route. The kill switch is the fourth Sockets safeguard; the TUN mode card's
+guarantee follows it, so the card stops claiming a block the user turned off.
+
 **2026-09-28 — TUN: the recovery banner and the honest hold.**
 `RecoveryBanner` (Telemetry, first child) appears when a TUN session ended
 without its kill switch coming down. `warn` tone, not `bad`: nothing is

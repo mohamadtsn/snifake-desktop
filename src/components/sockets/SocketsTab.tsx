@@ -6,9 +6,10 @@ import { parseRawRules } from "@/lib/rawRules";
 import { tunnelInbound } from "@/lib/readouts";
 import { validateRuleList } from "@/lib/rules";
 import type { DraftOwner, DraftReport } from "@/lib/leaveGuard";
-import type { Routing, TunnelMode, TunnelStore } from "@/types";
+import type { PassthroughStatus, Routing, TunnelMode, TunnelStore } from "@/types";
 import { AdvancedJson } from "./AdvancedJson";
 import { ModeCards } from "./ModeCards";
+import { PassthroughList } from "./PassthroughList";
 import { RuleEditor, type ListName } from "./RuleEditor";
 import { SafeguardList } from "./SafeguardList";
 
@@ -28,6 +29,8 @@ export function SocketsTab({
   onDraftChange,
   systemProxyBlocked,
   tunBlocked,
+  passthroughStatus,
+  tunActive,
 }: {
   store: TunnelStore | null;
   /** Resolves once saved; rejects, after the shell has shown why, if not. */
@@ -45,6 +48,10 @@ export function SocketsTab({
   systemProxyBlocked: string | null;
   /** `tun_support()`: `null` when TUN can run here. */
   tunBlocked: string | null;
+  /** The engine's last `passthrough-status` report. */
+  passthroughStatus: PassthroughStatus[];
+  /** The tunnel is running, in TUN mode: only then is the report live. */
+  tunActive: boolean;
 }) {
   const [list, setList] = useState<ListName>("block");
   const [mode, setMode] = useState<TunnelMode>(store?.mode ?? "manual");
@@ -180,11 +187,19 @@ export function SocketsTab({
         onChange={setMode}
         systemProxyBlocked={systemProxyBlocked}
         tunBlocked={tunBlocked}
+        killSwitch={routing.kill_switch}
       />
 
       <SafeguardList
         routing={routing}
         onChange={(patch) => setRouting({ ...routing, ...patch })}
+      />
+
+      <PassthroughList
+        names={routing.passthrough}
+        onChange={(passthrough) => setRouting({ ...routing, passthrough })}
+        status={passthroughStatus}
+        tunActive={tunActive}
       />
 
       <RuleEditor

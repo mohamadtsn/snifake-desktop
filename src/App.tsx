@@ -20,6 +20,7 @@ import {
   Store,
   activeProfile,
   activeTunnel,
+  type PassthroughStatus,
   type TunnelProfile,
   type TunnelState,
   type TunnelStore,
@@ -98,6 +99,8 @@ export default function App() {
   const [tunnels, setTunnels] = useState<TunnelStore | null>(null);
   const [tunnelState, setTunnelState] = useState<TunnelState>("offline");
   const [tunnelSince, setTunnelSince] = useState<number | null>(null);
+  /** The engine's last report on coexisting VPNs, cleared with the tunnel. */
+  const [passthroughStatus, setPassthroughStatus] = useState<PassthroughStatus[]>([]);
   const [core, setCore] = useState<CoreStatus | null>(null);
   /** `sysproxy::support()`'s reason, or `null` when this desktop can have
    *  its proxy written. Asked once: it reports what is installed. */
@@ -277,6 +280,17 @@ export default function App() {
       void un.then((f) => f());
     };
   }, []);
+
+  useEffect(() => {
+    const un = listen<PassthroughStatus[]>("passthrough-status", (e) => setPassthroughStatus(e.payload));
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (tunnelState === "offline") setPassthroughStatus([]);
+  }, [tunnelState]);
 
   useEffect(() => {
     const un = listen<[number, number]>("traffic", (e) => {
@@ -685,6 +699,8 @@ export default function App() {
             onDraftChange={reportDraft}
             systemProxyBlocked={systemProxyBlocked}
             tunBlocked={tunBlocked}
+            passthroughStatus={passthroughStatus}
+            tunActive={tunnelState === "active" && tunnels?.mode === "tun"}
             onSave={(patch) => {
               setSavingRouting(true);
               const plan = modeTransition(

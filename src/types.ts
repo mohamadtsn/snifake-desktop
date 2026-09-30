@@ -93,6 +93,8 @@ export interface Routing {
   default_route: DefaultRoute;
   block_quic: boolean;
   allow_lan: boolean;
+  kill_switch: boolean;
+  passthrough: string[];
 }
 
 /** Mirrors `tunnel::model::TunnelStore`. */
@@ -160,4 +162,21 @@ export function tunnelSignalState(state: TunnelState): ProxyState {
     default:
       return "stopped";
   }
+}
+
+/** Mirrors `snifake_engine::proto::PassthroughStatus`. */
+export interface PassthroughStatus {
+  name: string;
+  present: boolean;
+  kind: string | null;
+  endpoints: { ip: string; port: number }[];
+  routes: { dst: string; table: string }[];
+  problem: string | null;
+}
+
+/** Mirrors `tunnel::interfaces::Candidate`. */
+export interface InterfaceCandidate {
+  name: string;
+  kind: string | null;
+  up: boolean;
 }

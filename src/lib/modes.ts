@@ -70,3 +70,11 @@ export function modeBlockedReason(
   if (mode === "tun") return blocked.tun;
   return null;
 }
+
+/** TUN's guarantee depends on one setting; the card must not claim a block
+ *  the user turned off. */
+export function tunGuarantee(killSwitch: boolean): string {
+  return killSwitch
+    ? MODES.tun.guarantee
+    : "Captures every application. The kill switch is off, so if the tunnel fails, traffic leaves directly.";
+}

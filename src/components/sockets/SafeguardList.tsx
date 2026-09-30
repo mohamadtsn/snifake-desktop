@@ -3,9 +3,9 @@ import { Toggle } from "@/components/ui/Toggle";
 import type { Routing } from "@/types";
 
 /**
- * The three safeguards, and they live only here.
+ * The four safeguards, and they live only here.
  *
- * The mockups draw these same three switches on Preferences > Network as
+ * The mockups draw the first three switches on Preferences > Network as
  * well. They are one piece of state (`Routing.default_route`, `.block_quic`,
  * `.allow_lan`), and two places to change one setting is two places to
  * disagree about it. They belong beside the mode cards, which are what give
@@ -60,6 +60,23 @@ export function SafeguardList({
               checked={routing.allow_lan}
               onChange={(on) => onChange({ allow_lan: on })}
               aria-label="Allow local network bypass"
+            />
+          }
+        />
+        <GroupedList.Row
+          icon="shield"
+          on={routing.kill_switch}
+          title="Kill switch (TUN)"
+          subtitle={
+            routing.kill_switch
+              ? "If the tunnel fails, traffic is blocked. VPNs listed under Coexisting VPNs still pass."
+              : "Off: anything the TUN does not carry leaves directly, and a failed tunnel can leak."
+          }
+          control={
+            <Toggle
+              checked={routing.kill_switch}
+              onChange={(on) => onChange({ kill_switch: on })}
+              aria-label="Kill switch in TUN mode"
             />
           }
         />

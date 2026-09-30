@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MODES, modeBlockedReason } from "@/lib/modes";
+import { MODES, modeBlockedReason, tunGuarantee } from "@/lib/modes";
 import type { TunnelMode } from "@/types";
 
 describe("interception modes", () => {
@@ -60,5 +60,10 @@ describe("interception modes", () => {
 
   it("says that manual sets nothing", () => {
     expect(MODES.manual.does).toMatch(/nothing/i);
+  });
+
+  it("the TUN guarantee stops promising a block when the kill switch is off", () => {
+    expect(tunGuarantee(true)).toBe(MODES.tun.guarantee);
+    expect(tunGuarantee(false)).toMatch(/kill switch is off/);
   });
 });

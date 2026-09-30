@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { MODES, MODE_ORDER, modeBlockedReason } from "@/lib/modes";
+import { MODES, MODE_ORDER, modeBlockedReason, tunGuarantee } from "@/lib/modes";
 import type { TunnelMode } from "@/types";
 
 /**
@@ -28,6 +28,7 @@ export function ModeCards({
   onChange,
   systemProxyBlocked,
   tunBlocked,
+  killSwitch,
 }: {
   mode: TunnelMode;
   /** `proxy_host:proxy_port`, the address the first two modes are about. */
@@ -37,6 +38,8 @@ export function ModeCards({
   systemProxyBlocked?: string | null;
   /** `tun_support()`: `null` when TUN can run on this machine. */
   tunBlocked?: string | null;
+  /** `Routing.kill_switch`: TUN's guarantee depends on it. */
+  killSwitch: boolean;
 }) {
   return (
     <section>
@@ -123,7 +126,7 @@ export function ModeCards({
                       selected && !blocked ? "text-t1" : "text-t3"
                     }`}
                   >
-                    {m.guarantee}
+                    {key === "tun" ? tunGuarantee(killSwitch) : m.guarantee}
                   </span>
                 </span>
               </button>

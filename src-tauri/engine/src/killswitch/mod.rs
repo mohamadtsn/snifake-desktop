@@ -21,6 +21,13 @@ pub struct Allowlist {
     /// The SNI engine's upstream: the one legitimate escape.
     pub connect: (Ipv4Addr, u16),
     pub allow_lan: bool,
+    /// Whether the table is installed at all. `TunGuard` reads it; the
+    /// ruleset never does.
+    pub enforce: bool,
+    /// Coexisting VPNs' interfaces, named by the user.
+    pub interfaces: Vec<String>,
+    /// Their servers, as last discovered by the engine.
+    pub endpoints: Vec<(Ipv4Addr, u16)>,
 }
 
 impl Allowlist {
@@ -31,7 +38,13 @@ impl Allowlist {
             .connect_ip
             .parse()
             .map_err(|_| format!("CONNECT_IP '{}' is not an IPv4 address", spec.connect_ip))?;
-        Ok(Allowlist { connect: (ip, spec.connect_port), allow_lan: tun.allow_lan })
+        Ok(Allowlist {
+            connect: (ip, spec.connect_port),
+            allow_lan: tun.allow_lan,
+            enforce: tun.kill_switch,
+            interfaces: tun.passthrough.clone(),
+            endpoints: Vec::new(),
+        })
     }
 
     /// The same list, permitting another upstream: a profile switch.
@@ -112,8 +125,33 @@ mod tests {
 
     #[test]
     fn retargeting_keeps_the_lan_choice() {
-        let a = Allowlist { connect: (Ipv4Addr::new(1, 2, 3, 4), 443), allow_lan: false };
+        let a = Allowlist {
+            connect: (Ipv4Addr::new(1, 2, 3, 4), 443),
+            allow_lan: false,
+            enforce: true,
+            interfaces: vec!["wg0".into()],
+            endpoints: vec![],
+        };
         let b = a.retarget(Ipv4Addr::new(5, 6, 7, 8), 8443);
-        assert_eq!(b, Allowlist { connect: (Ipv4Addr::new(5, 6, 7, 8), 8443), allow_lan: false });
+        assert_eq!(
+            b,
+            Allowlist {
+                connect: (Ipv4Addr::new(5, 6, 7, 8), 8443),
+                allow_lan: false,
+                enforce: true,
+                interfaces: vec!["wg0".into()],
+                endpoints: vec![],
+            }
+        );
+        assert_eq!(b.interfaces, ["wg0"]);
+    }
+
+    #[test]
+    fn a_spec_carries_its_interfaces_and_kill_switch_choice() {
+        let t = TunSpec { allow_lan: true, kill_switch: false, passthrough: vec!["wg0".into()] };
+        let a = Allowlist::from_spec(&spec(Some(t))).unwrap();
+        assert!(!a.enforce);
+        assert_eq!(a.interfaces, ["wg0"]);
+        assert!(a.endpoints.is_empty(), "servers come from discovery, not the GUI");
     }
 }

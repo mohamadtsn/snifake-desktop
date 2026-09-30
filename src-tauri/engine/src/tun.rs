@@ -115,7 +115,7 @@ mod tests {
     }
 
     fn allow(last: u8) -> Allowlist {
-        Allowlist { connect: (Ipv4Addr::new(10, 0, 0, last), 443), allow_lan: true }
+        Allowlist { connect: (Ipv4Addr::new(10, 0, 0, last), 443), allow_lan: true, enforce: true, interfaces: vec![], endpoints: vec![] }
     }
 
     fn guard(fail_update: bool) -> (TunGuard, Arc<Mutex<Vec<String>>>) {

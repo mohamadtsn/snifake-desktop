@@ -34,6 +34,14 @@ pub fn ruleset(allow: &Allowlist) -> String {
     s += &format!("    ip daddr {ip} tcp dport {port} accept\n");
     // The lease has to renew, or the machine drops off the network entirely.
     s += "    udp sport 68 udp dport 67 accept\n";
+    // Coexisting VPNs. Names were validated by the engine and cannot carry
+    // nft syntax; servers came from `wg`, parsed as addresses.
+    for name in &allow.interfaces {
+        s += &format!("    oifname \"{name}\" accept\n");
+    }
+    for (ip, port) in &allow.endpoints {
+        s += &format!("    ip daddr {ip} meta l4proto {{ tcp, udp }} th dport {port} accept\n");
+    }
     if allow.allow_lan {
         s += &format!("    ip daddr {{ {} }} accept\n", LAN_V4.join(", "));
     }
@@ -122,7 +130,30 @@ mod tests {
     use std::net::Ipv4Addr;
 
     fn allow(lan: bool) -> Allowlist {
-        Allowlist { connect: (Ipv4Addr::new(104, 18, 4, 130), 443), allow_lan: lan }
+        Allowlist {
+            connect: (Ipv4Addr::new(104, 18, 4, 130), 443),
+            allow_lan: lan,
+            enforce: true,
+            interfaces: vec![],
+            endpoints: vec![],
+        }
+    }
+
+    #[test]
+    fn a_coexisting_vpns_interface_and_server_are_opened() {
+        let mut a = allow(false);
+        a.interfaces = vec!["priv".into()];
+        a.endpoints = vec![(Ipv4Addr::new(37, 191, 85, 82), 51820)];
+        let s = ruleset(&a);
+        assert!(s.contains("    oifname \"priv\" accept\n"));
+        assert!(s.contains("    ip daddr 37.191.85.82 meta l4proto { tcp, udp } th dport 51820 accept\n"));
+    }
+
+    #[test]
+    fn no_coexisting_vpn_means_no_extra_lines() {
+        let s = ruleset(&allow(false));
+        assert!(!s.contains("th dport"));
+        assert_eq!(s.matches("oifname").count(), 2, "lo and the TUN only");
     }
 
     #[test]

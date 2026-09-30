@@ -50,7 +50,7 @@ fn answers(ip: Ipv4Addr) -> bool {
 }
 
 fn allow(upstream: Ipv4Addr) -> Allowlist {
-    Allowlist { connect: (upstream, 443), allow_lan: true }
+    Allowlist { connect: (upstream, 443), allow_lan: true, enforce: true, interfaces: vec![], endpoints: vec![] }
 }
 
 fn quiet() -> LogFn {

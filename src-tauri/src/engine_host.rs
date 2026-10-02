@@ -307,12 +307,19 @@ impl EngineHost {
     /// waiting out the whole timeout. On Windows a declined UAC prompt is
     /// already reported synchronously by `ShellExecuteEx`, and every
     /// `accept_timeout` call costs a worker thread parked in
-    /// `ConnectNamedPipe`, so it is called exactly once.
     fn accept_engine(&mut self, listener: &Listener) -> Result<Stream, String> {
         #[cfg(windows)]
-        return listener
-            .accept_timeout(CONNECT_TIMEOUT)
-            .map_err(|e| format!("the engine never connected back ({e})"));
+        {
+            let child = &mut self.child;
+            return listener
+                .accept_timeout_with(CONNECT_TIMEOUT, || {
+                    if let Some(code) = child.as_mut().and_then(|c| c.try_wait()) {
+                        return Err(format!("the engine exited before connecting ({code})"));
+                    }
+                    Ok(())
+                })
+                .map_err(|e| format!("the engine never connected back ({e})"));
+        }
 
         #[cfg(unix)]
         {

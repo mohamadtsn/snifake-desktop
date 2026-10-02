@@ -116,8 +116,12 @@ mod imp {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use windows_sys::Win32::Foundation::{
         CloseHandle, ERROR_PIPE_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE,
-        INVALID_HANDLE_VALUE,
+        INVALID_HANDLE_VALUE, LocalFree,
     };
+    use windows_sys::Win32::Security::Authorization::{
+        ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+    };
+    use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FlushFileBuffers, ReadFile, WriteFile, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
     };
@@ -146,12 +150,31 @@ mod imp {
 
     impl Listener {
         pub fn bind() -> io::Result<Listener> {
-            // Default security: the creating user and SYSTEM. The elevated
-            // engine runs as the same user, so it is allowed; another
-            // account on the machine is not.
+            // Explicit security descriptor allowing Authenticated Users (AU),
+            // Built-in Administrators (BA), and SYSTEM (SY) with Low/Medium
+            // Mandatory Integrity Label (S:(ML;;NW;;;LW)). This allows the
+            // elevated engine to connect even when launched under an admin
+            // account from a standard user session. A 128-bit random token
+            // handles connection authentication.
             let name = format!(r"\\.\pipe\snifake-{}", crate::sysrand::hex(8));
             let wide_name = wide(&name);
-            // SAFETY: wide_name is a valid NUL-terminated UTF-16 string.
+            let sddl = wide("D:(A;;GA;;;AU)(A;;GA;;;BA)(A;;GA;;;SY)S:(ML;;NW;;;LW)");
+            let mut p_sd = std::ptr::null_mut();
+            let ok_sd = unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    SDDL_REVISION_1,
+                    &mut p_sd,
+                    std::ptr::null_mut(),
+                )
+            };
+            let mut sa = SECURITY_ATTRIBUTES {
+                nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+                lpSecurityDescriptor: if ok_sd != 0 { p_sd } else { std::ptr::null_mut() },
+                bInheritHandle: 0,
+            };
+            let sa_ptr = if ok_sd != 0 { &mut sa as *mut _ } else { std::ptr::null_mut() };
+
             let handle = unsafe {
                 CreateNamedPipeW(
                     wide_name.as_ptr(),
@@ -161,9 +184,12 @@ mod imp {
                     BUFFER,
                     BUFFER,
                     0,
-                    std::ptr::null(),
+                    sa_ptr,
                 )
             };
+            if !p_sd.is_null() {
+                unsafe { LocalFree(p_sd as _) };
+            }
             if handle == INVALID_HANDLE_VALUE {
                 return Err(io::Error::last_os_error());
             }
@@ -177,37 +203,50 @@ mod imp {
             &self.endpoint
         }
 
-        /// `ConnectNamedPipe` on a blocking pipe would wait forever, so the
-        /// blocking call runs on a worker thread and the deadline is enforced
-        /// here with `recv_timeout`.
-        pub fn accept_timeout(&self, timeout: Duration) -> io::Result<Stream> {
+        pub fn accept_timeout_with<F>(&self, timeout: Duration, mut check: F) -> io::Result<Stream>
+        where
+            F: FnMut() -> Result<(), String>,
+        {
             let raw = self.handle.get() as isize;
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                // SAFETY: the handle outlives this call — the Listener is
-                // alive for the duration of accept_timeout.
                 let ok = unsafe { ConnectNamedPipe(raw as HANDLE, std::ptr::null_mut()) };
                 let err = io::Error::last_os_error();
                 let connected = ok != 0 || err.raw_os_error() == Some(ERROR_PIPE_CONNECTED as i32);
                 let _ = tx.send(connected);
             });
 
-            match rx.recv_timeout(timeout) {
-                Ok(true) => {
-                    let handle = self.handle.get();
-                    self.handle.set(INVALID_HANDLE_VALUE);
-                    // SAFETY: ownership of the pipe handle moves to Stream.
-                    Ok(Stream(unsafe { OwnedHandle::from_raw_handle(handle as _) }))
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                match rx.recv_timeout(Duration::from_millis(50)) {
+                    Ok(true) => {
+                        let handle = self.handle.get();
+                        self.handle.set(INVALID_HANDLE_VALUE);
+                        return Ok(Stream(unsafe { OwnedHandle::from_raw_handle(handle as _) }));
+                    }
+                    Ok(false) => return Err(io::Error::last_os_error()),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        if let Err(e) = check() {
+                            return Err(io::Error::new(io::ErrorKind::Other, e));
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            return Err(io::Error::new(io::ErrorKind::TimedOut, "accept timed out"));
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                        return Err(io::Error::new(io::ErrorKind::BrokenPipe, "pipe worker disconnected"));
+                    }
                 }
-                Ok(false) => Err(io::Error::last_os_error()),
-                Err(_) => Err(io::Error::new(io::ErrorKind::TimedOut, "accept timed out")),
             }
+        }
+
+        pub fn accept_timeout(&self, timeout: Duration) -> io::Result<Stream> {
+            self.accept_timeout_with(timeout, || Ok(()))
         }
 
         pub fn cleanup(&self) {
             let handle = self.handle.get();
             if handle != INVALID_HANDLE_VALUE {
-                // SAFETY: a handle we own and have not otherwise released.
                 unsafe { CloseHandle(handle) };
                 self.handle.set(INVALID_HANDLE_VALUE);
             }

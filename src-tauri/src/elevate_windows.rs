@@ -31,6 +31,10 @@ pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, S
     let verb = wide("runas");
     let file = wide(program);
     let params = wide(&join_args(args));
+    let dir = std::path::Path::new(program)
+        .parent()
+        .map(|p| wide(&p.to_string_lossy()))
+        .unwrap_or_else(|| wide("."));
 
     // SAFETY: SHELLEXECUTEINFOW is a plain C struct with no invalid bit
     // patterns; every field is either set below or legitimately zero.
@@ -40,6 +44,7 @@ pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, S
     info.lpVerb = verb.as_ptr();
     info.lpFile = file.as_ptr();
     info.lpParameters = params.as_ptr();
+    info.lpDirectory = dir.as_ptr();
     info.nShow = SW_HIDE as i32;
 
     // SAFETY: info is fully initialised and every pointer it holds outlives

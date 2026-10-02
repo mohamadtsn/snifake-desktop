@@ -72,31 +72,40 @@ fn set_active_profile(
 /// stops it first — the switch happens inside the already-authenticated
 /// helper, so it costs no new password prompt.
 #[tauri::command]
-fn start_proxy(
-    app: tauri::AppHandle,
-    state: tauri::State<AppState>,
-    id: String,
-) -> Result<(), String> {
-    let profile = {
-        let store = state.store.lock().unwrap();
-        store
-            .profiles
-            .iter()
-            .find(|p| p.id == id)
-            .cloned()
-            .ok_or_else(|| format!("no profile with id '{id}'"))?
-    };
-    state.engine.lock().unwrap().start(&app, &profile)
+async fn start_proxy(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        let profile = {
+            let store = state.store.lock().unwrap();
+            store
+                .profiles
+                .iter()
+                .find(|p| p.id == id)
+                .cloned()
+                .ok_or_else(|| format!("no profile with id '{id}'"))?
+        };
+        let res = state.engine.lock().unwrap().start(&handle, &profile);
+        res
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// The tunnel's outbound dials this listener, so it goes first. Without
 /// that order the core is left dialling something that is gone, and the
 /// user sees a tunnel fault they did not cause.
 #[tauri::command]
-fn stop_proxy(app: tauri::AppHandle, state: tauri::State<AppState>) {
-    let mut engine = state.engine.lock().unwrap();
-    engine.tunnel_stop();
-    engine.stop(&app);
+async fn stop_proxy(app: tauri::AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        let mut engine = state.engine.lock().unwrap();
+        engine.tunnel_stop();
+        engine.stop(&handle);
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// The frontend only wants log traffic while Activity is open; with it
@@ -368,8 +377,15 @@ fn tun_leftover_status() -> bool {
 }
 
 #[tauri::command]
-fn restore_network(app: tauri::AppHandle, state: tauri::State<AppState>) -> Result<(), String> {
-    state.engine.lock().unwrap().restore(&app)
+async fn restore_network(app: tauri::AppHandle) -> Result<(), String> {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = handle.state::<AppState>();
+        let res = state.engine.lock().unwrap().restore(&handle);
+        res
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

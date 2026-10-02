@@ -63,3 +63,10 @@ pub fn install_sudoers_script_path(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn cores_dir() -> PathBuf {
     app_dir().join("cores")
 }
+
+/// Where persistent structured logs live. Under `app_dir()` so they remain
+/// accessible and writable by the unprivileged GUI process.
+pub fn logs_dir() -> PathBuf {
+    app_dir().join("logs")
+}
+

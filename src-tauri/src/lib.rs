@@ -4,6 +4,7 @@ mod config;
 mod elevate_windows;
 mod engine_host;
 mod logbuf;
+pub mod logging;
 mod profiles;
 mod sysproxy;
 mod tray;
@@ -85,7 +86,13 @@ async fn start_proxy(app: tauri::AppHandle, id: String) -> Result<(), String> {
                 .cloned()
                 .ok_or_else(|| format!("no profile with id '{id}'"))?
         };
+        logging::info("gui", &format!("requesting proxy start for profile '{}'", profile.name));
         let res = state.engine.lock().unwrap().start(&handle, &profile);
+        if let Err(ref e) = res {
+            logging::error("gui", &format!("proxy start failed: {e}"));
+        } else {
+            logging::info("gui", "proxy start dispatched successfully");
+        }
         res
     })
     .await
@@ -99,10 +106,12 @@ async fn start_proxy(app: tauri::AppHandle, id: String) -> Result<(), String> {
 async fn stop_proxy(app: tauri::AppHandle) -> Result<(), String> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        logging::info("gui", "requesting proxy stop");
         let state = handle.state::<AppState>();
         let mut engine = state.engine.lock().unwrap();
         engine.tunnel_stop();
         engine.stop(&handle);
+        logging::info("gui", "proxy stop completed");
     })
     .await
     .map_err(|e| e.to_string())
@@ -525,8 +534,29 @@ async fn probe_exit(state: tauri::State<'_, AppState>) -> Result<tunnel::exit::E
     tunnel::exit::probe(port).await
 }
 
+#[tauri::command(rename_all = "snake_case")]
+fn log_frontend_event(
+    level: String,
+    target: String,
+    message: String,
+    details: Option<String>,
+) {
+    logging::log(&level, &target, &message, details.as_deref());
+}
+
+#[tauri::command]
+fn get_diagnostic_report() -> logging::DiagnosticReport {
+    logging::generate_report()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+fn export_diagnostic_bundle(path: String) -> Result<(), String> {
+    logging::export_bundle(std::path::Path::new(&path))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    logging::init();
     let logs = Arc::new(LogBuffer::new());
     let store = profiles::load();
     let active_name = profiles::active(&store)
@@ -584,6 +614,9 @@ pub fn run() {
             list_interfaces,
             import_rule_set,
             probe_exit,
+            log_frontend_event,
+            get_diagnostic_report,
+            export_diagnostic_bundle,
             sysproxy_support,
             apply_system_proxy,
             clear_system_proxy,
@@ -612,8 +645,14 @@ pub fn run() {
             // settings back before the window is even shown.
             if let Some(result) = sysproxy::recover_after_crash() {
                 match result {
-                    Ok(()) => logs.push("restored the system proxy left by a previous run".into()),
-                    Err(e) => logs.push(format!("could not restore the system proxy: {e}")),
+                    Ok(()) => {
+                        logging::warn("sysproxy", "restored system proxy left by a previous run/crash");
+                        logs.push("restored the system proxy left by a previous run".into());
+                    }
+                    Err(e) => {
+                        logging::error("sysproxy", &format!("could not restore system proxy: {e}"));
+                        logs.push(format!("could not restore the system proxy: {e}"));
+                    }
                 }
             }
             tray::setup_tray(app.handle(), &active_name)?;

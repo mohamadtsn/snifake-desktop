@@ -188,6 +188,7 @@ impl EngineHost {
     }
 
     fn set_state(&mut self, app: &AppHandle, state: &str) {
+        crate::logging::info("engine_host", &format!("state changed to {state}"));
         self.state = state.to_string();
         let _ = app.emit("state-changed", state);
         // Tray mutation must happen on the GTK main thread on Linux — doing it
@@ -376,17 +377,28 @@ impl EngineHost {
         };
         self.child = Some(child);
 
-        let stream = self.accept_engine(&listener);
+        let stream = match self.accept_engine(&listener) {
+            Ok(s) => s,
+            Err(e) => {
+                listener.cleanup();
+                crate::logging::error("engine_host", &format!("failed to connect to engine: {e}"));
+                return Err(e);
+            }
+        };
         listener.cleanup();
-        let stream = stream?;
 
         let reader_stream = stream.try_clone().map_err(|e| e.to_string())?;
         let mut reader = BufReader::new(reader_stream);
         let mut first = String::new();
-        reader.read_line(&mut first).map_err(|e| e.to_string())?;
+        if let Err(e) = reader.read_line(&mut first) {
+            crate::logging::error("engine_host", &format!("failed to read engine token: {e}"));
+            return Err(e.to_string());
+        }
         if first.trim() != token {
+            crate::logging::error("engine_host", "engine presented invalid authentication token");
             return Err("the process that connected did not present the expected token".into());
         }
+        crate::logging::info("engine_host", "elevated engine connected and authenticated");
 
         self.writer = Some(Arc::new(Mutex::new(stream)));
         // A fresh flag per engine, so a previous engine's reader thread

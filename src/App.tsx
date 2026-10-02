@@ -85,8 +85,16 @@ export default function App() {
    *  a string prefix, so a failed clipboard write told the user the SNI link
    *  could not start. */
   const [errorDialog, setErrorDialog] = useState<{ title: string; message: string } | null>(null);
-  const fail = (title: string) => (e: unknown) =>
-    setErrorDialog({ title, message: String(e) });
+  const fail = (title: string) => (e: unknown) => {
+    const message = String(e);
+    void invoke("log_frontend_event", {
+      level: "ERROR",
+      target: "gui",
+      message: `${title}: ${message}`,
+      details: e instanceof Error ? e.stack : undefined,
+    }).catch(() => {});
+    setErrorDialog({ title, message });
+  };
   const [update, setUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
   /** Whether the offer dialog is showing. Separate from `update`: closing
@@ -160,6 +168,41 @@ export default function App() {
     void invoke<Store>("list_profiles").then(setStore);
     void invoke<TunnelStore>("list_tunnels").then(setTunnels);
     void invoke<CoreStatus>("core_status").then(setCore);
+
+    const onError = (event: ErrorEvent) => {
+      void invoke("log_frontend_event", {
+        level: "ERROR",
+        target: "frontend",
+        message: event.message || "uncaught script error",
+        details: event.error?.stack ?? `${event.filename}:${event.lineno}:${event.colno}`,
+      }).catch(() => {});
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const msg =
+        typeof reason === "object" && reason !== null && "message" in reason
+          ? String((reason as { message: unknown }).message)
+          : String(reason);
+      const stack =
+        typeof reason === "object" && reason !== null && "stack" in reason
+          ? String((reason as { stack: unknown }).stack)
+          : undefined;
+
+      void invoke("log_frontend_event", {
+        level: "ERROR",
+        target: "frontend",
+        message: `unhandled promise rejection: ${msg}`,
+        details: stack,
+      }).catch(() => {});
+    };
+
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
   }, []);
 
   // The tray badge lives in the privileged half as well as in browser

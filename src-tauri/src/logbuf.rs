@@ -37,6 +37,13 @@ impl LogBuffer {
     }
 
     pub fn push(&self, line: String) {
+        let upper = line.to_uppercase();
+        if upper.contains("ERROR") || upper.contains("PANIC") || upper.contains("FATAL") {
+            crate::logging::error("engine", &line);
+        } else if upper.contains("WARN") {
+            crate::logging::warn("engine", &line);
+        }
+
         if self.streaming.load(Ordering::Relaxed) {
             let mut pending = self.pending.lock().unwrap();
             // A single 200ms tick can never usefully render more than the

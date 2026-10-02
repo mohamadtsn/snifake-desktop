@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -8,8 +9,23 @@ import { Icon } from "@/components/ui/Icon";
 import { Segmented } from "@/components/ui/Segmented";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { FIELD_INPUT } from "@/components/ui/FieldRow";
+import { UpdateMeter } from "@/components/UpdateMeter";
 import { middleTruncate, type CoreStatus } from "@/lib/readouts";
 import { Section } from "./Section";
+
+interface CoreProgress {
+  downloaded: number;
+  total: number | null;
+  percent: number | null;
+}
+
+function host(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
 
 type Verify = { kind: "idle" | "checking" } | { kind: "ok" } | { kind: "bad" } | { kind: "error"; message: string };
 
@@ -26,6 +42,34 @@ export function CoreTab({
 }) {
   const [verify, setVerify] = useState<Verify>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{ received: number; total: number | null } | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const un = listen<CoreProgress>("core-download-progress", (e) =>
+      setDownloadProgress({ received: e.payload.downloaded, total: e.payload.total }),
+    );
+    return () => {
+      void un.then((f) => f());
+    };
+  }, []);
+
+  async function download() {
+    setDownloading(true);
+    setDownloadError(null);
+    setDownloadProgress(null);
+    try {
+      await invoke("download_core");
+      setVerify({ kind: "idle" });
+      onCoreChanged();
+    } catch (e) {
+      setDownloadError(String(e));
+    } finally {
+      setDownloading(false);
+      setDownloadProgress(null);
+    }
+  }
 
   async function runVerify() {
     setVerify({ kind: "checking" });
@@ -42,6 +86,7 @@ export function CoreTab({
 
   async function replace() {
     setBusy(true);
+    setDownloadError(null);
     try {
       const path = await openFile({
         multiple: false,
@@ -128,18 +173,75 @@ export function CoreTab({
             </p>
           ) : null}
 
+          {downloading ? (
+            <div className="flex flex-col gap-2 rounded-md border border-hairline bg-inset p-3">
+              <div className="flex items-center justify-between text-note text-t2">
+                <span className="flex items-center gap-2">
+                  <Icon name="cloud_download" size={14} className="text-accent" />
+                  <span>Downloading sing-box v{core?.version}...</span>
+                </span>
+                <span className="mono text-t3" dir="ltr">
+                  {core?.url ? host(core.url) : ""}
+                </span>
+              </div>
+              <UpdateMeter progress={downloadProgress} pulse />
+            </div>
+          ) : null}
+
+          {downloadError ? (
+            <div
+              role="alert"
+              className="flex flex-col gap-[6px] rounded-md border border-bad-line bg-bad-soft px-3 py-[10px]"
+            >
+              <p className="mono text-note leading-[16px] break-all text-bad">{downloadError}</p>
+              <p className="text-note leading-[16.5px] text-t2">
+                If the download server is blocked, obtain this file manually and use Import archive.
+              </p>
+              {core?.url ? (
+                <p dir="ltr" className="mono pick text-note break-all text-t3">
+                  {core.url}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="flex items-center gap-2">
+            {!core?.installed ? (
+              <Button
+                variant="primary"
+                disabled={downloading || busy}
+                onClick={() => void download()}
+              >
+                <Icon name="cloud_download" size={14} />
+                {downloading ? "Downloading..." : core?.version ? `Download v${core.version}` : "Download core"}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={!core?.installed || verify.kind === "checking" || busy || downloading}
+                  onClick={() => void runVerify()}
+                >
+                  <Icon name="fingerprint" size={14} />
+                  Verify hash
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={downloading || busy}
+                  onClick={() => void download()}
+                >
+                  <Icon name="cloud_download" size={14} />
+                  {downloading ? "Downloading..." : "Re-download core"}
+                </Button>
+              </>
+            )}
             <Button
               variant="secondary"
-              disabled={!core?.installed || verify.kind === "checking" || busy}
-              onClick={() => void runVerify()}
+              disabled={busy || downloading}
+              onClick={() => void replace()}
             >
-              <Icon name="fingerprint" size={14} />
-              Verify hash
-            </Button>
-            <Button variant="secondary" disabled={busy} onClick={() => void replace()}>
               <Icon name="folder_open" size={14} />
-              {core?.installed ? "Replace binary" : "Import binary"}
+              {core?.installed ? "Replace archive" : "Import archive"}
             </Button>
           </div>
           {/* No "Check for core updates". The version is pinned in

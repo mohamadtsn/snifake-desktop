@@ -3,7 +3,7 @@ members = ["engine"]
 
 [package]
 name = "snifake"
-version = "2.4.0"
+version = "2.4.1"
 description = "Desktop app for the Snifake TLS SNI-spoofing engine"
 authors = ["Mohamad Tsn"]
 license = "MIT"
@@ -84,5 +84,6 @@ windows-sys = { version = "0.59", features = [
   # InternetSetOptionW, which is what makes a written proxy value take
   # effect in applications that are already running.
   "Win32_Networking_WinInet",
+  "Win32_System_Com",
 ] }
 

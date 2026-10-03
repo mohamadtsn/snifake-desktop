@@ -53,6 +53,14 @@ impl WinDivertApi {
     /// Loads the DLL sitting next to the engine executable. Windows searches
     /// the executable's directory first, which is where the bundler puts it.
     pub fn load() -> io::Result<Self> {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                let dll = dir.join("WinDivert.dll");
+                if dll.exists() {
+                    return Self::load_from(&dll.to_string_lossy());
+                }
+            }
+        }
         Self::load_from("WinDivert.dll")
     }
 

@@ -7,9 +7,12 @@
 //! GUI↔engine channel is a named pipe rather than stdio.
 
 use crate::engine_host::EngineProcess;
-use windows_sys::Win32::Foundation::ERROR_CANCELLED;
+use windows_sys::Win32::Foundation::{ERROR_CANCELLED, S_FALSE, S_OK};
+use windows_sys::Win32::System::Com::{
+    CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+};
 use windows_sys::Win32::UI::Shell::{
-    ShellExecuteExW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE;
 
@@ -27,7 +30,29 @@ fn join_args(args: &[String]) -> String {
         .join(" ")
 }
 
+struct ComGuard(bool);
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        if self.0 {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
 pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, String> {
+    crate::logging::info("elevate", &format!("spawning elevated engine: {program}"));
+
+    // ShellExecuteEx delegates to Shell extensions that require COM STA.
+    // Worker threads in Tokio pools do not have COM initialized by default.
+    let hr = unsafe {
+        CoInitializeEx(
+            std::ptr::null_mut(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+        )
+    };
+    let need_uninit = hr == S_OK || hr == S_FALSE;
+    let _guard = ComGuard(need_uninit);
+
     let verb = wide("runas");
     let file = wide(program);
     let params = wide(&join_args(args));
@@ -38,9 +63,13 @@ pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, S
 
     // SAFETY: SHELLEXECUTEINFOW is a plain C struct with no invalid bit
     // patterns; every field is either set below or legitimately zero.
+    // SEE_MASK_NOCLOSEPROCESS requests the child process handle (info.hProcess).
+    // DO NOT set SEE_MASK_NOASYNC on worker threads without a message loop:
+    // MSDN explicitly warns that SEE_MASK_NOASYNC without a message pump
+    // causes ShellExecuteEx to hang indefinitely.
     let mut info: SHELLEXECUTEINFOW = unsafe { std::mem::zeroed() };
     info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
-    info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+    info.fMask = SEE_MASK_NOCLOSEPROCESS;
     info.lpVerb = verb.as_ptr();
     info.lpFile = file.as_ptr();
     info.lpParameters = params.as_ptr();
@@ -52,14 +81,20 @@ pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, S
     let ok = unsafe { ShellExecuteExW(&mut info) };
     if ok == 0 {
         let err = std::io::Error::last_os_error();
+        crate::logging::error("elevate", &format!("ShellExecuteExW failed: {err}"));
         if err.raw_os_error() == Some(ERROR_CANCELLED as i32) {
             return Err("Administrator access was declined.".into());
         }
         return Err(format!("could not launch the engine elevated: {err}"));
     }
     if info.hProcess.is_null() {
+        crate::logging::error("elevate", "ShellExecuteExW returned null process handle");
         return Err("the elevated engine started but returned no process handle".into());
     }
+    crate::logging::info(
+        "elevate",
+        &format!("elevated engine spawned successfully, hProcess: {:?}", info.hProcess),
+    );
     Ok(EngineProcess::Handle(info.hProcess as isize))
 }
 

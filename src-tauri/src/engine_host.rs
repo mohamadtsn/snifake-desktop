@@ -21,9 +21,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-/// How long to wait for the elevated engine to connect back. Generous: the
-/// user may be typing a password into a polkit or UAC dialog.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long to wait for the elevated engine to connect back.
+/// 15 seconds is plenty of time for a locally spawned engine to dial back,
+/// while preventing indefinite freezes if the child fails early.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// 128 bits of hex from the OS. The endpoint's own access control is the
 /// real barrier; this is defence in depth against a race on the socket path.
@@ -57,19 +58,28 @@ impl EngineProcess {
             },
             #[cfg(windows)]
             EngineProcess::Handle(h) => {
-                use windows_sys::Win32::Foundation::HANDLE;
-                use windows_sys::Win32::System::Threading::GetExitCodeProcess;
-                /// `STILL_ACTIVE` (259) is what GetExitCodeProcess reports
-                /// for a live process.
+                use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+                use windows_sys::Win32::System::Threading::{GetExitCodeProcess, WaitForSingleObject};
                 const STILL_ACTIVE: u32 = 259;
-                let mut code: u32 = 0;
-                // SAFETY: a process handle we own; code is a valid out-param.
-                let ok = unsafe { GetExitCodeProcess(*h as HANDLE, &mut code) };
-                if ok == 0 || code == STILL_ACTIVE {
-                    None
-                } else {
-                    Some(code as i32)
+
+                // Test whether the process kernel object is signaled (terminated).
+                // WaitForSingleObject with timeout 0 works across integrity levels.
+                let wait = unsafe { WaitForSingleObject(*h as HANDLE, 0) };
+                if wait == WAIT_TIMEOUT {
+                    // Process is still actively running.
+                    return None;
                 }
+                if wait == WAIT_OBJECT_0 {
+                    // Process has terminated! Retrieve its exit code.
+                    let mut code: u32 = 0;
+                    let ok = unsafe { GetExitCodeProcess(*h as HANDLE, &mut code) };
+                    if ok != 0 && code != STILL_ACTIVE {
+                        return Some(code as i32);
+                    }
+                    return Some(-1);
+                }
+                // If waiting failed or handle is invalid, treat as terminated.
+                Some(-1)
             }
         }
     }
@@ -381,6 +391,7 @@ impl EngineHost {
             Ok(s) => s,
             Err(e) => {
                 listener.cleanup();
+                self.child = None;
                 crate::logging::error("engine_host", &format!("failed to connect to engine: {e}"));
                 return Err(e);
             }

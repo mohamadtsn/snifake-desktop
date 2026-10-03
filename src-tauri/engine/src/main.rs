@@ -77,16 +77,47 @@ impl Running {
     }
 }
 
+fn engine_log(level: &str, msg: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let line = format!("[{now}] [{level}] [pid:{}] {msg}\n", std::process::id());
+    eprint!("{line}");
+    let log_path = std::env::temp_dir().join("snifake-engine.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+    {
+        let _ = f.write_all(line.as_bytes());
+        let _ = f.flush();
+    }
+}
+
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("panic: {info}");
+        engine_log("PANIC", &msg);
+    }));
+
+    engine_log("INFO", &format!("snifake-engine v{} starting", env!("CARGO_PKG_VERSION")));
+
     let mut args = std::env::args().skip(1);
     let (Some(endpoint), Some(token)) = (args.next(), args.next()) else {
+        engine_log("ERROR", "invalid usage: expected <endpoint> <token>");
         eprintln!("usage: snifake-engine <endpoint> <token>");
         std::process::exit(2);
     };
 
+    engine_log("INFO", &format!("connecting to endpoint: {endpoint}"));
     let stream = match Stream::connect(&endpoint) {
-        Ok(s) => s,
+        Ok(s) => {
+            engine_log("INFO", "connected to endpoint successfully");
+            s
+        }
         Err(e) => {
+            engine_log("ERROR", &format!("connect {endpoint} failed: {e}"));
             eprintln!("connect {endpoint}: {e}");
             std::process::exit(1);
         }
@@ -94,6 +125,7 @@ fn main() {
     let reader = BufReader::new(match stream.try_clone() {
         Ok(s) => s,
         Err(e) => {
+            engine_log("ERROR", &format!("clone socket failed: {e}"));
             eprintln!("clone socket: {e}");
             std::process::exit(1);
         }
@@ -102,11 +134,13 @@ fn main() {
 
     {
         let mut guard = out.0.lock().unwrap();
-        if writeln!(guard, "{token}").is_err() {
+        if let Err(e) = writeln!(guard, "{token}") {
+            engine_log("ERROR", &format!("write token failed: {e}"));
             std::process::exit(1);
         }
         let _ = guard.flush();
     }
+    engine_log("INFO", "token sent to GUI, ready");
     out.send(&Event::Ready {
         version: env!("CARGO_PKG_VERSION").to_string(),
     });
@@ -214,14 +248,26 @@ fn main() {
                 out.send(&Event::State {
                     state: "starting".into(),
                 });
+                engine_log(
+                    "INFO",
+                    &format!(
+                        "starting SNI forwarder: {}:{} -> {}:{}",
+                        profile.listen_host,
+                        profile.listen_port,
+                        profile.connect_ip,
+                        profile.connect_port
+                    ),
+                );
                 match start(&profile, &out, verbose.clone()) {
                     Ok(r) => {
+                        engine_log("INFO", "SNI forwarder started successfully");
                         running = Some(r);
                         out.send(&Event::State {
                             state: "running".into(),
                         });
                     }
                     Err((code, msg)) => {
+                        engine_log("ERROR", &format!("SNI forwarder failed [{code}]: {msg}"));
                         out.send(&Event::Error { code, msg });
                         out.send(&Event::State {
                             state: "error".into(),
@@ -230,6 +276,7 @@ fn main() {
                 }
             }
             Command::Stop => {
+                engine_log("INFO", "Command::Stop received, stopping proxy");
                 let had_tunnel = tunnel.is_some();
                 if let Some(t) = tunnel.take() {
                     t.stop();
@@ -247,6 +294,7 @@ fn main() {
                 out.send(&Event::State {
                     state: "stopped".into(),
                 });
+                engine_log("INFO", "proxy stopped cleanly");
             }
             Command::Verbose { on } => verbose.store(on, Ordering::Relaxed),
             Command::Shutdown => break,

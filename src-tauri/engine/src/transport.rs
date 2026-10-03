@@ -127,6 +127,7 @@ mod imp {
     };
     use windows_sys::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
+        WaitNamedPipeW,
     };
 
     const BUFFER: u32 = 64 * 1024;
@@ -150,15 +151,14 @@ mod imp {
 
     impl Listener {
         pub fn bind() -> io::Result<Listener> {
-            // Explicit security descriptor allowing Authenticated Users (AU),
-            // Built-in Administrators (BA), and SYSTEM (SY) with Low/Medium
-            // Mandatory Integrity Label (S:(ML;;NW;;;LW)). This allows the
-            // elevated engine to connect even when launched under an admin
-            // account from a standard user session. A 128-bit random token
-            // handles connection authentication.
+            // Explicit DACL allowing Authenticated Users (AU), Built-in
+            // Administrators (BA), and SYSTEM (SY). Does not specify SACL/integrity
+            // labels so unelevated callers do not fail with ERROR_PRIVILEGE_NOT_HELD (1314).
+            // Under Windows MIC, higher integrity processes (elevated engine) can
+            // always connect to medium integrity objects (GUI listener).
             let name = format!(r"\\.\pipe\snifake-{}", crate::sysrand::hex(8));
             let wide_name = wide(&name);
-            let sddl = wide("D:(A;;GA;;;AU)(A;;GA;;;BA)(A;;GA;;;SY)S:(ML;;NW;;;LW)");
+            let sddl = wide("D:(A;;GA;;;AU)(A;;GA;;;BA)(A;;GA;;;SY)");
             let mut p_sd = std::ptr::null_mut();
             let ok_sd = unsafe {
                 ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -168,12 +168,14 @@ mod imp {
                     std::ptr::null_mut(),
                 )
             };
+            if ok_sd == 0 {
+                return Err(io::Error::last_os_error());
+            }
             let mut sa = SECURITY_ATTRIBUTES {
                 nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
-                lpSecurityDescriptor: if ok_sd != 0 { p_sd } else { std::ptr::null_mut() },
+                lpSecurityDescriptor: p_sd,
                 bInheritHandle: 0,
             };
-            let sa_ptr = if ok_sd != 0 { &mut sa as *mut _ } else { std::ptr::null_mut() };
 
             let handle = unsafe {
                 CreateNamedPipeW(
@@ -184,14 +186,14 @@ mod imp {
                     BUFFER,
                     BUFFER,
                     0,
-                    sa_ptr,
+                    &mut sa,
                 )
             };
-            if !p_sd.is_null() {
-                unsafe { LocalFree(p_sd as _) };
-            }
+            let create_err = io::Error::last_os_error();
+            unsafe { LocalFree(p_sd as _) };
+
             if handle == INVALID_HANDLE_VALUE {
-                return Err(io::Error::last_os_error());
+                return Err(create_err);
             }
             Ok(Listener {
                 handle: std::cell::Cell::new(handle),
@@ -256,23 +258,38 @@ mod imp {
     impl Stream {
         pub fn connect(endpoint: &str) -> io::Result<Stream> {
             let wide_name = wide(endpoint);
-            // SAFETY: wide_name is a valid NUL-terminated UTF-16 string.
-            let handle = unsafe {
-                CreateFileW(
-                    wide_name.as_ptr(),
-                    GENERIC_READ | GENERIC_WRITE,
-                    0,
-                    std::ptr::null(),
-                    OPEN_EXISTING,
-                    0,
-                    std::ptr::null_mut(),
-                )
-            };
-            if handle == INVALID_HANDLE_VALUE {
-                return Err(io::Error::last_os_error());
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                // SAFETY: wide_name is a valid NUL-terminated UTF-16 string.
+                let handle = unsafe {
+                    CreateFileW(
+                        wide_name.as_ptr(),
+                        GENERIC_READ | GENERIC_WRITE,
+                        0,
+                        std::ptr::null(),
+                        OPEN_EXISTING,
+                        0,
+                        std::ptr::null_mut(),
+                    )
+                };
+                if handle != INVALID_HANDLE_VALUE {
+                    // SAFETY: a freshly created handle we own.
+                    return Ok(Stream(unsafe { OwnedHandle::from_raw_handle(handle as _) }));
+                }
+                let err = io::Error::last_os_error();
+                let code = err.raw_os_error().unwrap_or(0);
+                if std::time::Instant::now() >= deadline {
+                    return Err(err);
+                }
+                // ERROR_PIPE_BUSY is 231. Wait for pipe instance to become available.
+                if code == 231 {
+                    unsafe {
+                        WaitNamedPipeW(wide_name.as_ptr(), 1000);
+                    };
+                } else {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
             }
-            // SAFETY: a freshly created handle we own.
-            Ok(Stream(unsafe { OwnedHandle::from_raw_handle(handle as _) }))
         }
 
         pub fn try_clone(&self) -> io::Result<Stream> {

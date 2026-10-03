@@ -317,19 +317,36 @@ impl EngineHost {
     /// to notice a cancelled pkexec/osascript prompt at once rather than
     /// waiting out the whole timeout. On Windows a declined UAC prompt is
     /// already reported synchronously by `ShellExecuteEx`, and every
-    /// `accept_timeout` call costs a worker thread parked in
     fn accept_engine(&mut self, listener: &Listener) -> Result<Stream, String> {
         #[cfg(windows)]
         {
             let child = &mut self.child;
-            return listener
+            crate::logging::info(
+                "engine_host",
+                &format!(
+                    "waiting for engine connection on {}",
+                    listener.endpoint().as_str()
+                ),
+            );
+            let res = listener
                 .accept_timeout_with(CONNECT_TIMEOUT, || {
                     if let Some(code) = child.as_mut().and_then(|c| c.try_wait()) {
+                        crate::logging::warn(
+                            "engine_host",
+                            &format!("the engine exited before connecting (code {code})"),
+                        );
                         return Err(format!("the engine exited before connecting ({code})"));
                     }
                     Ok(())
                 })
                 .map_err(|e| format!("the engine never connected back ({e})"));
+            match &res {
+                Ok(_) => {
+                    crate::logging::info("engine_host", "engine connection accepted successfully")
+                }
+                Err(e) => crate::logging::error("engine_host", &format!("accept_engine error: {e}")),
+            }
+            return res;
         }
 
         #[cfg(unix)]
@@ -392,6 +409,7 @@ impl EngineHost {
             Err(e) => {
                 listener.cleanup();
                 self.child = None;
+                self.logs.push(format!("error: {e}"));
                 crate::logging::error("engine_host", &format!("failed to connect to engine: {e}"));
                 return Err(e);
             }

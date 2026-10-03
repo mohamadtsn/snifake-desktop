@@ -3657,7 +3657,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
 name = "snifake"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "dirs 5.0.1",
  "flate2",
@@ -3689,7 +3689,7 @@ dependencies = [
 
 [[package]]
 name = "snifake-engine"
-version = "2.4.1"
+version = "2.4.2"
 dependencies = [
  "libc",
  "nix",

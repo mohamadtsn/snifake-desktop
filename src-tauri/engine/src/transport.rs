@@ -114,6 +114,8 @@ mod imp {
 mod imp {
     use super::*;
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use windows_sys::Win32::Foundation::{
         CloseHandle, ERROR_PIPE_CONNECTED, GENERIC_READ, GENERIC_WRITE, HANDLE,
         INVALID_HANDLE_VALUE, LocalFree,
@@ -123,7 +125,7 @@ mod imp {
     };
     use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
     use windows_sys::Win32::Storage::FileSystem::{
-        CreateFileW, FlushFileBuffers, ReadFile, WriteFile, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
+        CreateFileW, ReadFile, WriteFile, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
     };
     use windows_sys::Win32::System::Pipes::{
         ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_WAIT,
@@ -151,14 +153,14 @@ mod imp {
 
     impl Listener {
         pub fn bind() -> io::Result<Listener> {
-            // Explicit DACL allowing Authenticated Users (AU), Built-in
+            // Explicit DACL allowing Everyone (WD), Authenticated Users (AU), Built-in
             // Administrators (BA), and SYSTEM (SY). Does not specify SACL/integrity
             // labels so unelevated callers do not fail with ERROR_PRIVILEGE_NOT_HELD (1314).
             // Under Windows MIC, higher integrity processes (elevated engine) can
             // always connect to medium integrity objects (GUI listener).
             let name = format!(r"\\.\pipe\snifake-{}", crate::sysrand::hex(8));
             let wide_name = wide(&name);
-            let sddl = wide("D:(A;;GA;;;AU)(A;;GA;;;BA)(A;;GA;;;SY)");
+            let sddl = wide("D:(A;;GA;;;WD)(A;;GA;;;AU)(A;;GA;;;BA)(A;;GA;;;SY)");
             let mut p_sd = std::ptr::null_mut();
             let ok_sd = unsafe {
                 ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -211,35 +213,68 @@ mod imp {
         {
             let raw = self.handle.get() as isize;
             let (tx, rx) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let cancelled_worker = cancelled.clone();
+
+            let worker = std::thread::spawn(move || {
                 let ok = unsafe { ConnectNamedPipe(raw as HANDLE, std::ptr::null_mut()) };
                 let err = io::Error::last_os_error();
                 let connected = ok != 0 || err.raw_os_error() == Some(ERROR_PIPE_CONNECTED as i32);
+                if cancelled_worker.load(Ordering::SeqCst) {
+                    return;
+                }
                 let _ = tx.send(connected);
             });
 
             let deadline = std::time::Instant::now() + timeout;
-            loop {
+            let result = loop {
                 match rx.recv_timeout(Duration::from_millis(50)) {
                     Ok(true) => {
                         let handle = self.handle.get();
                         self.handle.set(INVALID_HANDLE_VALUE);
-                        return Ok(Stream(unsafe { OwnedHandle::from_raw_handle(handle as _) }));
+                        break Ok(Stream(unsafe { OwnedHandle::from_raw_handle(handle as _) }));
                     }
-                    Ok(false) => return Err(io::Error::last_os_error()),
+                    Ok(false) => break Err(io::Error::last_os_error()),
                     Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                         if let Err(e) = check() {
-                            return Err(io::Error::new(io::ErrorKind::Other, e));
+                            break Err(io::Error::new(io::ErrorKind::Other, e));
                         }
                         if std::time::Instant::now() >= deadline {
-                            return Err(io::Error::new(io::ErrorKind::TimedOut, "accept timed out"));
+                            break Err(io::Error::new(io::ErrorKind::TimedOut, "accept timed out"));
                         }
                     }
                     Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                        return Err(io::Error::new(io::ErrorKind::BrokenPipe, "pipe worker disconnected"));
+                        break Err(io::Error::new(io::ErrorKind::BrokenPipe, "pipe worker disconnected"));
                     }
                 }
+            };
+
+            if result.is_err() {
+                // We are aborting on timeout or child exit. The worker thread may still be
+                // blocked in ConnectNamedPipe. Calling CloseHandle on a handle while another thread
+                // is blocked in ConnectNamedPipe triggers an unhandled STATUS_INVALID_HANDLE SEH
+                // exception on Windows NT that crashes the entire process.
+                // Safely unblock ConnectNamedPipe by briefly opening a local dummy connection.
+                cancelled.store(true, Ordering::SeqCst);
+                let wide_name = wide(self.endpoint.as_str());
+                let dummy = unsafe {
+                    CreateFileW(
+                        wide_name.as_ptr(),
+                        GENERIC_READ | GENERIC_WRITE,
+                        0,
+                        std::ptr::null(),
+                        OPEN_EXISTING,
+                        0,
+                        std::ptr::null_mut(),
+                    )
+                };
+                if dummy != INVALID_HANDLE_VALUE {
+                    unsafe { CloseHandle(dummy) };
+                }
+                let _ = worker.join();
             }
+
+            result
         }
 
         pub fn accept_timeout(&self, timeout: Duration) -> io::Result<Stream> {
@@ -257,7 +292,8 @@ mod imp {
 
     impl Stream {
         pub fn connect(endpoint: &str) -> io::Result<Stream> {
-            let wide_name = wide(endpoint);
+            let clean_endpoint = endpoint.trim().trim_matches('"').trim_matches('\'');
+            let wide_name = wide(clean_endpoint);
             let deadline = std::time::Instant::now() + Duration::from_secs(10);
             loop {
                 // SAFETY: wide_name is a valid NUL-terminated UTF-16 string.
@@ -341,8 +377,11 @@ mod imp {
         }
 
         fn flush(&mut self) -> io::Result<()> {
-            // SAFETY: a handle we own.
-            unsafe { FlushFileBuffers(self.raw()) };
+            // WriteFile with byte mode on a duplex named pipe writes directly into
+            // NPFS kernel buffers. Calling FlushFileBuffers on a named pipe causes
+            // the thread to block until all bytes have been consumed by the peer.
+            // If the peer is not actively reading, this causes deadlocks.
+            // Match UnixStream by making flush a no-op.
             Ok(())
         }
     }

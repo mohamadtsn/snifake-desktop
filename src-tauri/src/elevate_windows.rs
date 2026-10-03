@@ -39,8 +39,34 @@ impl Drop for ComGuard {
     }
 }
 
+/// ShellExecuteEx does not support the `\\?\` verbatim path prefix that Rust's
+/// `std::env::current_exe()` or canonicalize produces on Windows. Normalize it
+/// to standard Windows paths or standard UNC paths.
+fn normalize_program_path(p: &str) -> String {
+    let s = p.trim().trim_matches('"');
+    if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{stripped}");
+    }
+    if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        return stripped.to_string();
+    }
+    s.to_string()
+}
+
 pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, String> {
-    crate::logging::info("elevate", &format!("spawning elevated engine: {program}"));
+    let clean_program = normalize_program_path(program);
+    let params_str = join_args(args);
+    let dir_str = std::path::Path::new(&clean_program)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".".to_string());
+
+    crate::logging::info(
+        "elevate",
+        &format!(
+            "spawning elevated engine: program='{clean_program}', params='{params_str}', dir='{dir_str}'"
+        ),
+    );
 
     // ShellExecuteEx delegates to Shell extensions that require COM STA.
     // Worker threads in Tokio pools do not have COM initialized by default.
@@ -54,12 +80,9 @@ pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, S
     let _guard = ComGuard(need_uninit);
 
     let verb = wide("runas");
-    let file = wide(program);
-    let params = wide(&join_args(args));
-    let dir = std::path::Path::new(program)
-        .parent()
-        .map(|p| wide(&p.to_string_lossy()))
-        .unwrap_or_else(|| wide("."));
+    let file = wide(&clean_program);
+    let params = wide(&params_str);
+    let dir = wide(&dir_str);
 
     // SAFETY: SHELLEXECUTEINFOW is a plain C struct with no invalid bit
     // patterns; every field is either set below or legitimately zero.
@@ -100,7 +123,7 @@ pub fn spawn_elevated(program: &str, args: &[String]) -> Result<EngineProcess, S
 
 #[cfg(test)]
 mod tests {
-    use super::join_args;
+    use super::*;
 
     #[test]
     fn every_argument_is_quoted_so_spaces_survive() {
@@ -113,5 +136,21 @@ mod tests {
     #[test]
     fn an_embedded_quote_is_escaped_rather_than_ending_the_argument() {
         assert_eq!(join_args(&["a\"b".into()]), "\"a\\\"b\"");
+    }
+
+    #[test]
+    fn verbatim_prefixes_are_stripped_for_shellexecute() {
+        assert_eq!(
+            normalize_program_path(r"\\?\C:\Program Files\Snifake\snifake-engine.exe"),
+            r"C:\Program Files\Snifake\snifake-engine.exe"
+        );
+        assert_eq!(
+            normalize_program_path(r"\\?\UNC\server\share\engine.exe"),
+            r"\\server\share\engine.exe"
+        );
+        assert_eq!(
+            normalize_program_path(r#""C:\Program Files\Snifake\snifake-engine.exe""#),
+            r"C:\Program Files\Snifake\snifake-engine.exe"
+        );
     }
 }

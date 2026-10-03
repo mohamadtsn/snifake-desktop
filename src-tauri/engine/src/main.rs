@@ -20,6 +20,7 @@ use snifake_engine::validate::{spec_matches_link, validate, validate_tun, valida
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -77,21 +78,94 @@ impl Running {
     }
 }
 
-fn engine_log(level: &str, msg: &str) {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let line = format!("[{now}] [{level}] [pid:{}] {msg}\n", std::process::id());
-    eprint!("{line}");
-    let log_path = std::env::temp_dir().join("snifake-engine.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(log_path)
+fn log_destinations() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    #[cfg(windows)]
     {
-        let _ = f.write_all(line.as_bytes());
-        let _ = f.flush();
+        // 1. User's AppData (GUI logs directory)
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let p = PathBuf::from(appdata).join("snifake").join("logs");
+            paths.push(p.join("snifake.log"));
+            paths.push(p.join("snifake-engine.log"));
+        } else if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            let p = PathBuf::from(userprofile)
+                .join("AppData")
+                .join("Roaming")
+                .join("snifake")
+                .join("logs");
+            paths.push(p.join("snifake.log"));
+            paths.push(p.join("snifake-engine.log"));
+        }
+
+        // 2. ProgramData fallback for elevated services/tasks
+        if let Ok(progdata) = std::env::var("ProgramData") {
+            let p = PathBuf::from(progdata).join("snifake").join("logs");
+            paths.push(p.join("snifake-engine.log"));
+        }
+
+        // 3. Always include temp dir
+        paths.push(std::env::temp_dir().join("snifake-engine.log"));
+    }
+
+    #[cfg(unix)]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let p = PathBuf::from(home)
+                .join(".config")
+                .join("snifake")
+                .join("logs");
+            paths.push(p.join("snifake.log"));
+            paths.push(p.join("snifake-engine.log"));
+        }
+        paths.push(std::env::temp_dir().join("snifake-engine.log"));
+    }
+
+    paths
+}
+
+fn engine_log(level: &str, msg: &str) {
+    let iso_time = {
+        let now = std::time::SystemTime::now();
+        let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+        let secs = duration.as_secs();
+        let millis = duration.subsec_millis();
+        let days = (secs / 86400) as i64;
+        let rem_secs = (secs % 86400) as i64;
+        let hours = rem_secs / 3600;
+        let minutes = (rem_secs % 3600) / 60;
+        let seconds = rem_secs % 60;
+        let z = days + 719468;
+        let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+        let doe = (z - era * 146097) as u32;
+        let yoe = (doe - doe / 1024 + doe / 1461 - doe / 146096) / 365;
+        let y = (yoe as i64) + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+            y, m, d, hours, minutes, seconds, millis
+        )
+    };
+
+    let line = format!("[{iso_time}] [{level}] [engine:{}] {msg}\n", std::process::id());
+    eprint!("{line}");
+
+    for path in log_destinations() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = f.write_all(line.as_bytes());
+            let _ = f.sync_all();
+        }
     }
 }
 
@@ -103,21 +177,45 @@ fn main() {
 
     engine_log("INFO", &format!("snifake-engine v{} starting", env!("CARGO_PKG_VERSION")));
 
-    let mut args = std::env::args().skip(1);
-    let (Some(endpoint), Some(token)) = (args.next(), args.next()) else {
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    engine_log("INFO", &format!("received command line arguments: {:?}", raw_args));
+
+    let (endpoint, token) = if raw_args.len() >= 2 {
+        (raw_args[0].clone(), raw_args[1].clone())
+    } else if raw_args.len() == 1 {
+        // Handle case where shell passes "endpoint token" as a single combined argument
+        let parts: Vec<&str> = raw_args[0].split_whitespace().collect();
+        if parts.len() >= 2 {
+            (parts[0].to_string(), parts[1].to_string())
+        } else {
+            engine_log("ERROR", &format!("invalid usage: expected 2 arguments, got: {:?}", raw_args));
+            eprintln!("usage: snifake-engine <endpoint> <token>");
+            std::process::exit(2);
+        }
+    } else {
         engine_log("ERROR", "invalid usage: expected <endpoint> <token>");
         eprintln!("usage: snifake-engine <endpoint> <token>");
         std::process::exit(2);
     };
 
-    engine_log("INFO", &format!("connecting to endpoint: {endpoint}"));
+    let endpoint = endpoint.trim().trim_matches('"').trim_matches('\'').to_string();
+    let token = token.trim().trim_matches('"').trim_matches('\'').to_string();
+
+    engine_log("INFO", &format!("connecting to endpoint: '{endpoint}'"));
     let stream = match Stream::connect(&endpoint) {
         Ok(s) => {
             engine_log("INFO", "connected to endpoint successfully");
             s
         }
         Err(e) => {
-            engine_log("ERROR", &format!("connect {endpoint} failed: {e}"));
+            let last_os = std::io::Error::last_os_error();
+            engine_log(
+                "ERROR",
+                &format!(
+                    "connect '{endpoint}' failed: {e} (raw os error: {:?})",
+                    last_os.raw_os_error()
+                ),
+            );
             eprintln!("connect {endpoint}: {e}");
             std::process::exit(1);
         }
@@ -144,17 +242,26 @@ fn main() {
     out.send(&Event::Ready {
         version: env!("CARGO_PKG_VERSION").to_string(),
     });
+    engine_log("INFO", "sent Event::Ready to GUI");
 
     // Before anything else, every time: a previous run that crashed with
     // TUN up left the machine closed, and this is what opens it. The event
     // is what lets the GUI delete its crash marker (spec §12.7).
     match tun::purge_leftovers() {
-        Ok(()) => tunnel_state(&out, "offline", None, false),
-        Err(e) => out.send(&Event::Error {
-            code: "purge_failed".into(),
-            msg: format!("could not remove a previous session's firewall rules: {e}"),
-        }),
+        Ok(()) => {
+            engine_log("INFO", "purge_leftovers succeeded");
+            tunnel_state(&out, "offline", None, false);
+        }
+        Err(e) => {
+            engine_log("WARN", &format!("purge_leftovers warning: {e}"));
+            out.send(&Event::Error {
+                code: "purge_failed".into(),
+                msg: format!("could not remove a previous session's firewall rules: {e}"),
+            });
+        }
     }
+
+    engine_log("INFO", "entering command event loop");
 
     let verbose = Arc::new(AtomicBool::new(false));
     let mut running: Option<Running> = None;
